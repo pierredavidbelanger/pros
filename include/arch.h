@@ -1,5 +1,5 @@
-#ifndef ARCH_H
-#define ARCH_H
+#ifndef PROS_ARCH_H
+#define PROS_ARCH_H
 
 #if defined(__riscv) && (__riscv_xlen == 32)
     typedef unsigned int uintreg_t;
@@ -17,4 +17,9 @@ static inline void arch_idle(void) {
 #endif
 }
 
-#endif // ARCH_H
+void uart_putchar(const char c);
+void uart_puts(const char *s);
+
+void shutdown(void);
+
+#endif // PROS_ARCH_H
