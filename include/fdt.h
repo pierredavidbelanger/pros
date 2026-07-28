@@ -1,6 +1,7 @@
 #ifndef PROS_FDT_H
 #define PROS_FDT_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 struct fdt_header {
@@ -23,6 +24,6 @@ struct fdt_header {
 #define FDT_NOP         0x00000004
 #define FDT_END         0x00000009
 
-int fdt_get_memory(const void *fdt_ptr, uint64_t *out_base, uint64_t *out_size);
+int fdt_get_memory(const void *fdt_ptr, uintptr_t *out_base, size_t *out_size);
 
 #endif //PROS_FDT_H

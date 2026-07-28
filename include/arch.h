@@ -17,7 +17,7 @@ static inline void arch_idle(void) {
 #endif
 }
 
-void uart_putchar(const char c);
+void uart_putchar(char c);
 void uart_puts(const char *s);
 
 void shutdown(void);

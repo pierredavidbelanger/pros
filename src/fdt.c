@@ -10,7 +10,7 @@ static inline uint32_t align4(uint32_t val) {
     return (val + 3) & ~3;
 }
 
-int fdt_get_memory(const void *fdt_ptr, uint64_t *out_base, uint64_t *out_size) {
+int fdt_get_memory(const void *fdt_ptr, uintptr_t *out_base, size_t *out_size) {
     const struct fdt_header *header = (const struct fdt_header *) fdt_ptr;
     if (fdt32(header->magic) != FDT_MAGIC) {
         return -1; // Invalid DTB header

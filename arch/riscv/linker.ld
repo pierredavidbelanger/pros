@@ -27,4 +27,7 @@ SECTIONS
     . = ALIGN(16);
     . += 0x1000;
     _stack_top = .;
+
+    . = ALIGN(4096);
+    _kernel_end = .;
 }

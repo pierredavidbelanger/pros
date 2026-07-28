@@ -5,6 +5,8 @@
 
 #include <stdarg.h>
 
+extern char _kernel_end[];
+
 int kprintf(const char *fmt, ...) {
     char buf[256];
     va_list args;
@@ -24,32 +26,33 @@ void kpanic(const char *msg) {
  */
 int kmain(const uint32_t hart_id, const void *fdt_ptr) {
     kprintf("PjErOS\n");
-    kprintf("%s\n", ARCH_NAME, hart_id);
+    kprintf("%s\n", ARCH_NAME);
     kprintf("Hardware thread %d\n", hart_id);
 
-    // inside kmain:
-    uint64_t ram_base = 0;
-    uint64_t ram_size = 0;
-
+    uintptr_t ram_base = 0;
+    size_t ram_size = 0;
     kprintf("Parse the Flattened Device Tree at %p to get memory infos\n", fdt_ptr);
     if (fdt_get_memory(fdt_ptr, &ram_base, &ram_size) == 0) {
-        kprintf("Found %uMB based at %p\n", (uint32_t) (ram_size / 1024 / 1024), (uint32_t) ram_base);
+        kprintf("Found %uMB based at %p\n", ram_size / 1024 / 1024, ram_base);
     } else {
         kpanic("Error parsing Flattened Device Tree");
     }
 
-    kmem_init((char *) ram_base, (size_t) ram_size);
+    uintptr_t heap_start = (uintptr_t) _kernel_end;
+    uintptr_t heap_end = ram_base + ram_size;
+    kprintf("Init heap memory pages free list between %p and %p\n", heap_start, heap_end);
+    size_t pages = kmem_init(heap_start, heap_end);
+    kprintf("%u pages of heap memory init between %p and %p\n", pages, heap_start, heap_end);
 
-    char *p1 = kmem_alloc();
-    char *p2 = kmem_alloc();
+    // char *p1 = kmem_alloc();
+    // char *p2 = kmem_alloc();
+    // kmem_free(p1);
+    // kmem_free(p2);
 
-    kmem_free(p1);
-    kmem_free(p2);
-
-    while (10000000) {
+    kprintf("Wait for interrupt\n");
+    while (1) {
         arch_idle();
     }
-    // shutdown();
 
     return 0;
 }
