@@ -1,4 +1,5 @@
 #include "mem.h"
+#include "string.h"
 
 #include <stdint.h>
 
@@ -18,7 +19,10 @@ size_t kmem_init(uintptr_t heap_start, uintptr_t heap_end) {
 }
 
 void *kmem_alloc(void) {
-    return 0;
+    void *ptr = kmem_list;
+    kmem_list = kmem_list->next;
+    memset(ptr, 0, PAGE_SIZE);
+    return ptr;
 }
 
 void kmem_free(void *ptr) {
