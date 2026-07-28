@@ -1,50 +1,63 @@
 # PjErOS (PrOS): Bare-Metal Multi-Architecture Operating System
 
-PrOS is a minimalist, architecture-agnostic bare-metal kernel implemented in C and Assembly. It is designed as an educational (for me), lightweight system targeting **32-bit ARM** and **32-bit RISC-V** processor architectures running in QEMU virtual machine environments.
+PrOS is a minimalist, architecture-agnostic bare-metal kernel implemented in C and Assembly. It is designed as an educational, lightweight system targeting **32-bit ARM** (Cortex-A15) and **32-bit RISC-V** (RV32) processor architectures running in QEMU virtual machine environments.
+
+---
+
+## 🛠️ Features
+
+- **Multi-Architecture Bootstrapping**: Unified C entry point (`kmain`) supporting ARM32 (`qemu-system-arm`) and RISC-V32 (`qemu-system-riscv32`).
+- **Flattened Device Tree (FDT) Parsing**: Early boot parsing of the DTB binary passed by QEMU to dynamically discover RAM base address and size.
+- **Freestanding C String & Format Library**: Custom implementations of `strlen`, `strcmp`, `strncmp`, `memset`, `memcpy`, `vsnprintf`, and `snprintf`.
+- **Early Kernel Console & Diagnostics**: Formatted kernel output (`kprintf`) over UART and panic handling (`kpanic`).
 
 ---
 
 ## 🛠️ Prerequisites
 
-To compile and run the project, ensure you have the following installed on your system:
+Ensure you have the following installed on your system:
 
-1. **Zig** (used for `zig cc` cross-compiler):
+1. **Zig** (used as cross-compiler wrapper via `scripts/zig-cc`):
    - [Install Zig](https://ziglang.org/download/)
-2. **QEMU System Emulators**:
+2. **CMake** (v3.20 or newer)
+3. **QEMU System Emulators**:
    - `qemu-system-arm` (for ARM 32-bit execution)
    - `qemu-system-riscv32` (for RISC-V 32-bit execution)
-3. **GNU Make**
 
 ---
 
-## 🚀 Building & Running
+## 🚀 Building & Running with CMake
 
-Build and run commands are parameterised by the `ARCH` variable (`arm` or `riscv`).
+Build targets are parameterized by the `ARCH` variable (`riscv` or `arm`).
 
-### Running ARM (32-bit)
-
-To compile the kernel and run it inside `qemu-system-arm`:
+### RISC-V (32-bit)
 
 ```bash
-make ARCH=arm run
+# Configure build
+cmake -B cmake-build-riscv -DARCH=riscv
+
+# Compile kernel
+cmake --build cmake-build-riscv
+
+# Run inside QEMU
+cmake --build cmake-build-riscv --target run
 ```
 
-### Running RISC-V (32-bit)
-
-To compile the kernel and run it inside `qemu-system-riscv32`:
+### ARM (32-bit)
 
 ```bash
-make ARCH=riscv run
+# Configure build
+cmake -B cmake-build-arm -DARCH=arm
+
+# Compile kernel
+cmake --build cmake-build-arm
+
+# Run inside QEMU
+cmake --build cmake-build-arm --target run
 ```
 
-### Clean Build Targets
-
-To clean compiled kernel binaries:
+### Cleaning Build Output
 
 ```bash
-make ARCH=arm clean
-# or
-make ARCH=riscv clean
-# or just
-make clean
+rm -rf cmake-build-riscv cmake-build-arm
 ```
