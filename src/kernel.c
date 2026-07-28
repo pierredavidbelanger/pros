@@ -41,15 +41,15 @@ int kmain(const uint32_t hart_id, const void *fdt_ptr) {
     uintptr_t heap_start = (uintptr_t) _kernel_end;
     uintptr_t heap_end = ram_base + ram_size;
     kprintf("Init heap memory pages free list between %p and %p\n", heap_start, heap_end);
-    size_t pages = kmem_init(heap_start, heap_end);
+    size_t pages = kmem_page_init(heap_start, heap_end);
     kprintf("%u pages of heap memory init between %p and %p\n", pages, heap_start, heap_end);
 
-    void *p1 = kmem_alloc();
-    void *p2 = kmem_alloc();
+    void *p1 = kmem_page_alloc();
+    void *p2 = kmem_page_alloc();
     kprintf("p1=%p\n", p1);
     kprintf("p2=%p\n", p2);
-    kmem_free(p1);
-    kmem_free(p2);
+    kmem_page_free(p1);
+    kmem_page_free(p2);
 
     kprintf("Wait for interrupt\n");
     while (1) {

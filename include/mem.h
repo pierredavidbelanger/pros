@@ -4,14 +4,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-struct kmem_page {
-    struct kmem_page *next;
-};
+size_t kmem_page_init(uintptr_t heap_start, uintptr_t heap_end);
 
-size_t kmem_init(uintptr_t heap_start, uintptr_t heap_end);
+void *kmem_page_alloc(void);
 
-void *kmem_alloc(void);
-
-void kmem_free(void *ptr);
+void kmem_page_free(void *ptr);
 
 #endif //PROS_MEM_H
