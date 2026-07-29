@@ -23,6 +23,7 @@ SECTIONS
     }
 
     . = ALIGN(8);
+    _stack_bottom = .;
     . += 0x1000;
     _stack_top = .;
 

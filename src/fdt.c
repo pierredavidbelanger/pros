@@ -1,4 +1,5 @@
 #include "fdt.h"
+
 #include "string.h"
 
 static inline uint32_t fdt32(uint32_t val) {

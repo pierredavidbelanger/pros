@@ -1,3 +1,5 @@
+#include "kernel.h"
+
 #include "arch.h"
 #include "fdt.h"
 #include "mem.h"
@@ -50,6 +52,17 @@ int kmain(const uint32_t hart_id, const void *fdt_ptr) {
     kprintf("p2=%p\n", p2);
     kmem_page_free(p1);
     kmem_page_free(p2);
+
+#if defined(__riscv)
+    kprintf("Testing RISC-V trap handler...\n");
+    asm volatile("ecall");
+    kprintf("Returned from ecall successfully!\n");
+#endif
+#if defined(__arm__)
+    kprintf("Testing ARM trap handler...\n");
+    asm volatile("svc #0");
+    kprintf("Returned from ARM SVC successfully!\n");
+#endif
 
     kprintf("Wait for interrupt\n");
     while (1) {
