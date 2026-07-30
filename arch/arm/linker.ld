@@ -4,6 +4,7 @@ SECTIONS
 {
     /* QEMU ARM Virt board RAM starts at 0x40000000 */
     . = 0x40000000;
+    _kernel_rx_start = .;
 
     .text : {
         *(.text._start)
@@ -14,6 +15,11 @@ SECTIONS
         *(.rodata .rodata.*)
     }
 
+    _kernel_rx_end = .;
+
+    . = ALIGN(4096);
+    _kernel_rw_start = .;
+
     .data : {
         *(.data .data.*)
     }
@@ -22,11 +28,13 @@ SECTIONS
         *(.bss .bss.*)
     }
 
-    . = ALIGN(8);
+    _kernel_rw_end = .;
+
+    . = ALIGN(4096);
     _stack_bottom = .;
     . += 0x1000;
     _stack_top = .;
 
     . = ALIGN(4096);
-    _kernel_end = .;
+    _heap_start = .;
 }

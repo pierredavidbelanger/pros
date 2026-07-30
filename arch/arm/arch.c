@@ -9,6 +9,10 @@
 #define UART_DR    ((volatile unsigned int*)(PL011_BASE + 0x00))
 #define UART_FR    ((volatile unsigned int*)(PL011_BASE + 0x18))
 
+uintptr_t uart_addr() {
+    return PL011_BASE;
+}
+
 void uart_putchar(const char c) {
     /* Wait until Transmit FIFO is not full (bit 5 in Flag Register) */
     while (*UART_FR & (1 << 5)) {
@@ -45,4 +49,14 @@ void trap_handler(struct trap_frame *frame) {
     kprintf("old r0 contains 0x%x\n", frame->r[0]);
     kprintf("trap_handler is at 0x%x\n", frame);
     kprintf("Returned to address (LR): 0x%x\n", frame->lr);
+}
+
+uintptr_t *vmm_create_root_table(void) {
+    return 0;
+}
+
+void vmm_map_page(uintptr_t *root_pt, uintptr_t vaddr, uintptr_t paddr, uint8_t r, uint8_t w, uint8_t x) {
+}
+
+void vmm_enable(uintptr_t *root_pt) {
 }

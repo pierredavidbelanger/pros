@@ -4,34 +4,32 @@
 
 #include <stdint.h>
 
-#define PAGE_SIZE 4096
-
-struct kmem_page {
-    struct kmem_page *next;
+struct kpage {
+    struct kpage *next;
 };
 
-static struct kmem_page *kmem_list;
+static struct kpage *kpages;
 
-size_t kmem_page_init(uintptr_t heap_start, uintptr_t heap_end) {
-    kmem_list = 0;
+size_t kpinit(uintptr_t heap_start, uintptr_t heap_end) {
+    kpages = 0;
     size_t pages = 0;
     // iterate each page and free it (doing so will initialise the free list kmem_list)
-    for (uintptr_t page = heap_start; page + PAGE_SIZE <= heap_end; page += PAGE_SIZE) {
-        kmem_page_free((void *) page);
+    for (uintptr_t page = heap_start; page + KPAGE_SIZE <= heap_end; page += KPAGE_SIZE) {
+        kpfree((void *) page);
         pages++;
     }
     return pages;
 }
 
-void *kmem_page_alloc(void) {
-    void *ptr = kmem_list;
-    kmem_list = kmem_list->next;
-    memset(ptr, 0, PAGE_SIZE);
+void *kpmalloc(void) {
+    void *ptr = kpages;
+    kpages = kpages->next;
+    memset(ptr, 0, KPAGE_SIZE);
     return ptr;
 }
 
-void kmem_page_free(void *ptr) {
-    struct kmem_page *page = ptr;
-    page->next = kmem_list;
-    kmem_list = page;
+void kpfree(void *ptr) {
+    struct kpage *page = ptr;
+    page->next = kpages;
+    kpages = page;
 }

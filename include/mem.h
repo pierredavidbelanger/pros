@@ -4,10 +4,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
-size_t kmem_page_init(uintptr_t heap_start, uintptr_t heap_end);
+#define KPAGE_SIZE 4096
 
-void *kmem_page_alloc(void);
+size_t kpinit(uintptr_t heap_start, uintptr_t heap_end);
 
-void kmem_page_free(void *ptr);
+void *kpmalloc(void);
+
+void kpfree(void *ptr);
 
 #endif //PROS_MEM_H

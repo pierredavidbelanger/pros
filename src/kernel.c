@@ -7,7 +7,13 @@
 
 #include <stdarg.h>
 
-extern char _kernel_end[];
+extern char _kernel_rx_start[];
+extern char _kernel_rx_end[];
+extern char _kernel_rw_start[];
+extern char _kernel_rw_end[];
+extern char _stack_bottom[];
+extern char _stack_top[];
+extern char _heap_start[];
 
 int kprintf(const char *fmt, ...) {
     char buf[256];
@@ -40,18 +46,36 @@ int kmain(const uint32_t hart_id, const void *fdt_ptr) {
         kpanic("Error parsing Flattened Device Tree");
     }
 
-    uintptr_t heap_start = (uintptr_t) _kernel_end;
+    uintptr_t heap_start = (uintptr_t) _heap_start;
     uintptr_t heap_end = ram_base + ram_size;
     kprintf("Init heap memory pages free list between %p and %p\n", heap_start, heap_end);
-    size_t pages = kmem_page_init(heap_start, heap_end);
+    size_t pages = kpinit(heap_start, heap_end);
     kprintf("%u pages of heap memory init between %p and %p\n", pages, heap_start, heap_end);
 
-    void *p1 = kmem_page_alloc();
-    void *p2 = kmem_page_alloc();
-    kprintf("p1=%p\n", p1);
-    kprintf("p2=%p\n", p2);
-    kmem_page_free(p1);
-    kmem_page_free(p2);
+    kprintf("Setup VMM root table\n");
+    uintptr_t *kpt = vmm_create_root_table();
+    kprintf("Setup VMM root table at %p\n", kpt);
+    kprintf("Map kernel VMM page for %p to %p (text + rodata) as RX\n", _kernel_rx_start, _kernel_rx_end);
+    for (uintptr_t paddr = (uintptr_t) _kernel_rx_start; paddr < (uintptr_t) _kernel_rx_end; paddr += KPAGE_SIZE) {
+        vmm_map_page(kpt, paddr, paddr, 1, 0, 1);
+    }
+    kprintf("Map kernel VMM page for %p to %p (data + bss) as RW\n", _kernel_rw_start, _kernel_rw_end);
+    for (uintptr_t paddr = (uintptr_t) _kernel_rw_start; paddr < (uintptr_t) _kernel_rw_end; paddr += KPAGE_SIZE) {
+        vmm_map_page(kpt, paddr, paddr, 1, 1, 0);
+    }
+    kprintf("Map kernel VMM page for %p to %p (stack) as RW\n", _stack_bottom, _stack_top);
+    for (uintptr_t paddr = (uintptr_t) _stack_bottom; paddr < (uintptr_t) _stack_top; paddr += KPAGE_SIZE) {
+        vmm_map_page(kpt, paddr, paddr, 1, 1, 0);
+    }
+    kprintf("Map kernel VMM page for %p to %p (heap) as RW\n", heap_start, heap_end);
+    for (uintptr_t paddr = heap_start; paddr < heap_end; paddr += KPAGE_SIZE) {
+        vmm_map_page(kpt, paddr, paddr, 1, 1, 0);
+    }
+    uintptr_t uart_paddr = uart_addr();
+    kprintf("Map kernel VMM page for %p (UART) as RW\n", uart_paddr);
+    vmm_map_page(kpt, uart_paddr, uart_paddr, 1, 1, 0);
+    kprintf("Enable VMM\n");
+    vmm_enable(kpt);
 
 #if defined(__riscv)
     kprintf("Testing RISC-V trap handler...\n");
