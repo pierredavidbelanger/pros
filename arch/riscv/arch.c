@@ -109,6 +109,16 @@ void vmm_map_page(uintptr_t *root_pt, uintptr_t vaddr, uintptr_t paddr, uint8_t 
     l0_table[vpn0] = MAKE_PTE(paddr, flags);
 }
 
+void smain(void) {
+    kprintf("Hello from RISC-V S-mode (Supervisor Mode)!\n");
+    // Test ecall in S-mode
+    asm volatile("ecall");
+    kprintf("Returned from S-mode ecall!\n");
+    while (1) {
+        arch_idle();
+    }
+}
+
 void vmm_enable(uintptr_t *root_pt) {
     // wow, ok, since the root_pt is 4kb aligned, the lower 12 bit are always 0,
     // satp expect we truncate those, then when needed it add the 0s and recreate the right address
@@ -121,5 +131,30 @@ void vmm_enable(uintptr_t *root_pt) {
         :
         : "r"(satp_val)
         : "memory"
+    );
+
+    // Allow S-mode / U-mode to access all physical addresses (0x00000000 to 0xFFFFFFFF)
+    asm volatile("csrw pmpaddr0, %0" : : "r"(0xFFFFFFFFu));
+    asm volatile("csrw pmpcfg0, %0" : : "r"(0x0F)); // 0x0F = TOR (Top of Range) | R | W | X
+
+    // Delegate all exceptions and interrupts to Supervisor Mode
+    asm volatile("csrw medeleg, %0" : : "r"(0xFFFF));
+    asm volatile("csrw mideleg, %0" : : "r"(0xFFFF));
+
+    uint32_t mstatus;
+    asm volatile("csrr %0, mstatus" : "=r"(mstatus));
+    mstatus &= ~(3u << 11); // Clear MPP
+    mstatus |= (1u << 11);  // Set MPP = 1 (Supervisor Mode)
+    asm volatile("csrw mstatus, %0" : : "r"(mstatus));
+
+    // Drop to S-mode and continue right here!
+    asm volatile(
+        "la t0, vmm_enable_end\n\t"
+        "csrw mepc, t0\n\t" // mepc = address of 'vmm_enable_end'
+        "mret\n\t" // Drop to S-mode & jump just here below
+        "vmm_enable_end:\n\t" // Execution resumes HERE in S-mode!
+        :
+        :
+        : "t0", "memory"
     );
 }
