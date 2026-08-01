@@ -1,9 +1,8 @@
-#include "kernel.h"
-
-#include "arch.h"
-#include "fdt.h"
-#include "mem.h"
-#include "string.h"
+#include <kernel/kernel.h>
+#include <asm/arch.h>
+#include <drivers/of/fdt.h>
+#include <mm/mem.h>
+#include <lib/string.h>
 
 #include <stdarg.h>
 
@@ -14,20 +13,6 @@ extern char _kernel_rw_end[];
 extern char _stack_bottom[];
 extern char _stack_top[];
 extern char _heap_start[];
-
-int kprintf(const char *fmt, ...) {
-    char buf[256];
-    va_list args;
-    va_start(args, fmt);
-    int len = vsnprintf(buf, sizeof(buf), fmt, args);
-    va_end(args);
-    uart_puts(buf);
-    return len;
-}
-
-void kpanic(const char *msg) {
-    kprintf("PANIC: %s\nkernel execution aborted\n", msg);
-}
 
 /*
  * Architecture-agnostic main kernel entry point.
@@ -40,6 +25,8 @@ int kmain(const uint32_t hart_id, const void *fdt_ptr) {
     uintptr_t ram_base = 0;
     size_t ram_size = 0;
     kprintf("Parse the Flattened Device Tree at %p to get memory infos\n", fdt_ptr);
+    fdt_dump(fdt_ptr);
+    kpanic("Stop here");
     if (fdt_get_memory(fdt_ptr, &ram_base, &ram_size) == 0) {
         kprintf("Found %uMB based at %p\n", ram_size / 1024 / 1024, ram_base);
     } else {

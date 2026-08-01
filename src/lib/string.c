@@ -1,4 +1,4 @@
-#include "string.h"
+#include <lib/string.h>
 
 #include <stdint.h>
 
@@ -43,6 +43,30 @@ void *memcpy(void *dest, const void *src, size_t n) {
         *d++ = *s++;
     }
     return dest;
+}
+
+int memcmp(const void *s1, const void *s2, size_t n) {
+    const unsigned char *p1 = s1;
+    const unsigned char *p2 = s2;
+    while (n--) {
+        if (*p1 != *p2) {
+            return *p1 - *p2;
+        }
+        p1++;
+        p2++;
+    }
+    return 0;
+}
+
+void *memchr(const void *s, int c, size_t n) {
+    const unsigned char *p = s;
+    while (n--) {
+        if (*p == (unsigned char)c) {
+            return (void *)p;
+        }
+        p++;
+    }
+    return NULL;
 }
 
 static size_t utoa(uint64_t val, char *buf, size_t buf_size, int base, int uppercase) {
@@ -90,6 +114,7 @@ int vsnprintf(char *buf, size_t size, const char *fmt, va_list args) {
                 break;
             }
             case 's': {
+                // something is not right in there, i got buffer overflow when size > 256
                 const char *s = va_arg(args, const char *);
                 if (!s) s = "(null)";
                 while (*s) {

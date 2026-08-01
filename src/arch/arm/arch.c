@@ -1,6 +1,5 @@
-#include "arch.h"
-
-#include "kernel.h"
+#include <asm/arch.h>
+#include <kernel/kernel.h>
 
 #include <stdint.h>
 
