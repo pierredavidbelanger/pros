@@ -68,11 +68,11 @@ Build targets are parameterized by the `ARCH` variable (`riscv` [default] or `ar
 The root Makefile provides containerized build commands:
 
 ```bash
+# (default) Launch an interactive shell inside the container with src/ mounted
+make bash
+
 # Build the container image (pros-build)
 make build
-
-# Launch an interactive shell inside the container with src/ mounted
-make bash
 ```
 
 Inside the container shell, the working directory is automatically set to `/usr/local/src/pros` (where `src/` is mounted), so you can directly follow the Native Build Workflow bellow.
@@ -88,11 +88,11 @@ All kernel compilation and execution commands run from the `src/` directory.
 ```bash
 cd src
 
+# (default) Compile and run inside QEMU (qemu-system-riscv32)
+make run
+
 # Compile kernel (output: build/riscv/kernel.elf)
 make build
-
-# Compile and run inside QEMU (qemu-system-riscv32)
-make run
 
 # Clean build artifacts
 make clean
