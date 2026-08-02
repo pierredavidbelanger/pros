@@ -1,17 +1,20 @@
-# PjErOS (PrOS): Bare-Metal Multi-Architecture Operating System
+# PjErOS (PrOS): Bare-Metal AArch64 Operating System
 
-PrOS is a minimalist, architecture-agnostic, hobby bare-metal kernel implemented in C and Assembly. It is designed as an educational, lightweight system targeting **32-bit ARM** (Cortex-A15) and **32-bit RISC-V** (RV32) processor architectures running in QEMU virtual machine environments.
+PrOS is a minimalist, freestanding operating system kernel implemented in C for **AArch64 (ARM 64-bit)**. It boots via **UEFI** using the **Limine Boot Protocol** and renders directly to a Limine-provided graphical framebuffer.
 
 ---
 
 ## 🛠️ Features
 
-- **Multi-Architecture Bootstrapping**: Unified C entry point (`kmain`) supporting ARM32 (`qemu-system-arm`) and RISC-V32 (`qemu-system-riscv32`).
-- **Linux-Style Kernel Directory Layout**: Code structured into modular kernel subsystems (`arch`, `drivers`, `include`, `init`, `kernel`, `lib`, `mm`).
-- **Flattened Device Tree (FDT) Parsing**: Early boot parsing of the DTB binary passed by QEMU using `smoldtb` to dynamically discover RAM base address and size.
-- **Virtual & Physical Memory Management**: RISC-V 32-bit (Sv32) virtual memory page table setup and physical memory page allocation.
-- **Freestanding C Utility Library**: Custom implementations of `strlen`, `strcmp`, `strncmp`, `memset`, `memcpy`, `memcmp`, `memchr`, `vsnprintf`, and `snprintf`.
-- **Early Kernel Console & Diagnostics**: Formatted kernel output (`kprintf`) over UART and kernel panic handling (`kpanic`).
+- **Limine Boot Protocol (v6)**: Requests and processes boot information (Framebuffer, DTB, Stack size) directly from Limine.
+- **UEFI Booting & AArch64 Architecture**: Boots with EDK2 OVMF firmware on QEMU `virt` machine.
+- **Zig Cross-Compilation Toolchain**: Built using `zig cc` (`-target aarch64-freestanding-none`), requiring no cross-GCC toolchain installation.
+- **Graphical Framebuffer & Text Rendering**:
+  - Direct 32-bit ARGB/RGB pixel manipulation.
+  - Embedded 8x16 VGA bitmap font engine (`fb_draw_string`, `fb_draw_char`).
+- **Freestanding C Library & Compiler Runtime**:
+  - Modular integration of `freestanding-c-hdrs`, `cc-runtime`, and `limine-protocol`.
+  - Custom freestanding `memcpy`, `memset`, `memmove`, and `memcmp`.
 
 ---
 
@@ -19,98 +22,62 @@ PrOS is a minimalist, architecture-agnostic, hobby bare-metal kernel implemented
 
 ```
 .
-├── Containerfile          # Container specification (Ubuntu-based cross-compilation environment)
-├── Makefile               # Root Makefile for Podman container build workflows
+├── Makefile               # Root build script (ISO creation, OVMF/Limine binaries, QEMU launcher)
+├── limine.conf            # Limine bootloader configuration
 ├── README.md              # Project documentation
-├── AGENT.md               # AI mentor guidelines
-└── src/                   # Kernel source root
-    ├── Makefile           # Main kernel build script
-    ├── arch/              # Architecture-specific setup, bootloader & linker scripts
-    │   ├── arm/           # ARM32 (Cortex-A15) config, arch.c, boot.S, linker.ld
-    │   └── riscv/         # RISC-V32 (Sv32) config, arch.c, boot.S, linker.ld
-    ├── drivers/           # Driver implementations
-    │   └── of/            # Open Firmware / Device Tree parsing (of.c)
-    ├── include/           # Modular C headers (asm/, drivers/, kernel/, lib/, mm/, uapi/)
-    ├── init/              # Kernel entry point (init/main.c -> kmain)
-    ├── kernel/            # Kernel core functions (printk.c)
-    ├── lib/               # Utility libraries (smoldtb.c, string.c)
-    └── mm/                # Memory management (mem.c)
+├── AGENT.md               # Development & mentorship guidelines
+└── kernel/                # Kernel source root
+    ├── Makefile           # Kernel compilation script (auto-fetches freestanding libs)
+    ├── arch/              # Architecture configurations & linker scripts
+    │   └── aarch64/       # AArch64 config.mk and linker.lds
+    ├── include/           # Kernel headers (font.h, memory.h)
+    └── src/               # Core kernel source
+        ├── main.c         # Entry point (kmain), Limine requests, framebuffer output
+        └── memory.c       # Core C memory utilities (memcpy, memset, etc.)
 ```
 
 ---
 
 ## 🛠️ Prerequisites
 
-You can build and run PrOS either using **Podman** (recommended for zero toolchain setup) or directly on your **Host System**.
+To build and run PrOS, ensure you have the following installed on your host:
 
-### Option A: Podman Container Environment
 1. **GNU Make** (`make`)
-2. **Podman** ([Install Podman](https://podman.io/))
-
-### Option B: Native Host Environment
-Ensure you have the following installed:
-1. **GNU Make** (`make`)
-2. **GCC Cross Compilers**:
-   - `arm-none-eabi-gcc` (for ARM 32-bit)
-   - `riscv64-unknown-elf-gcc` (for RISC-V 32-bit)
-3. **QEMU System Emulators**:
-   - `qemu-system-arm`
-   - `qemu-system-riscv32`
+2. **Zig Compiler** ([`zig`](https://ziglang.org/)) – Used as the cross-compiler toolchain via `zig cc`.
+3. **QEMU System Emulator**:
+   - `qemu-system-aarch64`
+4. **Download Utilities**: `curl`, `tar`, `gunzip` (used by Makefile to automatically fetch Limine and OVMF firmware).
 
 ---
 
 ## 🚀 Building & Running
 
-Build targets are parameterized by the `ARCH` variable (`riscv` [default] or `arm`).
+### 1. Build and Run in QEMU (Recommended)
 
-### 1. Using Podman Container (Root Directory)
-
-The root Makefile provides containerized build commands:
+From the root directory, simply run:
 
 ```bash
-# (default) Launch an interactive shell inside the container with src/ mounted
-make bash
-
-# Build the container image (pros-build)
-make build
+make qemu-aarch64
 ```
 
-Inside the container shell, the working directory is automatically set to `/usr/local/src/pros` (where `kernel/` is mounted), so you can directly follow the Native Build Workflow bellow.
+This single command will:
+1. Download EDK2 OVMF AArch64 UEFI binaries and the Limine bootloader into `bin/` (if missing).
+2. Download freestanding headers/runtime into `kernel/libs/` (if missing).
+3. Compile the kernel (`kernel/bin/kernel-aarch64`).
+4. Generate the bootable FAT ISO structure (`iso/`).
+5. Launch `qemu-system-aarch64` with RAMFB graphics, USB keyboard/tablet devices, and UEFI firmware.
 
----
+### 2. Manual Kernel Build Steps
 
-### 2. Native Build Workflow (inside `kernel/` directory)
-
-All kernel compilation and execution commands run from the `kernel/` directory.
-
-#### RISC-V (32-bit, Default)
-
-```bash
-cd src
-
-# (default) Compile and run inside QEMU (qemu-system-riscv32)
-make run
-
-# Compile kernel (output: build/riscv/kernel.elf)
-make build
-
-# Clean build artifacts
-make clean
-```
-
-#### ARM (32-bit)
+If you only want to compile the kernel binary without launching QEMU:
 
 ```bash
-cd src
+# Build the kernel binary (output: kernel/bin/kernel-aarch64)
+make kernel
 
-# Compile kernel for ARM (output: build/arm/kernel.elf)
-make ARCH=arm build
-
-# Compile and run ARM kernel inside QEMU (qemu-system-arm)
-make ARCH=arm run
-
-# Clean ARM build artifacts
-make ARCH=arm clean
+# Or build from inside the kernel directory
+cd kernel
+make
 ```
 
 ---
@@ -118,21 +85,17 @@ make ARCH=arm clean
 ## 🧹 Cleaning Build Artifacts
 
 ```bash
-cd src
-
-# Clean current ARCH build output
+# Clean ISO directory and kernel build outputs
 make clean
 
-# Clean specific architecture build output
-make ARCH=riscv clean
-make ARCH=arm clean
+# Clean everything including downloaded third-party binaries and cloned libs
+make distclean
 ```
 
 ---
 
 ## 💡 Exiting QEMU
 
-Since QEMU is executed in non-graphical terminal mode (`-nographic`), use the standard QEMU key combinations to exit:
-
-- **Direct Exit**: Press `Ctrl+A` then `X` (press `Ctrl+a` together, release, then press `x`).
-- **Via QEMU Monitor Console**: Press `Ctrl+A` then `C` to enter the QEMU monitor prompt (`(qemu)`), then type `q` (or `quit`) and press `Enter`.
+When running QEMU in the terminal, exit using standard QEMU shortcuts:
+- **Direct Exit**: Press `Ctrl+A` then `X`.
+- **Monitor Console**: Press `Ctrl+A` then `C`, then type `q` and press `Enter`.
