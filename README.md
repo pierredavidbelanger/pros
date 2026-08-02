@@ -75,13 +75,13 @@ make bash
 make build
 ```
 
-Inside the container shell, the working directory is automatically set to `/usr/local/src/pros` (where `src/` is mounted), so you can directly follow the Native Build Workflow bellow.
+Inside the container shell, the working directory is automatically set to `/usr/local/src/pros` (where `kernel/` is mounted), so you can directly follow the Native Build Workflow bellow.
 
 ---
 
-### 2. Native Build Workflow (inside `src/` directory)
+### 2. Native Build Workflow (inside `kernel/` directory)
 
-All kernel compilation and execution commands run from the `src/` directory.
+All kernel compilation and execution commands run from the `kernel/` directory.
 
 #### RISC-V (32-bit, Default)
 

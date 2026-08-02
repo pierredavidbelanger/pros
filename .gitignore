@@ -1,2 +1,5 @@
 /.idea/
-/src/build/
+/bin/
+/iso/
+/kernel/bin/
+/kernel/libs/
