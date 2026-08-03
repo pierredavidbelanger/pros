@@ -9,11 +9,15 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
 - **Limine Boot Protocol (v6)**: Requests and processes boot information (Framebuffer, DTB, Stack size) directly from Limine.
 - **UEFI Booting & AArch64 Architecture**: Boots with EDK2 OVMF firmware on QEMU `virt` machine.
 - **Zig Cross-Compilation Toolchain**: Built using `zig cc` (`-target aarch64-freestanding-none`), requiring no cross-GCC toolchain installation.
+- **AArch64 FPU & SIMD Hardware Setup**: Early boot activation of Coprocessor Access Control Register (`CPACR_EL1`) enabling FPU/NEON hardware instructions.
 - **Graphical Framebuffer & Text Rendering**:
-  - Direct 32-bit ARGB/RGB pixel manipulation.
+  - Direct 32-bit ARGB/RGB pixel manipulation and screen clearing (`fb_clear`).
   - Embedded 8x16 VGA bitmap font engine (`fb_draw_string`, `fb_draw_char`).
+- **Formatted Kernel Logger (`kprintf`)**:
+  - Integrated zero-dependency `mpaland/printf` formatting library.
+  - Supports `%s`, `%d`, `%x`, `%p`, `%u`, and custom format specifiers.
 - **Freestanding C Library & Compiler Runtime**:
-  - Modular integration of `freestanding-c-hdrs`, `cc-runtime`, and `limine-protocol`.
+  - Modular integration of `freestanding-c-hdrs`, `cc-runtime`, `limine-protocol`, and `mpaland/printf`.
   - Custom freestanding `memcpy`, `memset`, `memmove`, and `memcmp`.
 
 ---
@@ -27,12 +31,14 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
 ├── README.md              # Project documentation
 ├── AGENT.md               # Development & mentorship guidelines
 └── kernel/                # Kernel source root
-    ├── Makefile           # Kernel compilation script (auto-fetches freestanding libs)
+    ├── Makefile           # Kernel compilation script (auto-fetches freestanding libs & printf)
     ├── arch/              # Architecture configurations & linker scripts
     │   └── aarch64/       # AArch64 config.mk and linker.lds
-    ├── include/           # Kernel headers (font.h, memory.h)
+    ├── include/           # Modular C headers (fb.h, kprintf.h, memory.h)
     └── src/               # Core kernel source
-        ├── main.c         # Entry point (kmain), Limine requests, framebuffer output
+        ├── main.c         # Entry point (kmain), FPU enablement, Limine requests
+        ├── fb.c           # Framebuffer driver, screen clear, font renderer
+        ├── kprintf.c      # Formatted kprintf implementation (wraps mpaland/printf)
         └── memory.c       # Core C memory utilities (memcpy, memset, etc.)
 ```
 
@@ -62,7 +68,7 @@ make qemu-aarch64
 
 This single command will:
 1. Download EDK2 OVMF AArch64 UEFI binaries and the Limine bootloader into `bin/` (if missing).
-2. Download freestanding headers/runtime into `kernel/libs/` (if missing).
+2. Download freestanding headers, runtime, and `mpaland/printf` into `kernel/libs/` (if missing).
 3. Compile the kernel (`kernel/bin/kernel-aarch64`).
 4. Generate the bootable FAT ISO structure (`iso/`).
 5. Launch `qemu-system-aarch64` with RAMFB graphics, USB keyboard/tablet devices, and UEFI firmware.
