@@ -1,8 +1,12 @@
+#include "arch.h"
+#include "fb.h"
+#include "kprintf.h"
+
+#include <limine.h>
+
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
-#include <limine.h>
-#include <font.h>
 
 // Set the base revision to 6, this is recommended as this is the latest
 // base revision described by the Limine boot protocol specification.
@@ -31,7 +35,8 @@ static volatile struct limine_dtb_request dtb_request = {
 __attribute__((used, section(".limine_requests")))
 static volatile struct limine_stack_size_request stack_size_request = {
     .id = LIMINE_STACK_SIZE_REQUEST_ID,
-    .revision = 0
+    .revision = 0,
+    .stack_size = 64 * 1024  // 64 KiB stack
 };
 
 // Finally, define the start and end markers for the Limine requests.
@@ -43,53 +48,17 @@ static volatile uint64_t limine_requests_start_marker[] = LIMINE_REQUESTS_START_
 __attribute__((used, section(".limine_requests_end")))
 static volatile uint64_t limine_requests_end_marker[] = LIMINE_REQUESTS_END_MARKER;
 
-// Halt and catch fire function.
-static void hcf(void) {
-    for (;;) {
-#if defined (__x86_64__)
-        asm ("hlt");
-#elif defined (__aarch64__) || defined (__riscv)
-        asm ("wfi");
-#elif defined (__loongarch64)
-        asm ("idle 0");
-#endif
-    }
-}
-
-// The following will be our kernel's entry point.
-// If renaming kmain() to something else, make sure to change the
-// linker script accordingly.
 void kmain(void) {
 
-    // Ensure the bootloader actually understands our base revision (see spec).
+    arch_init();
+
     if (LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision) == false) {
-        hcf();
+        khcf();
     }
 
-    // Ensure we got a framebuffer.
-    if (framebuffer_request.response == NULL
-     || framebuffer_request.response->framebuffer_count < 1) {
-        hcf();
-    }
+    fb_init(framebuffer_request.response);
 
-    // Fetch the first framebuffer.
-    struct limine_framebuffer *framebuffer = framebuffer_request.response->framebuffers[0];
+    kprintf("Welcome to PjErOS!");
 
-    // Print a nice pattern to screen as an example.
-    // Note: we assume the framebuffer model is RGB with 32-bit pixels.
-    volatile uint32_t *fb_ptr = framebuffer->address;
-    for (size_t y = 0; y < framebuffer->height; y++) {
-        for (size_t x = 0; x < framebuffer->width; x++) {
-            uint32_t nX = x * 255 / framebuffer->width;
-            uint32_t nY = y * 255 / framebuffer->height;
-            fb_ptr[y * (framebuffer->pitch / 4) + x] = (nY << 8) | nX;
-        }
-    }
-
-    // Draw text to the framebuffer
-    fb_draw_string(framebuffer, 30, 30, "Hello, World!", 0x00FFFFFF, 0x00000000);
-    fb_draw_string(framebuffer, 30, 50, "Welcome to PjErOS!", 0x0000FF00, 0x00000000);
-
-    // We're done, just hang...
-    hcf();
+    khcf();
 }

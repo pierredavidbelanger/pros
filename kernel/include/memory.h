@@ -1,5 +1,5 @@
-#ifndef MEMORY_H
-#define MEMORY_H
+#ifndef PROS_MEMORY_H
+#define PROS_MEMORY_H
 
 #include <stdint.h>
 #include <stddef.h>
@@ -9,4 +9,4 @@ void *memset(void *s, int c, size_t n);
 void *memmove(void *dest, const void *src, size_t n);
 int memcmp(const void *s1, const void *s2, size_t n);
 
-#endif
+#endif //PROS_MEMORY_H
