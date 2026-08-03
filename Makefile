@@ -1,6 +1,6 @@
 
-.PHONY: all
-all: root
+.PHONY: default
+default: root
 
 .PHONY: clean
 clean:
