@@ -1,6 +1,7 @@
 #include "fb.h"
 
 #include "kprintf.h"
+#include "memory.h"
 
 #define FONT_WIDTH  8
 #define FONT_HEIGHT 16
@@ -160,4 +161,40 @@ void fb_draw_string(size_t start_x, size_t start_y, const char *str, uint32_t fg
         }
         str++;
     }
+}
+
+static size_t cursor_x = 0;
+static size_t cursor_y = 0;
+
+static void terminal_scroll(void) {
+    size_t line_bytes = FONT_HEIGHT * fb->pitch;
+    size_t bytes_to_copy = (fb->height - FONT_HEIGHT) * fb->pitch;
+    memmove(fb->address, (uint8_t *)fb->address + line_bytes, bytes_to_copy);
+    size_t start_byte_offset = (fb->height - FONT_HEIGHT) * fb->pitch;
+    size_t bottom_strip_bytes = FONT_HEIGHT * fb->pitch;
+    memset((uint8_t *)fb->address + start_byte_offset, 0, bottom_strip_bytes);
+    cursor_y = fb->height - FONT_HEIGHT;
+}
+
+
+static void terminal_print_char(char c) {
+    if (c == '\n') {
+        cursor_x = 0;
+        cursor_y += FONT_HEIGHT;
+    } else {
+        fb_draw_char(fb, cursor_x, cursor_y, c, 0x00FFFFFF, 0x00000000);
+        cursor_x += FONT_WIDTH;
+        if (cursor_x + FONT_WIDTH > fb->width) {
+            cursor_x = 0;
+            cursor_y += FONT_HEIGHT;
+        }
+    }
+    if (cursor_y + FONT_HEIGHT > fb->height) {
+        terminal_scroll();
+    }
+}
+
+// _putchar function that printf want is impl here and simply draw to the framebuffer
+void _putchar(char character) {
+    terminal_print_char(character);
 }
