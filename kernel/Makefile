@@ -23,6 +23,7 @@ bin/kernel-$(ARCH): libs
 		-I include \
 		libs/printf/printf.c \
 		arch/$(ARCH)/arch.c \
+		src/boot.c \
 		src/fb.c \
 		src/kprintf.c \
 		src/main.c \

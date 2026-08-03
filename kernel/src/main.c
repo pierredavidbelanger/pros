@@ -1,5 +1,6 @@
-#include "arch.h"
 #include "boot.h"
+
+#include "arch.h"
 #include "fb.h"
 #include "kprintf.h"
 
