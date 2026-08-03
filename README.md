@@ -2,23 +2,32 @@
 
 PrOS is a minimalist, freestanding operating system kernel implemented in C for **AArch64 (ARM 64-bit)**. It boots via **UEFI** using the **Limine Boot Protocol** and renders directly to a Limine-provided graphical framebuffer.
 
+> [!NOTE]
+> PrOS is a personal hobby project created to explore bare-metal programming, learn low-level system software development, and have fun building an OS from scratch! 
+> AI IS utilized, but strictly as a tutor, mentor, debugger, rubber duck and code reviewer, not to generate slop I don't care about.
+
 ---
 
-## 🛠️ Features
+## 🛠️ Subsystems & Features
 
-- **Limine Boot Protocol (v6)**: Modular request handling (Framebuffer, DTB, ACPI/RSDP, Stack size) directly from Limine.
-- **UEFI Booting & AArch64 Architecture**: Boots with EDK2 OVMF firmware on QEMU `virt` machine.
-- **Zig Cross-Compilation Toolchain**: Built using `zig cc` (`-target aarch64-freestanding-none`), requiring no cross-GCC toolchain installation.
-- **AArch64 FPU & SIMD Hardware Setup**: Early boot activation of Coprocessor Access Control Register (`CPACR_EL1`) enabling FPU/NEON hardware instructions.
+- **Architecture & Boot Protocol**:
+  - Target: **AArch64 (ARM 64-bit)** booting via **UEFI** on QEMU `virt` machine using EDK2 OVMF.
+  - **Limine Protocol (v6)** integration handling Framebuffer, HHDM, Memory Map, DTB, RSDP, Stack Size, and Entry Point requests.
+  - Early boot activation of Coprocessor Access Control Register (`CPACR_EL1`) enabling AArch64 FPU/NEON hardware instructions.
+- **Physical Memory Management (PMM)**:
+  - Page-frame allocator operating on 4 KiB pages (`PAGE_SIZE`).
+  - Parses usable physical memory regions (`LIMINE_MEMMAP_USABLE`) from Limine and builds a linked free-list.
+  - Translates physical to virtual addresses via the Higher-Half Direct Map (`HHDM`) offset.
+  - API: `pmm_init()`, `pmm_alloc()`, `pmm_free()`.
 - **Graphical Framebuffer & Terminal Engine**:
-  - Direct 32-bit ARGB/RGB pixel manipulation and screen clearing (`fb_clear`).
-  - Embedded 8x16 VGA bitmap font renderer with line wrapping and screen scrolling (`terminal_scroll`).
-- **Formatted Kernel Logger (`kprintf`)**:
-  - Integrated zero-dependency `mpaland/printf` formatting library streaming directly to terminal `_putchar`.
-  - Supports `%s`, `%d`, `%x`, `%p`, `%u`, and custom format specifiers.
-- **Freestanding C Library & Compiler Runtime**:
-  - Modular integration of `freestanding-c-hdrs`, `cc-runtime`, `limine-protocol`, and `mpaland/printf`.
-  - Custom freestanding `memcpy`, `memset`, `memmove`, and `memcmp`.
+  - 32-bit ARGB/RGB direct pixel drawing and screen clearing (`fb_clear`).
+  - Built-in 8x16 VGA bitmap font renderer supporting automatic text wrapping and full-screen vertical scrolling (`terminal_scroll`).
+- **Kernel Logging & Panic Handling**:
+  - Integrated `mpaland/printf` streaming formatted text through `_putchar` to the terminal engine.
+  - Supports `kprintf`, `kpanic` error reporting, and architecture-specific `khcf` (Halt and Catch Fire using `wfi` / `hlt`).
+- **Toolchain & Freestanding Runtime**:
+  - Cross-compiles using `zig cc` (`-target aarch64-freestanding-none`).
+  - Bundles freestanding C headers, compiler runtime, and custom `memcpy`, `memset`, `memmove`, and `memcmp` implementations.
 
 ---
 
@@ -26,21 +35,22 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
 
 ```
 .
-├── Makefile               # Root build script (ISO creation, OVMF/Limine binaries, QEMU launcher)
+├── Makefile               # Root build script (FAT root dir setup, OVMF/Limine binaries, QEMU launcher)
 ├── limine.conf            # Limine bootloader configuration
 ├── README.md              # Project documentation
 ├── AGENT.md               # Development & mentorship guidelines
 └── kernel/                # Kernel source root
     ├── Makefile           # Kernel compilation script (auto-fetches freestanding libs & printf)
     ├── arch/              # Architecture configurations & linker scripts
-    │   └── aarch64/       # AArch64 config.mk and linker.lds
-    ├── include/           # Modular C headers (arch.h, boot.h, fb.h, kprintf.h, memory.h)
+    │   └── aarch64/       # AArch64 arch.c, config.mk, and linker.lds
+    ├── include/           # Modular C headers (arch.h, boot.h, fb.h, kprintf.h, memory.h, pmm.h)
     └── src/               # Core kernel source
-        ├── main.c         # Entry point (kmain), initialization calls, kprintf logs
-        ├── boot.c         # Limine boot protocol request structures (Framebuffer, DTB, RSDP, etc.)
+        ├── main.c         # Entry point (_start), initialization calls, kprintf logs
+        ├── boot.c         # Limine boot protocol request structures (Framebuffer, HHDM, Memmap, DTB, RSDP, etc.)
         ├── fb.c           # Framebuffer driver, terminal engine, scrolling, font renderer
-        ├── kprintf.c      # Formatted kprintf implementation (wraps mpaland/printf)
-        └── memory.c       # Core C memory utilities (memcpy, memset, memmove, etc.)
+        ├── kprintf.c      # Formatted kprintf implementation (wraps mpaland/printf) and panic handling
+        ├── memory.c       # Core C memory utilities (memcpy, memset, memmove, memcmp)
+        └── pmm.c          # Physical Memory Manager (page frame allocator)
 ```
 
 ---
@@ -69,10 +79,10 @@ make qemu-aarch64
 
 This single command will:
 1. Download EDK2 OVMF AArch64 UEFI binaries and the Limine bootloader into `bin/` (if missing).
-2. Download freestanding headers, runtime, and `mpaland/printf` into `kernel/libs/` (if missing).
+2. Download freestanding headers, runtime, limine protocol, and `mpaland/printf` into `kernel/libs/` (if missing).
 3. Compile the kernel (`kernel/bin/kernel-aarch64`).
-4. Generate the bootable FAT ISO structure (`iso/`).
-5. Launch `qemu-system-aarch64` with RAMFB graphics, USB keyboard/tablet devices, and UEFI firmware.
+4. Generate the bootable FAT filesystem structure in `root/`.
+5. Launch `qemu-system-aarch64` with RAMFB graphics, virtio drive, and UEFI firmware.
 
 ### 2. Manual Kernel Build Steps
 
@@ -92,7 +102,7 @@ make
 ## 🧹 Cleaning Build Artifacts
 
 ```bash
-# Clean ISO directory and kernel build outputs
+# Clean root directory and kernel build outputs
 make clean
 
 # Clean everything including downloaded third-party binaries and cloned libs
@@ -106,3 +116,4 @@ make distclean
 When running QEMU in the terminal, exit using standard QEMU shortcuts:
 - **Direct Exit**: Press `Ctrl+A` then `X`.
 - **Monitor Console**: Press `Ctrl+A` then `C`, then type `q` and press `Enter`.
+

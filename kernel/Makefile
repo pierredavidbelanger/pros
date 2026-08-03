@@ -28,6 +28,7 @@ bin/kernel-$(ARCH): libs
 		src/kprintf.c \
 		src/main.c \
 		src/memory.c \
+		src/pmm.c \
 		-Wl,-T,arch/$(ARCH)/linker.lds \
 		$(LDFLAGS) \
 		-o bin/kernel-$(ARCH)

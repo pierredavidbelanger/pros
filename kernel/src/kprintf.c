@@ -22,3 +22,8 @@ void kprintf(const char *fmt, ...) {
     vprintf(fmt, va);
     va_end(va);
 }
+
+void kpanic(const char *msg) {
+    kprintf("PANIC: %s\n", msg);
+    khcf();
+}

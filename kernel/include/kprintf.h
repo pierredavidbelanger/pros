@@ -6,4 +6,6 @@ void khcf(void);
 
 void kprintf(const char *fmt, ...);
 
+void kpanic(const char *msg);
+
 #endif //PROS_KPRINTF_H
