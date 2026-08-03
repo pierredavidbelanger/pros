@@ -3,7 +3,7 @@
 #include "fb.h"
 #include "kprintf.h"
 
-void kmain(void) {
+void _start(void) {
     if (!LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision)) {
         khcf();
     }

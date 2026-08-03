@@ -15,20 +15,18 @@ distclean: clean
 bin/kernel-$(ARCH): libs
 	mkdir -p bin
 	$(CC) \
-		-Wall -std=gnu11 -nostdinc -ffreestanding -fno-stack-protector -fno-stack-check -fno-lto -fno-PIC -ffunction-sections -fdata-sections \
+		-Wall -std=gnu11 -nostdinc -ffreestanding -fno-stack-protector -fno-PIC \
 		$(CFLAGS) \
 		-isystem libs/freestanding-c-hdrs/include \
 		-isystem libs/limine-protocol/include \
 		-isystem libs/printf \
 		-I include \
-		libs/cc-runtime/src/cc-runtime.c \
 		libs/printf/printf.c \
 		arch/$(ARCH)/arch.c \
 		src/fb.c \
 		src/kprintf.c \
 		src/main.c \
 		src/memory.c \
-		-Wl,-e,kmain \
 		-Wl,-T,arch/$(ARCH)/linker.lds \
 		$(LDFLAGS) \
 		-o bin/kernel-$(ARCH)

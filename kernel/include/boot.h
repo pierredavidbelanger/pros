@@ -3,6 +3,8 @@
 
 #include <limine.h>
 
+void _start(void);
+
 __attribute__((used, section(".limine_requests_start")))
 static volatile uint64_t limine_requests_start_marker[] = LIMINE_REQUESTS_START_MARKER;
 
@@ -26,6 +28,13 @@ static volatile struct limine_stack_size_request stack_size_request = {
     .id = LIMINE_STACK_SIZE_REQUEST_ID,
     .revision = 0,
     .stack_size = 64 * 1024 // 64 KiB stack
+};
+
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_entry_point_request entry_point_request = {
+    .id = LIMINE_ENTRY_POINT_REQUEST_ID,
+    .revision = 0,
+    .entry = _start
 };
 
 __attribute__((used, section(".limine_requests_end")))
