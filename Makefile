@@ -24,7 +24,8 @@ bin/limine-binary:
 
 .PHONY: kernel
 kernel:
-	$(MAKE) -C kernel bin/kernel-aarch64
+	$(MAKE) -C kernel ARCH=aarch64 bin/kernel-aarch64
+	$(MAKE) -C kernel ARCH=x86_64 bin/kernel-x86_64
 
 root: bin kernel
 	mkdir -p root/boot/limine root/EFI/BOOT
@@ -42,3 +43,13 @@ qemu-aarch64: root
 		-drive if=pflash,unit=0,format=raw,file=bin/edk2-ovmf-bins/ovmf-code-aarch64.fd,readonly=on \
 		-drive if=none,id=hd0,file=fat:rw:root,format=raw \
 		-device virtio-blk-device,drive=hd0
+
+.PHONY: qemu-x86_64
+qemu-x86_64: root
+	qemu-system-x86_64 \
+		-m 2G \
+		-machine q35 \
+		-drive if=pflash,unit=0,format=raw,file=bin/edk2-ovmf-bins/ovmf-code-x86_64.fd,readonly=on \
+		-drive if=none,id=hd0,file=fat:rw:root,format=raw \
+		-device virtio-blk-pci,drive=hd0
+

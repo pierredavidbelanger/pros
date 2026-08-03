@@ -3,6 +3,9 @@ ARCH ?= aarch64
 
 include arch/$(ARCH)/config.mk
 
+.PHONY: default
+default: bin/kernel-$(ARCH)
+
 .PHONY: clean
 clean:
 	rm -rf bin
