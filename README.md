@@ -6,15 +6,15 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
 
 ## 🛠️ Features
 
-- **Limine Boot Protocol (v6)**: Requests and processes boot information (Framebuffer, DTB, Stack size) directly from Limine.
+- **Limine Boot Protocol (v6)**: Modular request handling (Framebuffer, DTB, ACPI/RSDP, Stack size) directly from Limine.
 - **UEFI Booting & AArch64 Architecture**: Boots with EDK2 OVMF firmware on QEMU `virt` machine.
 - **Zig Cross-Compilation Toolchain**: Built using `zig cc` (`-target aarch64-freestanding-none`), requiring no cross-GCC toolchain installation.
 - **AArch64 FPU & SIMD Hardware Setup**: Early boot activation of Coprocessor Access Control Register (`CPACR_EL1`) enabling FPU/NEON hardware instructions.
-- **Graphical Framebuffer & Text Rendering**:
+- **Graphical Framebuffer & Terminal Engine**:
   - Direct 32-bit ARGB/RGB pixel manipulation and screen clearing (`fb_clear`).
-  - Embedded 8x16 VGA bitmap font engine (`fb_draw_string`, `fb_draw_char`).
+  - Embedded 8x16 VGA bitmap font renderer with line wrapping and screen scrolling (`terminal_scroll`).
 - **Formatted Kernel Logger (`kprintf`)**:
-  - Integrated zero-dependency `mpaland/printf` formatting library.
+  - Integrated zero-dependency `mpaland/printf` formatting library streaming directly to terminal `_putchar`.
   - Supports `%s`, `%d`, `%x`, `%p`, `%u`, and custom format specifiers.
 - **Freestanding C Library & Compiler Runtime**:
   - Modular integration of `freestanding-c-hdrs`, `cc-runtime`, `limine-protocol`, and `mpaland/printf`.
@@ -34,12 +34,13 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
     ├── Makefile           # Kernel compilation script (auto-fetches freestanding libs & printf)
     ├── arch/              # Architecture configurations & linker scripts
     │   └── aarch64/       # AArch64 config.mk and linker.lds
-    ├── include/           # Modular C headers (fb.h, kprintf.h, memory.h)
+    ├── include/           # Modular C headers (arch.h, boot.h, fb.h, kprintf.h, memory.h)
     └── src/               # Core kernel source
-        ├── main.c         # Entry point (kmain), FPU enablement, Limine requests
-        ├── fb.c           # Framebuffer driver, screen clear, font renderer
+        ├── main.c         # Entry point (kmain), initialization calls, kprintf logs
+        ├── boot.c         # Limine boot protocol request structures (Framebuffer, DTB, RSDP, etc.)
+        ├── fb.c           # Framebuffer driver, terminal engine, scrolling, font renderer
         ├── kprintf.c      # Formatted kprintf implementation (wraps mpaland/printf)
-        └── memory.c       # Core C memory utilities (memcpy, memset, etc.)
+        └── memory.c       # Core C memory utilities (memcpy, memset, memmove, etc.)
 ```
 
 ---
