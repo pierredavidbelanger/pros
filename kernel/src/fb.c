@@ -1,5 +1,6 @@
 #include "fb.h"
 
+#include "arch.h"
 #include "kprintf.h"
 #include "memory.h"
 
@@ -138,7 +139,7 @@ void fb_clear(uint32_t color) {
 
 void fb_init(struct limine_framebuffer_response *framebuffer_response) {
     if (framebuffer_response == NULL || framebuffer_response->framebuffer_count < 1) {
-        khcf();
+        arch_halt();
     }
     fb = framebuffer_response->framebuffers[0];
     fb_clear(0x00000000);

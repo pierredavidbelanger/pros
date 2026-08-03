@@ -1,11 +1,26 @@
 #include "arch.h"
-
-#include <stdint.h>
+#include "gdt.h"
+#include "idt.h"
 
 void arch_init(void) {
-    // Enable FPU & SIMD in CPACR_EL1
-    uint64_t cpacr;
-    asm volatile ("mrs %0, cpacr_el1" : "=r"(cpacr));
-    cpacr |= (3ULL << 20);
-    asm volatile ("msr cpacr_el1, %0\n\tisb" :: "r"(cpacr));
+    gdt_init();
+    idt_init();
+}
+
+void arch_cli(void) {
+    asm volatile ("cli");
+}
+
+void arch_sti(void) {
+    asm volatile ("sti");
+}
+
+void arch_pause(void) {
+    asm volatile ("pause");
+}
+
+void arch_halt(void) {
+    for (;;) {
+        asm volatile ("cli; hlt");
+    }
 }

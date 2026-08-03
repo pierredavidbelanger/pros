@@ -25,13 +25,9 @@ bin/kernel-$(ARCH): libs
 		-isystem libs/printf \
 		-I include \
 		libs/printf/printf.c \
-		arch/$(ARCH)/arch.c \
-		src/boot.c \
-		src/fb.c \
-		src/kprintf.c \
-		src/main.c \
-		src/memory.c \
-		src/pmm.c \
+		$(wildcard arch/$(ARCH)/*.S) \
+		$(wildcard arch/$(ARCH)/*.c) \
+		$(wildcard src/*.c) \
 		-Wl,-T,arch/$(ARCH)/linker.lds \
 		$(LDFLAGS) \
 		-o bin/kernel-$(ARCH)

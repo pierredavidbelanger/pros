@@ -7,7 +7,7 @@
 
 void _start(void) {
     if (!LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision)) {
-        khcf();
+        arch_halt();
     }
 
     arch_init();
@@ -24,6 +24,6 @@ void _start(void) {
         kprintf("Root System Description Pointer is at %p\n", rsdp_request.response->address);
     }
 
-    kprintf("Halt and Catch in Fire\n");
-    khcf();
+    kprintf("Halt\n");
+    arch_halt();
 }
