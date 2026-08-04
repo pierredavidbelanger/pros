@@ -3,26 +3,19 @@
 #include "kprintf.h"
 
 #include <stddef.h>
+#include <stdbool.h>
 
-#define IS_ALIGNED(x, align) (((x) & ((align) - 1)) == 0)
-#define ALIGN_UP(x, align) (((x) + (align) - 1) & ~((align) - 1))
-#define ALIGN_DOWN(x, align) ((x) & ~((align) - 1))
+#define PMM_ALIGN_UP(x, align) (((x) + (align) - 1) & ~((align) - 1))
+#define PMM_ALIGN_DOWN(x, align) ((x) & ~((align) - 1))
 
 struct pmm_node {
     struct pmm_node *next;
 };
 
+// TODO: having a prepend list (stack) here render the pointer maths somewhat hard to follow, we should have a real sorted list
 static struct pmm_node *free_list_head = NULL;
 
 static uint64_t hhdm_offset = 0;
-
-static void *phys_to_virt(uint64_t phys_addr) {
-    return (void *) (phys_addr + hhdm_offset);
-}
-
-static uint64_t virt_to_phys(void *virt_addr) {
-    return (uint64_t) virt_addr - hhdm_offset;
-}
 
 size_t pmm_init(struct limine_hhdm_response *hhdm_response, struct limine_memmap_response *memmap_response) {
     if (hhdm_response == NULL) {
@@ -42,14 +35,14 @@ size_t pmm_init(struct limine_hhdm_response *hhdm_response, struct limine_memmap
             continue;
         }
 
-        uint64_t aligned_base = ALIGN_UP(entry->base, PAGE_SIZE);
-        uint64_t aligned_top = ALIGN_DOWN(entry->base + entry->length, PAGE_SIZE);
+        uint64_t aligned_base = PMM_ALIGN_UP(entry->base, PAGE_SIZE);
+        uint64_t aligned_top = PMM_ALIGN_DOWN(entry->base + entry->length, PAGE_SIZE);
         if (aligned_base >= aligned_top) {
             continue;
         }
 
         for (uint64_t phys_addr = aligned_base; phys_addr < aligned_top; phys_addr += PAGE_SIZE) {
-            pmm_free(phys_addr);
+            pmm_free(phys_addr, 1);
             count++;
         }
     }
@@ -57,21 +50,64 @@ size_t pmm_init(struct limine_hhdm_response *hhdm_response, struct limine_memmap
     return count;
 }
 
-uint64_t pmm_alloc(void) {
-    if (free_list_head == NULL) {
-        kpanic("OOM!");
+void *pmm_phys_to_virt(uint64_t phys_addr) {
+    return (void *) (phys_addr + hhdm_offset);
+}
+
+uint64_t pmm_virt_to_phys(void *virt_addr) {
+    return (uint64_t) virt_addr - hhdm_offset;
+}
+
+uint64_t pmm_alloc(size_t count) {
+    bool found = false;
+    struct pmm_node *prev_node = NULL;
+    struct pmm_node *start_node = free_list_head;
+    while (start_node != NULL) {
+        struct pmm_node *curr_node = start_node;
+        bool contiguous = true;
+        for (size_t actual = 0; actual < count - 1; actual++) {
+            // here we check that curr_node - PAGE_SIZE == curr_node->next
+            // because page are prepended, so the order is reversed
+            contiguous = (void *) curr_node - PAGE_SIZE == (void *) curr_node->next;
+            if (!contiguous) {
+                break;
+            }
+            curr_node = curr_node->next;
+        }
+        if (contiguous) {
+            found = true;
+            break;
+        }
+        prev_node = start_node;
+        start_node = start_node->next;
     }
-    struct pmm_node *node = free_list_head;
-    free_list_head = node->next;
-    uint64_t phys_addr = virt_to_phys(node);
+    if (!found) {
+        kpanic("No enough memory available");
+    }
+    struct pmm_node *end_node = start_node->next;
+    for (size_t actual = 0; actual < count - 1; actual++) {
+        end_node = end_node->next;
+    }
+    if (prev_node == NULL) {
+        free_list_head = end_node;
+    } else {
+        prev_node->next = end_node;
+    }
+    // Return the lowest (base) physical address of the contiguous block
+    // again because page are prepended, so the order is reversed
+    uint64_t phys_addr = pmm_virt_to_phys(start_node) - ((count - 1) * PAGE_SIZE);
     return phys_addr;
 }
 
-void pmm_free(uint64_t phys_addr) {
+void pmm_free(uint64_t phys_addr, size_t count) {
     if (phys_addr == 0) {
         return;
     }
-    struct pmm_node *node = phys_to_virt(phys_addr);
-    node->next = free_list_head;
-    free_list_head = node;
+    uint64_t next_addr = phys_addr;
+    for (int i = 0; i < count; i++) {
+        struct pmm_node *node = pmm_phys_to_virt(next_addr);
+        node->next = free_list_head;
+        free_list_head = node;
+        next_addr += PAGE_SIZE;
+    }
 }

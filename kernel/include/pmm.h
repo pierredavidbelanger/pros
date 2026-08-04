@@ -10,8 +10,12 @@
 
 size_t pmm_init(struct limine_hhdm_response *hhdm_response, struct limine_memmap_response *memmap_response);
 
-uint64_t pmm_alloc(void);
+void *pmm_phys_to_virt(uint64_t phys_addr);
 
-void pmm_free(uint64_t phys_addr);
+uint64_t pmm_virt_to_phys(void *virt_addr);
+
+uint64_t pmm_alloc(size_t count);
+
+void pmm_free(uint64_t phys_addr, size_t count);
 
 #endif //PROS_PMM_H

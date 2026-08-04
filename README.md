@@ -19,8 +19,14 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
 - **Physical Memory Management (PMM)**:
   - Page-frame allocator operating on 4 KiB pages (`PAGE_SIZE`).
   - Parses usable physical memory regions (`LIMINE_MEMMAP_USABLE`) from Limine and builds a linked free-list.
+  - Supports single-page and multi-page contiguous page allocations (`pmm_alloc(count)`).
   - Translates physical to virtual addresses via the Higher-Half Direct Map (`HHDM`) offset.
-  - API: `pmm_init()`, `pmm_alloc()`, `pmm_free()`.
+  - API: `pmm_init()`, `pmm_alloc()`, `pmm_free()`, `pmm_phys_to_virt()`, `pmm_virt_to_phys()`.
+- **Kernel Dynamic Heap Allocator**:
+  - First-fit linked free-list block allocator for sub-page and multi-page arbitrary byte allocations.
+  - Enforces 16-byte memory alignment (`HEAP_ALIGNMENT`).
+  - Implements header metadata tracking (`struct heap_block`), automatic block splitting, and dynamic heap expansion via PMM.
+  - API: `heap_init()`, `kmalloc()`, `kfree()`, `kcalloc()`.
 - **Graphical Framebuffer & Terminal Engine**:
   - 32-bit ARGB/RGB direct pixel drawing and screen clearing (`fb_clear`).
   - Built-in 8x16 VGA bitmap font renderer supporting automatic text wrapping and full-screen vertical scrolling (`terminal_scroll`).
@@ -46,14 +52,15 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
     ├── arch/              # Architecture configurations & linker scripts
     │   ├── aarch64/       # AArch64 arch.c, config.mk, and linker.lds
     │   └── x86_64/        # x86_64 arch.c, config.mk, and linker.lds
-    ├── include/           # Modular C headers (arch.h, boot.h, fb.h, kprintf.h, memory.h, pmm.h)
+    ├── include/           # Modular C headers (arch.h, boot.h, fb.h, heap.h, kprintf.h, memory.h, pmm.h)
     └── src/               # Core kernel source
         ├── main.c         # Entry point (_start), initialization calls, kprintf logs
         ├── boot.c         # Limine boot protocol request structures (Framebuffer, HHDM, Memmap, DTB, RSDP, etc.)
         ├── fb.c           # Framebuffer driver, terminal engine, scrolling, font renderer
+        ├── heap.c         # First-fit dynamic kernel heap allocator (kmalloc, kfree, kcalloc)
         ├── kprintf.c      # Formatted kprintf implementation (wraps mpaland/printf) and panic handling
         ├── memory.c       # Core C memory utilities (memcpy, memset, memmove, memcmp)
-        └── pmm.c          # Physical Memory Manager (page frame allocator)
+        └── pmm.c          # Physical Memory Manager (page frame allocator for single/multi-page requests)
 ```
 
 ---
