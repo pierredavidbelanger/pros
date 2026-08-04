@@ -24,3 +24,43 @@ void arch_halt(void) {
         asm volatile ("cli; hlt");
     }
 }
+
+// Architecture VMM impl
+
+uint64_t arch_vmm_get_root(void) {
+    uint64_t val;
+    asm volatile ("mov %%cr3, %0" : "=r"(val));
+    return val;
+}
+
+void arch_vmm_set_root(uint64_t phys_addr) {
+    asm volatile ("mov %0, %%cr3" :: "r"(phys_addr) : "memory");
+}
+
+uint64_t arch_vmm_get_fault_addr(void) {
+    uint64_t val;
+    asm volatile ("mov %%cr2, %0" : "=r"(val));
+    return val;
+}
+
+void arch_vmm_invlpg(void *virt_addr) {
+    asm volatile ("invlpg (%0)" :: "r"(virt_addr) : "memory");
+}
+
+bool arch_vmm_get_flags(uint64_t pte, uint64_t flags) {
+    if ((flags & VMM_PRESENT) && !(pte & (1ULL << 0))) return false;
+    if ((flags & VMM_WRITABLE) && !(pte & (1ULL << 1))) return false;
+    if ((flags & VMM_USER) && !(pte & (1ULL << 2))) return false;
+    if ((flags & VMM_CACHE_DISABLE) && !(pte & (1ULL << 4))) return false;
+    if ((flags & VMM_NO_EXECUTE) && !(pte & (1ULL << 63))) return false;
+    return true;
+}
+
+uint64_t arch_vmm_set_flags(uint64_t pte, uint64_t flags) {
+    if (flags & VMM_PRESENT) pte |= (1ULL << 0);
+    if (flags & VMM_WRITABLE) pte |= (1ULL << 1);
+    if (flags & VMM_USER) pte |= (1ULL << 2);
+    if (flags & VMM_CACHE_DISABLE) pte |= (1ULL << 4);
+    if (flags & VMM_NO_EXECUTE) pte |= (1ULL << 63);
+    return pte;
+}

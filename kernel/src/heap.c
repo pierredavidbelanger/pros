@@ -71,6 +71,6 @@ void *kcalloc(size_t num, size_t size) {
     return NULL;
 }
 
-void kfree(void *ptr) {
+void kfree(void *virt_addr) {
     // TODO
 }

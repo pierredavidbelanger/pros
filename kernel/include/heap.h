@@ -7,7 +7,7 @@ void heap_init();
 
 void *kmalloc(size_t size);
 
-void kfree(void *ptr);
+void kfree(void *virt_addr);
 
 void *kcalloc(size_t num, size_t size);
 
