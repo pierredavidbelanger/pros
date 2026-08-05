@@ -27,13 +27,23 @@ void arch_halt(void) {
 
 // Architecture VMM impl
 
-uint64_t arch_vmm_get_root(void) {
+// on x86_64 there is only CR3, so arch_vmm_get/set_kernel_root is using arch_vmm_get/set_user_root
+
+uint64_t arch_vmm_get_kernel_root(void) {
+    return arch_vmm_get_user_root();
+}
+
+void arch_vmm_set_kernel_root(uint64_t phys_addr) {
+    arch_vmm_set_user_root(phys_addr);
+}
+
+uint64_t arch_vmm_get_user_root(void) {
     uint64_t val;
     asm volatile ("mov %%cr3, %0" : "=r"(val));
     return val;
 }
 
-void arch_vmm_set_root(uint64_t phys_addr) {
+void arch_vmm_set_user_root(uint64_t phys_addr) {
     asm volatile ("mov %0, %%cr3" :: "r"(phys_addr) : "memory");
 }
 

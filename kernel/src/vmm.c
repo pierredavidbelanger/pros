@@ -15,11 +15,10 @@ struct vmm_context *vmm_current_context;
 void vmm_init(void) {
     vmm_kernel_context = kmalloc(sizeof(struct vmm_context));
     // Arch specific current root
-    vmm_kernel_context->root_phys = (uint64_t *) arch_vmm_get_root();
+    vmm_kernel_context->root_phys = (uint64_t *) arch_vmm_get_kernel_root();
     vmm_kernel_context->root_virt = pmm_phys_to_virt((uint64_t) vmm_kernel_context->root_phys);
     vmm_current_context = vmm_kernel_context;
-    // Set the current context
-    vmm_switch_context(vmm_kernel_context);
+    arch_vmm_set_kernel_root((uint64_t) vmm_kernel_context->root_phys);
 }
 
 struct vmm_context *vmm_create_context(void) {
@@ -155,7 +154,7 @@ void vmm_switch_context(struct vmm_context *ctx) {
         // Track current context
         vmm_current_context = ctx;
         // Arch specific to set the current root (effectively switching context)
-        arch_vmm_set_root((uint64_t) ctx->root_phys);
+        arch_vmm_set_user_root((uint64_t) ctx->root_phys);
     }
 }
 

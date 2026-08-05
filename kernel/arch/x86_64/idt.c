@@ -60,9 +60,18 @@ void idt_init(void) {
 }
 
 void x86_64_exception_handler(struct x86_64_registers *regs) {
+    // Try to handle recoverable faults FIRST
+    if (regs->int_no == 14) {
+        // Page Fault
+        uint64_t cr2 = arch_vmm_get_fault_addr();
+        if (vmm_handle_page_fault(cr2, regs->error_code)) {
+            // fault resolved, return to resume instruction!
+            return;
+        }
+    }
+    // Unrecoverable — dump everything for debugging
+    kprintf("============= [ UNHANDLED EXCEPTION ] =============\n");
     const char *name = (regs->int_no < 32) ? exception_names[regs->int_no] : "Unknown Trap";
-
-    kprintf("\n================ [ CPU EXCEPTION ] ================\n");
     kprintf(" Exception %zu: %s\n", regs->int_no, name);
     kprintf(" Error Code: 0x%lx\n", regs->error_code);
     kprintf(" RIP: 0x%016lx   CS: 0x%04lx   RFLAGS: 0x%016lx\n", regs->rip, regs->cs, regs->rflags);
@@ -72,21 +81,12 @@ void x86_64_exception_handler(struct x86_64_registers *regs) {
     kprintf(" RBP: 0x%016lx   R8: 0x%016lx   R9: 0x%016lx\n", regs->rbp, regs->r8, regs->r9);
     kprintf(" R10: 0x%016lx  R11: 0x%016lx  R12: 0x%016lx\n", regs->r10, regs->r11, regs->r12);
     kprintf(" R13: 0x%016lx  R14: 0x%016lx  R15: 0x%016lx\n", regs->r13, regs->r14, regs->r15);
-    if (regs->int_no == 14) { // Page fault
+    if (regs->int_no == 14) {
+        // Page fault
         uint64_t cr2;
         asm volatile ("mov %%cr2, %0" : "=r"(cr2));
         kprintf(" CR2 (Faulting Linear Address): 0x%016lx\n", cr2);
     }
     kprintf("===================================================\n");
-
-    if (regs->int_no == 14) {
-        // Page Fault
-        uint64_t cr2 = arch_vmm_get_fault_addr();
-        if (vmm_handle_page_fault(cr2, regs->error_code)) {
-            // fault resolved, return to resume instruction!
-            return;
-        }
-    }
-
-    kpanic("Unhandled x86_64 Exception");
+    kpanic("");
 }

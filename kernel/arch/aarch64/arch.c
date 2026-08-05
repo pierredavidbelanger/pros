@@ -33,13 +33,23 @@ void arch_halt(void) {
 
 // Architecture VMM impl
 
-uint64_t arch_vmm_get_root(void) {
+uint64_t arch_vmm_get_kernel_root(void) {
     uint64_t val;
-    asm volatile ("mrs %0, ttbr0_el1" : "=r"(val));
-    return val;
+    asm volatile ("mrs %0, ttbr1_el1" : "=r"(val));
+    return val & 0x0000FFFFFFFFFFFEULL; // Mask ASID (bits 63:48) and CnP (bit 0)
 }
 
-void arch_vmm_set_root(uint64_t phys_addr) {
+void arch_vmm_set_kernel_root(uint64_t phys_addr) {
+    asm volatile ("msr ttbr1_el1, %0\n\tisb" :: "r"(phys_addr) : "memory");
+}
+
+uint64_t arch_vmm_get_user_root(void) {
+    uint64_t val;
+    asm volatile ("mrs %0, ttbr0_el1" : "=r"(val));
+    return val & 0x0000FFFFFFFFFFFEULL; // Mask ASID (bits 63:48) and CnP (bit 0)
+}
+
+void arch_vmm_set_user_root(uint64_t phys_addr) {
     asm volatile ("msr ttbr0_el1, %0\n\tisb" :: "r"(phys_addr) : "memory");
 }
 

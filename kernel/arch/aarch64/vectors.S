@@ -2,6 +2,10 @@
 
 .macro VECTOR_ENTRY num
 .balign 128
+    /* allocate sizeof(aarch64_registers) */
+    sub sp, sp, #304
+    /* Save x0 in aarch64_registers now so we do not clobber it */
+    stp x0,  x1,  [sp, #0]
     mov x0, #\num
     b vector_common_stub
 .endm
@@ -34,11 +38,7 @@ vector_table:
     VECTOR_ENTRY 15  /* SError */
 
 vector_common_stub:
-    /* Save registers x0-x30 to stack frame (304 bytes total, 16-byte aligned) */
-    sub sp, sp, #304
-
-    /* Save x0 to x29 */
-    stp x0,  x1,  [sp, #0]
+    /* Save the rest in aarch64_registers */
     stp x2,  x3,  [sp, #16]
     stp x4,  x5,  [sp, #32]
     stp x6,  x7,  [sp, #48]
