@@ -1,5 +1,5 @@
-#include "arch.h"
-#include "vmm.h"
+#include "arch/arch.h"
+#include "mm/vmm.h"
 
 void arch_init(void) {
     // Enable FPU & SIMD in EL1 / EL2
