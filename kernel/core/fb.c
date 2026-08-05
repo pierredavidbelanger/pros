@@ -1,8 +1,8 @@
-#include "fb.h"
+#include "core/fb.h"
 
-#include "arch.h"
-#include "kprintf.h"
-#include "memory.h"
+#include "arch/arch.h"
+#include "core/kprintf.h"
+#include "core/memory.h"
 
 #define FONT_WIDTH  8
 #define FONT_HEIGHT 16

@@ -24,8 +24,6 @@ bin/kernel-$(ARCH): libs
 		-isystem libs/limine-protocol/include \
 		-isystem libs/printf \
 		-I include \
-		-I include/drivers \
-		-I include/fs \
 		libs/printf/printf.c \
 		$(wildcard arch/$(ARCH)/*.S) \
 		$(wildcard arch/$(ARCH)/*.c) \

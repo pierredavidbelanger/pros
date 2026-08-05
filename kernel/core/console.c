@@ -1,5 +1,5 @@
-#include "console.h"
-#include "earlycon.h"
+#include "core/console.h"
+#include "core/earlycon.h"
 #include <stdbool.h>
 
 static bool earlycon_active = false;

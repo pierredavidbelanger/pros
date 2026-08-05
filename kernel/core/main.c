@@ -1,12 +1,13 @@
-#include "boot.h"
+#include "core/boot.h"
 
-#include "arch.h"
-#include "fb.h"
-#include "console.h"
-#include "kprintf.h"
-#include "pmm.h"
-#include "heap.h"
-#include "vmm.h"
+#include "arch/arch.h"
+#include "core/fb.h"
+#include "core/console.h"
+#include "core/kprintf.h"
+#include "mm/pmm.h"
+#include "mm/heap.h"
+#include "mm/vmm.h"
+#include "drivers/blockdev.h"
 
 void test_pmm(void);
 
@@ -40,6 +41,8 @@ void _start(void) {
             (void *)vmm_kernel_context->root_phys,
             vmm_kernel_context->root_virt);
     test_vmm();
+
+    blockdev_init();
 
     if (dtb_request.response) {
         kprintf("[DTB ] Device Tree Binary is at %p\n", dtb_request.response->dtb_ptr);

@@ -1,9 +1,9 @@
 #include "exceptions.h"
-#include "earlycon.h"
+#include "core/earlycon.h"
 
-#include "kprintf.h"
-#include "arch.h"
-#include "vmm.h"
+#include "core/kprintf.h"
+#include "arch/arch.h"
+#include "mm/vmm.h"
 
 static const char *vector_names[16] = {
     "Current EL SP_EL0 Synchronous",

@@ -1,10 +1,10 @@
-#include "vmm.h"
+#include "mm/vmm.h"
 
-#include "arch.h"
-#include "pmm.h"
-#include "heap.h"
-#include "memory.h"
-#include "kprintf.h"
+#include "arch/arch.h"
+#include "mm/pmm.h"
+#include "mm/heap.h"
+#include "core/memory.h"
+#include "core/kprintf.h"
 
 // The 4-level page table walk is identical for x86_64 and AArch64 (4K granule).
 // All architecture differences are handled by arch_vmm_*() functions.

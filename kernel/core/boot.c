@@ -1,4 +1,4 @@
-#include "boot.h"
+#include "core/boot.h"
 
 __attribute__((used, section(".limine_requests_start")))
 volatile uint64_t limine_requests_start_marker[] = LIMINE_REQUESTS_START_MARKER;

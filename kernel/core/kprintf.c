@@ -1,6 +1,6 @@
-#include "kprintf.h"
-#include "console.h"
-#include "arch.h"
+#include "core/kprintf.h"
+#include "core/console.h"
+#include "arch/arch.h"
 
 #include <printf.h>
 #include <stdarg.h>

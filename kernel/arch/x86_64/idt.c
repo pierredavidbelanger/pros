@@ -1,9 +1,9 @@
 #include "idt.h"
 
-#include "kprintf.h"
-#include "arch.h"
-#include "vmm.h"
-#include "memory.h"
+#include "core/kprintf.h"
+#include "arch/arch.h"
+#include "mm/vmm.h"
+#include "core/memory.h"
 
 struct gdt_entry {
     uint16_t limit_low;

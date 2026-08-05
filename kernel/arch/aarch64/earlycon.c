@@ -1,5 +1,5 @@
-#include "earlycon.h"
-#include "boot.h"
+#include "core/earlycon.h"
+#include "core/boot.h"
 
 #include <stdint.h>
 #include <stddef.h>

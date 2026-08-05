@@ -1,6 +1,6 @@
-#include "pmm.h"
+#include "mm/pmm.h"
 
-#include "kprintf.h"
+#include "core/kprintf.h"
 
 #include <stddef.h>
 #include <stdbool.h>

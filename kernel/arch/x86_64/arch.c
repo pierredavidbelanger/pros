@@ -1,6 +1,6 @@
-#include "arch.h"
+#include "arch/arch.h"
 #include "idt.h"
-#include "vmm.h"
+#include "mm/vmm.h"
 
 void arch_init(void) {
     idt_init();

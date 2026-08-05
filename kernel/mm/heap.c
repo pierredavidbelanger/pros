@@ -1,6 +1,6 @@
-#include "heap.h"
+#include "mm/heap.h"
 
-#include "pmm.h"
+#include "mm/pmm.h"
 
 #include <stdbool.h>
 

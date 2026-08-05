@@ -1,4 +1,4 @@
-#include "earlycon.h"
+#include "core/earlycon.h"
 #include <stdint.h>
 
 #define COM1 0x3F8
