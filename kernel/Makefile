@@ -24,10 +24,12 @@ bin/kernel-$(ARCH): libs
 		-isystem libs/limine-protocol/include \
 		-isystem libs/printf \
 		-I include \
+		-I include/drivers \
+		-I include/fs \
 		libs/printf/printf.c \
 		$(wildcard arch/$(ARCH)/*.S) \
 		$(wildcard arch/$(ARCH)/*.c) \
-		$(wildcard src/*.c) \
+		$(shell find core mm drivers fs -name '*.c' 2>/dev/null) \
 		-Wl,-T,arch/$(ARCH)/linker.lds \
 		$(LDFLAGS) \
 		-o bin/kernel-$(ARCH)
