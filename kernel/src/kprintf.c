@@ -3,6 +3,7 @@
 #include "arch.h"
 
 #include <printf.h>
+#include <stdarg.h>
 
 void kprintf(const char *fmt, ...) {
     va_list va;
@@ -16,6 +17,10 @@ void kpanic(const char *msg) {
     arch_halt();
 }
 
-// _putchar function that printf want is impl here and simply send to UART
+// _putchar function that printf wants is impl here and simply sends to UART
 void _putchar(char character) {
+    if (character == '\n') {
+        arch_putc('\r');
+    }
+    arch_putc(character);
 }

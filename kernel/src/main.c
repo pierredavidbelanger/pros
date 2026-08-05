@@ -39,8 +39,8 @@ void _start(void) {
         kprintf("[FB  ] Initialized the framebuffer, ready to kprintf\n");
     }
 
-    kprintf("[K   ] Halt\n");
-    arch_halt();
+    kprintf("[K   ] Shutting down...\n");
+    arch_shutdown();
 }
 
 void test_pmm(void) {

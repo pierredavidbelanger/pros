@@ -6,7 +6,11 @@
 
 void arch_init(void);
 
-// Halt the CPU in an idle loop.
+void arch_putc(char c);
+
 void arch_halt(void);
+
+// Cleanly power off the machine
+void arch_shutdown(void);
 
 #endif //PROS_ARCH_H
