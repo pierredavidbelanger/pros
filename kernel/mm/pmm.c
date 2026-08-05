@@ -58,6 +58,10 @@ uint64_t pmm_virt_to_phys(void *virt_addr) {
     return (uint64_t) virt_addr - hhdm_offset;
 }
 
+uint64_t pmm_get_hhdm_offset(void) {
+    return hhdm_offset;
+}
+
 uint64_t pmm_alloc(size_t count) {
     bool found = false;
     struct pmm_node *prev_node = NULL;

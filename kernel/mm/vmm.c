@@ -180,27 +180,42 @@ void vmm_switch_context(struct vmm_context *ctx) {
 }
 
 bool vmm_handle_page_fault(uint64_t fault_addr, uint64_t error_code) {
-    // Only handle faults in user space (lower half)
-    if (fault_addr >= 0x800000000000ULL) {
+    uint64_t hhdm_base = pmm_get_hhdm_offset();
+
+    // Case 1: HHDM Higher-Half MMIO Access Fault (e.g. PCIe ECAM at 0xE0000000)
+    if (hhdm_base != 0 && fault_addr >= hhdm_base) {
+        uint64_t phys_addr = fault_addr - hhdm_base;
+        uint64_t aligned_virt = fault_addr & ~0xFFFULL;
+        uint64_t aligned_phys = phys_addr & ~0xFFFULL;
+
+        int res = vmm_map_page(vmm_kernel_context, aligned_virt, aligned_phys, VMM_WRITABLE);
+        if (res == 0) {
+            return true;
+        }
         return false;
     }
 
-    uint64_t phys_addr = pmm_alloc(1);
-    if (!phys_addr) return false;
+    // Case 2: Lower-Half User Space Demand Paging Fault
+    if (fault_addr < 0x800000000000ULL) {
+        uint64_t phys_addr = pmm_alloc(1);
+        if (!phys_addr) return false;
 
-    void *virt_addr = pmm_phys_to_virt(phys_addr);
-    memset(virt_addr, 0, PAGE_SIZE);
+        void *virt_addr = pmm_phys_to_virt(phys_addr);
+        memset(virt_addr, 0, PAGE_SIZE);
 
-    int res = vmm_map_page(vmm_current_context,
-                           fault_addr & ~0xFFFULL,
-                           phys_addr,
-                           VMM_WRITABLE | VMM_USER);
-    if (res != 0) {
-        pmm_free(phys_addr, 1);
-        return false;
+        int res = vmm_map_page(vmm_current_context,
+                               fault_addr & ~0xFFFULL,
+                               phys_addr,
+                               VMM_WRITABLE | VMM_USER);
+        if (res != 0) {
+            pmm_free(phys_addr, 1);
+            return false;
+        }
+
+        kprintf("[VMM  ] Demand Paging: mapped virt %p -> phys %p\n",
+                (void *)(fault_addr & ~0xFFFULL), (void *)phys_addr);
+        return true;
     }
 
-    kprintf("[VMM ] Demand Paging: mapped virt %p -> phys %p\n",
-            (void *)(fault_addr & ~0xFFFULL), (void *)phys_addr);
-    return true;
+    return false;
 }
