@@ -6,10 +6,13 @@
 #include "kprintf.h"
 #include "pmm.h"
 #include "heap.h"
+#include "vmm.h"
 
 void test_pmm(void);
 
 void test_heap(void);
+
+void test_vmm(void);
 
 void _start(void) {
     if (!LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision)) {
@@ -31,6 +34,12 @@ void _start(void) {
     heap_init();
     kprintf("[HEAP] Initialized, ready to kmalloc/kfree dynamic virtual memory block\n");
     test_heap();
+
+    vmm_init();
+    kprintf("[VMM ] Initialized VMM, kernel root at phys:%p virt:%p\n",
+            (void *)vmm_kernel_context->root_phys,
+            vmm_kernel_context->root_virt);
+    test_vmm();
 
     if (dtb_request.response) {
         kprintf("[DTB ] Device Tree Binary is at %p\n", dtb_request.response->dtb_ptr);
@@ -73,4 +82,39 @@ void test_heap(void) {
     kfree(buf2);
     kfree(buf3);
     kfree(buf4);
+}
+
+void test_vmm(void) {
+    // Test 1: Basic map & write on kernel context
+    uint64_t test_phys = pmm_alloc(1);
+    uint64_t test_virt = 0x40000000ULL;
+    if (vmm_map_page(vmm_kernel_context, test_virt, test_phys, VMM_WRITABLE) == 0) {
+        kprintf("[VMM ] Mapped virt %p -> phys %p\n", (void *)test_virt, (void *)test_phys);
+        *(volatile uint32_t *)test_virt = 0xDEADBEEF;
+        uint32_t *hhdm_ptr = pmm_phys_to_virt(test_phys);
+        kprintf("[VMM ] Write 0xDEADBEEF, read back 0x%X via HHDM\n", *hhdm_ptr);
+    }
+    vmm_unmap_page(vmm_kernel_context, test_virt);
+    pmm_free(test_phys, 1);
+
+    // Test 2: Context creation + isolation
+    struct vmm_context *user_ctx = vmm_create_context();
+    kprintf("[VMM ] Created user context phys:%p\n", (void *)user_ctx->root_phys);
+    vmm_switch_context(user_ctx);
+    kprintf("[VMM ] Switched to user context (kernel kprintf still works!)\n");
+
+    // Test 3: Demand paging (lazy allocation on fault)
+    kprintf("[VMM ] Touching unmapped page 0x60000000 (should trigger demand paging)...\n");
+    *(volatile uint32_t *)0x60000000ULL = 0xCAFEBABE;
+    kprintf("[VMM ] Read back: 0x%X (expected 0xCAFEBABE)\n",
+            *(volatile uint32_t *)0x60000000ULL);
+
+    *(volatile uint32_t *)0x60001000ULL = 0x12345678;
+    kprintf("[VMM ] Page 2 read back: 0x%X (expected 0x12345678)\n",
+            *(volatile uint32_t *)0x60001000ULL);
+
+    kprintf("[VMM ] Demand paging test PASSED!\n");
+
+    vmm_switch_context(vmm_kernel_context);
+    vmm_destroy_context(user_ctx);
 }

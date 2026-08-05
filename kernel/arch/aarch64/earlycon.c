@@ -10,7 +10,7 @@
 static uint64_t early_l2_table[512] __attribute__((aligned(4096)));
 
 void earlycon_init(void) {
-    // Narrow MMIO mapping down to a 2MB block at 0x08000000 (containing PL011 UART at 0x09000000)
+    // Map 2MB block at 0x08000000 (containing PL011 UART at 0x09000000) into HHDM
     if (hhdm_request.response != NULL && executable_address_request.response != NULL) {
         uint64_t ttbr1;
         asm volatile ("mrs %0, ttbr1_el1" : "=r"(ttbr1));
