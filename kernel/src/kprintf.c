@@ -1,7 +1,6 @@
 #include "kprintf.h"
 
 #include "arch.h"
-#include "fb.h"
 
 #include <printf.h>
 
@@ -15,4 +14,8 @@ void kprintf(const char *fmt, ...) {
 void kpanic(const char *msg) {
     kprintf("PANIC: %s\n", msg);
     arch_halt();
+}
+
+// _putchar function that printf want is impl here and simply send to UART
+void _putchar(char character) {
 }

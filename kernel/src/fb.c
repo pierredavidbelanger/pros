@@ -138,9 +138,6 @@ void fb_clear(uint32_t color) {
 }
 
 void fb_init(struct limine_framebuffer_response *framebuffer_response) {
-    if (framebuffer_response == NULL || framebuffer_response->framebuffer_count < 1) {
-        arch_halt();
-    }
     fb = framebuffer_response->framebuffers[0];
     fb_clear(0x00000000);
 }
@@ -177,7 +174,6 @@ static void terminal_scroll(void) {
     cursor_y = fb->height - FONT_HEIGHT;
 }
 
-
 static void terminal_print_char(char c) {
     if (c == '\n') {
         cursor_x = 0;
@@ -193,9 +189,4 @@ static void terminal_print_char(char c) {
     if (cursor_y + FONT_HEIGHT > fb->height) {
         terminal_scroll();
     }
-}
-
-// _putchar function that printf want is impl here and simply draw to the framebuffer
-void _putchar(char character) {
-    terminal_print_char(character);
 }

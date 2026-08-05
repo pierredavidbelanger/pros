@@ -17,8 +17,6 @@ void _start(void) {
 
     arch_init();
 
-    fb_init(framebuffer_request.response);
-    kprintf("[FB  ] Initialized the framebuffer, ready to kprintf\n");
     kprintf("[K   ] Wellcome to PjErOS!\n");
 
     size_t pages = pmm_init(hhdm_request.response, memmap_request.response);
@@ -34,6 +32,11 @@ void _start(void) {
         kprintf("[DTB ] Device Tree Binary is at %p\n", dtb_request.response->dtb_ptr);
     } else if (rsdp_request.response) {
         kprintf("[RSDP] Root System Description Pointer is at %p\n", rsdp_request.response->address);
+    }
+
+    if (framebuffer_request.response) {
+        fb_init(framebuffer_request.response);
+        kprintf("[FB  ] Initialized the framebuffer, ready to kprintf\n");
     }
 
     kprintf("[K   ] Halt\n");
