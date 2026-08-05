@@ -7,11 +7,12 @@
 #include "vmm.h"
 #include "heap.h"
 
-void test_pmm();
+void test_pmm(void);
 
-void test_heap();
+void test_heap(void);
 
-void test_vmm();
+void test_vmm_context(void);
+void test_vmm_page_fault(void);
 
 void _start(void) {
     if (!LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision)) {
@@ -36,7 +37,8 @@ void _start(void) {
     vmm_init();
     kprintf("[PMM ] Initialized VMM, ready to create/switch context and map/unmap pages\n");
     kprintf("[PMM ] VMM kernel context at phys:%p virt:%p\n", vmm_kernel_context->root_phys, vmm_kernel_context->root_virt);
-    test_vmm();
+    //test_vmm_context();
+    test_vmm_page_fault();
 
     if (dtb_request.response) {
         kprintf("[DTB ] Device Tree Binary is at %p\n", dtb_request.response->dtb_ptr);
@@ -48,7 +50,7 @@ void _start(void) {
     arch_halt();
 }
 
-void test_pmm() {
+void test_pmm(void) {
     uint64_t one_page = pmm_alloc(1);
     kprintf("[PMM ] Got one page at %p\n", one_page);
     pmm_free(one_page, 1);
@@ -57,7 +59,7 @@ void test_pmm() {
     pmm_free(two_page, 2);
 }
 
-void test_heap() {
+void test_heap(void) {
     // Test small allocation
     char *buf1 = kmalloc(32);
     kprintf("[HEAP] buf1 allocated 32B at %p\n", buf1);
@@ -76,11 +78,11 @@ void test_heap() {
     kfree(buf4);
 }
 
-void test_vmm() {
+void test_vmm_context(void) {
     // Test Page Mapping & Translation
     uint64_t test_phys = pmm_alloc(1);
     uint64_t test_virt = 0x40000000ULL; // Lower-half test virtual address
-    if (vmm_map_page(vmm_kernel_context, test_virt, test_phys, VMM_WRITABLE | VMM_USER) == 0) {
+    if (vmm_map_page(vmm_kernel_context, test_virt, test_phys, VMM_WRITABLE) == 0) {
         kprintf("[VMM ] Successfully mapped virt %p -> phys %p\n", (void *) test_virt, (void *) test_phys);
         uint64_t translated = vmm_virt_to_phys(vmm_kernel_context, test_virt);
         kprintf("[VMM ] vmm_virt_to_phys(%p) = %p\n", (void *) test_virt, (void *) translated);
@@ -124,4 +126,30 @@ void test_vmm() {
     vmm_unmap_page(user_ctx, user_virt);
     pmm_free(user_phys, 1);
     vmm_destroy_context(user_ctx);
+}
+
+void test_vmm_page_fault(void) {
+    kprintf("\n[VMM ] Testing Demand Paging...\n");
+    // Address range 0x60000000..0x60004000 is completely UNMAPPED right now!
+    uint64_t unmapped_page0 = 0x60000000ULL;
+    uint64_t unmapped_page1 = 0x60001000ULL;
+    // Verify both pages are NOT present in VMM
+    kprintf("[VMM ] Before access: virt %p phys = %p (Expected: 0)\n", (void *) unmapped_page0, (void *) vmm_virt_to_phys(vmm_kernel_context, unmapped_page0));
+    kprintf("[VMM ] Before access: virt %p phys = %p (Expected: 0)\n", (void *) unmapped_page1, (void *) vmm_virt_to_phys(vmm_kernel_context, unmapped_page1));
+    // Touch Page 1 FIRST (out of order!) -> Triggers Page Fault #1
+    kprintf("[VMM ] Writing to Page 1 at %p (unmapped!)...\n", (void *) (unmapped_page1 + 0x500));
+    // Triggers page fault
+    *(volatile uint32_t *)(unmapped_page1 + 0x500) = 0x88888888;
+    // Verify Page 1 is now allocated, but Page 0 is STILL 0!
+    kprintf("[VMM ] Value written at %p reads as 0x%X\n", (void *)(unmapped_page1 + 0x500), *(volatile uint32_t *)(unmapped_page1 + 0x500));
+    kprintf("[VMM ] Page 1 phys = %p\n", (void *) vmm_virt_to_phys(vmm_kernel_context, unmapped_page1));
+    kprintf("[VMM ] Page 0 phys = %p (Expected: 0)\n", (void *) vmm_virt_to_phys(vmm_kernel_context, unmapped_page0));
+    // Touch Page 0 SECOND -> Triggers Page Fault #2
+    kprintf("[VMM ] Writing to Page 0 at %p (unmapped!)...\n", (void *) unmapped_page0);
+    // Triggers page fault
+    *(volatile uint32_t *)unmapped_page0 = 0x11111111;
+    // Verify Page 0 is now allocated too!
+    kprintf("[VMM ] Value written at %p reads as 0x%X\n", (void *) unmapped_page0, *(volatile uint32_t *)unmapped_page0);
+    kprintf("[VMM ] Page 0 phys = %p\n", (void *) vmm_virt_to_phys(vmm_kernel_context, unmapped_page0));
+    kprintf("[VMM ] Demand Paging Test PASSED!\n");
 }

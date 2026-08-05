@@ -1,5 +1,8 @@
 #include "idt.h"
+
 #include "kprintf.h"
+#include "arch.h"
+#include "vmm.h"
 
 static struct idt_entry idt_entries[256];
 static struct idt_ptr   idt_pointer;
@@ -69,7 +72,6 @@ void x86_64_exception_handler(struct x86_64_registers *regs) {
     kprintf(" RBP: 0x%016lx   R8: 0x%016lx   R9: 0x%016lx\n", regs->rbp, regs->r8, regs->r9);
     kprintf(" R10: 0x%016lx  R11: 0x%016lx  R12: 0x%016lx\n", regs->r10, regs->r11, regs->r12);
     kprintf(" R13: 0x%016lx  R14: 0x%016lx  R15: 0x%016lx\n", regs->r13, regs->r14, regs->r15);
-
     if (regs->int_no == 14) { // Page fault
         uint64_t cr2;
         asm volatile ("mov %%cr2, %0" : "=r"(cr2));
@@ -77,5 +79,14 @@ void x86_64_exception_handler(struct x86_64_registers *regs) {
     }
     kprintf("===================================================\n");
 
-    kpanic("Unhandled x86_64 CPU Exception");
+    if (regs->int_no == 14) {
+        // Page Fault
+        uint64_t cr2 = arch_vmm_get_fault_addr();
+        if (vmm_handle_page_fault(cr2, regs->error_code)) {
+            // fault resolved, return to resume instruction!
+            return;
+        }
+    }
+
+    kpanic("Unhandled x86_64 Exception");
 }

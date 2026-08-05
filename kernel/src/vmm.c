@@ -4,6 +4,7 @@
 #include "pmm.h"
 #include "heap.h"
 #include "memory.h"
+#include "kprintf.h"
 
 // Surprisingly, this VMM stuff is NOT arch specific.
 // The 4-level tree walk logic is identical for both x86_64 and AArch64!
@@ -17,6 +18,8 @@ void vmm_init(void) {
     vmm_kernel_context->root_phys = (uint64_t *) arch_vmm_get_root();
     vmm_kernel_context->root_virt = pmm_phys_to_virt((uint64_t) vmm_kernel_context->root_phys);
     vmm_current_context = vmm_kernel_context;
+    // Set the current context
+    vmm_switch_context(vmm_kernel_context);
 }
 
 struct vmm_context *vmm_create_context(void) {
@@ -154,4 +157,24 @@ void vmm_switch_context(struct vmm_context *ctx) {
         // Arch specific to set the current root (effectively switching context)
         arch_vmm_set_root((uint64_t) ctx->root_phys);
     }
+}
+
+bool vmm_handle_page_fault(uint64_t fault_addr, uint64_t error_code) {
+    // TODO: hardcoded
+    if (fault_addr >= 0x800000000000ULL) {
+        return false;
+    }
+    uint64_t phys_addr = pmm_alloc(1);
+    if (!phys_addr) {
+        return false;
+    }
+    void *virt_addr = pmm_phys_to_virt(phys_addr);
+    memset(virt_addr, 0, PAGE_SIZE);
+    int res = vmm_map_page(vmm_current_context, fault_addr & ~0xFFFULL, phys_addr, VMM_WRITABLE);
+    if (res != 0) {
+        pmm_free(phys_addr, 1);
+        return false;
+    }
+    kprintf("[VMM ] Demand Paging: Lazily allocated page for fault_addr %p -> %p\n", (void *) fault_addr, (void *) phys_addr);
+    return true;
 }

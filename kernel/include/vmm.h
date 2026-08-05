@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 
 struct vmm_context {
     uint64_t *root_phys;
@@ -25,5 +26,7 @@ int vmm_unmap_page(struct vmm_context *ctx, uint64_t virt_addr);
 uint64_t vmm_virt_to_phys(struct vmm_context *ctx, uint64_t virt_addr);
 
 void vmm_switch_context(struct vmm_context *ctx);
+
+bool vmm_handle_page_fault(uint64_t fault_addr, uint64_t error_code);
 
 #endif //PROS_VMM_H
