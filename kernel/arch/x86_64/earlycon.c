@@ -1,9 +1,5 @@
-#include "arch.h"
-
-#include "boot.h"
-
+#include "earlycon.h"
 #include <stdint.h>
-#include <stddef.h>
 
 #define COM1 0x3F8
 
@@ -17,7 +13,7 @@ static inline uint8_t inb(uint16_t port) {
     return ret;
 }
 
-void serial_init(void) {
+void earlycon_init(void) {
     outb(COM1 + 1, 0x00); // Disable all interrupts
     outb(COM1 + 3, 0x80); // Enable DLAB (set baud rate divisor)
     outb(COM1 + 0, 0x03); // Set divisor to 3 (lo byte) 38400 baud
@@ -27,9 +23,9 @@ void serial_init(void) {
     outb(COM1 + 4, 0x0B); // IRQs enabled, RTS/DSR set
 }
 
-void arch_putc(char c) {
+void earlycon_putc(char c) {
     while ((inb(COM1 + 5) & 0x20) == 0) {
         // Wait until Transmit holding register is empty
     }
-    outb(COM1, (uint8_t) c);
+    outb(COM1, (uint8_t)c);
 }

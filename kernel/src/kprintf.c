@@ -1,5 +1,5 @@
 #include "kprintf.h"
-
+#include "console.h"
 #include "arch.h"
 
 #include <printf.h>
@@ -17,10 +17,10 @@ void kpanic(const char *msg) {
     arch_halt();
 }
 
-// _putchar function that printf wants is impl here and simply sends to UART
+// _putchar function that printf wants is impl here and simply sends to console
 void _putchar(char character) {
     if (character == '\n') {
-        arch_putc('\r');
+        console_putc('\r');
     }
-    arch_putc(character);
+    console_putc(character);
 }

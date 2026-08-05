@@ -1,9 +1,6 @@
 #include "arch.h"
 
-extern void serial_init();
-
 void arch_init(void) {
-    serial_init();
 }
 
 void arch_halt(void) {

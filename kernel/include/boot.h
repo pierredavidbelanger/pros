@@ -14,5 +14,6 @@ extern volatile struct limine_dtb_request dtb_request;
 extern volatile struct limine_rsdp_request rsdp_request;
 extern volatile struct limine_stack_size_request stack_size_request;
 extern volatile struct limine_entry_point_request entry_point_request;
+extern volatile struct limine_executable_address_request executable_address_request;
 
 #endif //PROS_BOOT_H

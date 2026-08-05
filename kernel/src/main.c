@@ -2,6 +2,7 @@
 
 #include "arch.h"
 #include "fb.h"
+#include "console.h"
 #include "kprintf.h"
 #include "pmm.h"
 #include "heap.h"
@@ -16,6 +17,9 @@ void _start(void) {
     }
 
     arch_init();
+
+    console_init();
+    kprintf("[CON ] Initialized console, ready to kprintf\n");
 
     kprintf("[K   ] Wellcome to PjErOS!\n");
 
