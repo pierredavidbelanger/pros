@@ -1,6 +1,7 @@
 #include "core/console.h"
 
 #include "core/earlycon.h"
+#include "core/fb.h"
 
 #include "stdc.h"
 
@@ -14,6 +15,9 @@ void console_init(void) {
 void console_putc(char c) {
     if (earlycon_active) {
         earlycon_putc(c);
+    }
+    if (fb_is_active()) {
+        fb_terminal_print_char(c);
     }
 }
 

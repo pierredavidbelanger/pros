@@ -174,7 +174,7 @@ static void terminal_scroll(void) {
     cursor_y = fb->height - FONT_HEIGHT;
 }
 
-static void terminal_print_char(char c) {
+void fb_terminal_print_char(char c) {
     if (c == '\n') {
         cursor_x = 0;
         cursor_y += FONT_HEIGHT;
@@ -189,4 +189,8 @@ static void terminal_print_char(char c) {
     if (cursor_y + FONT_HEIGHT > fb->height) {
         terminal_scroll();
     }
+}
+
+bool fb_is_active(void) {
+    return fb != NULL;
 }

@@ -39,18 +39,19 @@ qemu-aarch64: root
 		-m 2G \
 		-machine virt \
 		-cpu cortex-a72 \
+		-serial stdio \
 		-drive if=pflash,unit=0,format=raw,file=bin/edk2-ovmf-bins/ovmf-code-aarch64.fd,readonly=on \
 		-drive if=none,id=hd0,file=fat:rw:root,format=raw \
 		-device virtio-blk-pci,drive=hd0,disable-legacy=on \
-		-nographic
+		-device ramfb
 
 .PHONY: qemu-x86_64
 qemu-x86_64: root
 	qemu-system-x86_64 \
 		-m 2G \
 		-machine q35 \
+		-serial stdio \
 		-drive if=pflash,unit=0,format=raw,file=bin/edk2-ovmf-bins/ovmf-code-x86_64.fd,readonly=on \
 		-drive if=none,id=hd0,file=fat:rw:root,format=raw \
-		-device virtio-blk-pci,drive=hd0,disable-legacy=on \
-		-nographic
+		-device virtio-blk-pci,drive=hd0,disable-legacy=on
 

@@ -27,7 +27,7 @@ void _start(void) {
     arch_init();
 
     console_init();
-    kprintf("[CON  ] Initialized console, ready to kprintf\n");
+    kprintf("[CON  ] Initialized console, ready to kprintf on the serial console\n");
 
     kprintf("[K    ] Wellcome to PjErOS!\n");
 
@@ -78,11 +78,12 @@ void _start(void) {
 
     if (framebuffer_request.response) {
         fb_init(framebuffer_request.response);
-        kprintf("[FB   ] Initialized the framebuffer, ready to kprintf\n");
+        kprintf("[FB   ] Initialized the framebuffer, ready to kprintf also on the screen\n");
     }
 
-    kprintf("[K    ] Attempting to shut down...\n");
-    arch_shutdown();
+    // kprintf("[K    ] Attempting to shut down...\n");
+    // arch_shutdown();
+    arch_halt();
 }
 
 void test_pmm(void) {
