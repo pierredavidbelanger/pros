@@ -1,6 +1,7 @@
 #include "arch/arch.h"
 #include "idt.h"
 #include "mm/vmm.h"
+#include "drivers/acpi.h"
 
 void arch_init(void) {
     idt_init();
@@ -12,15 +13,17 @@ void arch_halt(void) {
     }
 }
 
-static inline void outw(uint16_t port, uint16_t val) {
-    asm volatile ("outw %0, %1" : : "a"(val), "Nd"(port));
+void arch_outw(uint16_t port, uint16_t val) {
+    asm volatile ("outw %0, %1" : : "a"(val), "d"(port));
 }
 
 void arch_shutdown(void) {
-    // QEMU q35 ACPI PM1a_CNT_BLK poweroff (SLP_TYPa | SLP_EN)
-    outw(0x604, 0x2000);
+    // Dynamic ACPI FADT PM1a poweroff
+    acpi_shutdown();
+    // QEMU q35 fallback port
+    arch_outw(0x604, 0x2000);
     // Fallback: QEMU debug-exit port
-    outw(0x501, 0x00);
+    arch_outw(0x501, 0x00);
     // Fallback: halt if poweroff is not supported by hardware
     arch_halt();
 }

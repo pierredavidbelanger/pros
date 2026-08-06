@@ -66,8 +66,11 @@ void _start(void) {
         kprintf("[FB   ] Initialized the framebuffer, ready to kprintf\n");
     }
 
-    kprintf("[K    ] Shutting down...\n");
-    arch_shutdown();
+    kprintf("[K    ] Attempting ACPI shutdown...\n");
+    if (acpi_shutdown() != 0) {
+        kprintf("[K    ] ACPI shutdown not supported on this platform, falling back to arch shutdown...\n");
+        arch_shutdown();
+    }
 }
 
 void test_pmm(void) {

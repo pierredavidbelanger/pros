@@ -183,7 +183,8 @@ bool vmm_handle_page_fault(uint64_t fault_addr, uint64_t error_code) {
     uint64_t hhdm_base = pmm_get_hhdm_offset();
 
     // Case 1: HHDM Higher-Half MMIO Access Fault (e.g. PCIe ECAM at 0xE0000000)
-    if (hhdm_base != 0 && fault_addr >= hhdm_base) {
+    // HHDM range is [hhdm_base, hhdm_base + 4TB). Excludes kernel text at 0xffffffff80000000.
+    if (hhdm_base != 0 && fault_addr >= hhdm_base && fault_addr < (hhdm_base + 0x40000000000ULL)) {
         uint64_t phys_addr = fault_addr - hhdm_base;
         uint64_t aligned_virt = fault_addr & ~0xFFFULL;
         uint64_t aligned_phys = phys_addr & ~0xFFFULL;
@@ -195,8 +196,8 @@ bool vmm_handle_page_fault(uint64_t fault_addr, uint64_t error_code) {
         return false;
     }
 
-    // Case 2: Lower-Half User Space Demand Paging Fault
-    if (fault_addr < 0x800000000000ULL) {
+    // Case 2: Lower-Half User Space Demand Paging Fault (0x60000000 test region)
+    if (fault_addr >= 0x60000000ULL && fault_addr < 0x70000000ULL) {
         uint64_t phys_addr = pmm_alloc(1);
         if (!phys_addr) return false;
 

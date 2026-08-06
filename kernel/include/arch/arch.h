@@ -13,6 +13,9 @@ void arch_halt(void);
 // Cleanly power off the machine
 void arch_shutdown(void);
 
+// Port IO helper for x86_64
+void arch_outw(uint16_t port, uint16_t val);
+
 // ─── VMM Architecture Primitives ─────────────────────────────
 
 // Build a hardware PTE from physical address + abstract VMM flags.

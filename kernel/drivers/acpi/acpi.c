@@ -1,9 +1,16 @@
 #include "drivers/acpi.h"
+#include "arch/arch.h"
 #include "core/kprintf.h"
 #include "core/memory.h"
 #include "mm/pmm.h"
 
 static uint64_t mcfg_ecam_base = 0;
+
+static bool has_fadt = false;
+static uint32_t pm1a_cnt_blk = 0;
+static uint32_t pm1b_cnt_blk = 0;
+static acpi_gas_t x_pm1a_cnt_blk = {0};
+static acpi_gas_t x_pm1b_cnt_blk = {0};
 
 int acpi_init(void *rsdp_virt) {
     if (!rsdp_virt) {
@@ -63,6 +70,18 @@ int acpi_init(void *rsdp_virt) {
                         mcfg->entries[0].start_bus,
                         mcfg->entries[0].end_bus);
             }
+        } else if (memcmp(header->signature, "FACP", 4) == 0 || memcmp(header->signature, "FADT", 4) == 0) {
+            acpi_fadt_t *fadt = (acpi_fadt_t *)header;
+            has_fadt = true;
+            pm1a_cnt_blk = fadt->pm1a_cnt_blk;
+            pm1b_cnt_blk = fadt->pm1b_cnt_blk;
+
+            if (fadt->header.length >= offsetof(acpi_fadt_t, x_pm1a_cnt_blk) + sizeof(acpi_gas_t)) {
+                x_pm1a_cnt_blk = fadt->x_pm1a_cnt_blk;
+                x_pm1b_cnt_blk = fadt->x_pm1b_cnt_blk;
+            }
+            kprintf("[ACPI ]     Discovered FADT table (PM1a_CNT_BLK port: 0x%X, GAS address: 0x%llX, space: %u)\n",
+                    pm1a_cnt_blk, (unsigned long long)x_pm1a_cnt_blk.address, x_pm1a_cnt_blk.address_space_id);
         }
     }
 
@@ -75,4 +94,33 @@ int acpi_init(void *rsdp_virt) {
 
 uint64_t acpi_get_mcfg_ecam_base(void) {
     return mcfg_ecam_base;
+}
+
+int acpi_shutdown(void) {
+    if (!has_fadt) {
+        return -1;
+    }
+
+    // Value for ACPI S5 Soft-Off (SLP_TYPa = 0 in QEMU/Bochs | SLP_EN = 1 << 13)
+    uint16_t slp_val = (0 << 10) | (1 << 13);
+
+    // 1. Try legacy 32-bit PM1a_CNT_BLK I/O port first (Standard on all x86_64 PCs & QEMU)
+    if (pm1a_cnt_blk != 0) {
+        arch_outw((uint16_t)pm1a_cnt_blk, slp_val);
+        if (pm1b_cnt_blk != 0) {
+            arch_outw((uint16_t)pm1b_cnt_blk, slp_val);
+        }
+        return 0;
+    }
+
+    // 2. Try 64-bit GAS structure if System I/O port space
+    if (x_pm1a_cnt_blk.address != 0 && x_pm1a_cnt_blk.address_space_id == 1) {
+        arch_outw((uint16_t)x_pm1a_cnt_blk.address, slp_val);
+        if (x_pm1b_cnt_blk.address != 0) {
+            arch_outw((uint16_t)x_pm1b_cnt_blk.address, slp_val);
+        }
+        return 0;
+    }
+
+    return -1;
 }

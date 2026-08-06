@@ -47,10 +47,16 @@ void arch_halt(void) {
     }
 }
 
+void arch_outw(uint16_t port, uint16_t val) {
+    (void)port;
+    (void)val;
+}
+
 void arch_shutdown(void) {
     // PSCI 0.2 SYSTEM_OFF Function ID 0x84000008 via HVC
     register uint64_t x0 asm("x0") = 0x84000008;
     asm volatile ("hvc #0" : : "r"(x0));
+    // Fallback: halt if poweroff is not supported by hardware
     arch_halt();
 }
 
