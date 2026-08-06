@@ -1,9 +1,11 @@
 #include "core/kprintf.h"
+
 #include "core/console.h"
 #include "arch/arch.h"
 
 #include <printf.h>
-#include <stdarg.h>
+
+#include "stdc.h"
 
 void kprintf(const char *fmt, ...) {
     va_list va;

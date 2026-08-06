@@ -2,9 +2,6 @@
 
 #include "core/kprintf.h"
 
-#include <stddef.h>
-#include <stdbool.h>
-
 #define PMM_ALIGN_UP(x, align) (((x) + (align) - 1) & ~((align) - 1))
 #define PMM_ALIGN_DOWN(x, align) ((x) & ~((align) - 1))
 

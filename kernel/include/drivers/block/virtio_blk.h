@@ -1,10 +1,10 @@
 #ifndef VIRTIO_BLK_H
 #define VIRTIO_BLK_H
 
-#include <stdint.h>
-#include <stdbool.h>
 #include "drivers/block/blockdev.h"
 #include "drivers/virtio/virtio.h"
+
+#include "stdc.h"
 
 #define VIRTIO_BLK_T_IN   0
 #define VIRTIO_BLK_T_OUT  1

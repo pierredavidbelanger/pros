@@ -1,6 +1,8 @@
 #include "core/console.h"
+
 #include "core/earlycon.h"
-#include <stdbool.h>
+
+#include "stdc.h"
 
 static bool earlycon_active = false;
 

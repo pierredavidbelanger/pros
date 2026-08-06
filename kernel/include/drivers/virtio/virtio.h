@@ -1,8 +1,7 @@
 #ifndef PROS_VIRTIO_H
 #define PROS_VIRTIO_H
 
-#include <stdint.h>
-#include <stddef.h>
+#include "stdc.h"
 
 #define VIRTQ_DESC_F_NEXT  1
 #define VIRTQ_DESC_F_WRITE 2

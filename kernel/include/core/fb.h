@@ -1,8 +1,7 @@
 #ifndef PROS_FB_H
 #define PROS_FB_H
 
-#include <stdint.h>
-#include <stddef.h>
+#include "stdc.h"
 
 #include <limine.h>
 

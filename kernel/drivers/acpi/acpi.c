@@ -1,4 +1,5 @@
 #include "drivers/acpi/acpi.h"
+
 #include "arch/arch.h"
 #include "core/kprintf.h"
 #include "core/memory.h"

@@ -4,8 +4,6 @@
 #include "core/memory.h"
 #include "core/kprintf.h"
 
-#include <stdbool.h>
-
 int virtq_init(struct virtq *vq, uint16_t queue_size) {
     if (!vq || queue_size == 0) return -1;
 

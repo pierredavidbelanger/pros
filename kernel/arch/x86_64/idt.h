@@ -1,7 +1,7 @@
 #ifndef PROS_X86_64_IDT_H
 #define PROS_X86_64_IDT_H
 
-#include <stdint.h>
+#include "stdc.h"
 
 struct idt_entry {
     uint16_t offset_low;

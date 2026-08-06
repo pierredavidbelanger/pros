@@ -1,7 +1,7 @@
 #ifndef PROS_HEAP_H
 #define PROS_HEAP_H
 
-#include <stddef.h>
+#include "stdc.h"
 
 void heap_init();
 

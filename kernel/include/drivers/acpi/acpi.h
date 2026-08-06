@@ -1,9 +1,7 @@
 #ifndef ACPI_H
 #define ACPI_H
 
-#include <stdint.h>
-#include <stddef.h>
-#include <stdbool.h>
+#include "stdc.h"
 
 // Standard ACPI Table Header
 typedef struct acpi_header {

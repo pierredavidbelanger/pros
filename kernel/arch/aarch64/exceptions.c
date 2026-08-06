@@ -1,6 +1,6 @@
 #include "exceptions.h"
-#include "core/earlycon.h"
 
+#include "core/earlycon.h"
 #include "core/kprintf.h"
 #include "arch/arch.h"
 #include "mm/vmm.h"

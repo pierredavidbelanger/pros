@@ -1,9 +1,7 @@
 #ifndef PROS_VMM_H
 #define PROS_VMM_H
 
-#include <stdint.h>
-#include <stddef.h>
-#include <stdbool.h>
+#include "stdc.h"
 
 // ─── Abstract VMM Flags (architecture-neutral) ───────────────
 // These are NOT hardware PTE bits. They are translated to hardware

@@ -1,9 +1,7 @@
 #ifndef PCI_H
 #define PCI_H
 
-#include <stdint.h>
-#include <stddef.h>
-#include <stdbool.h>
+#include "stdc.h"
 
 #define PCI_REG_VENDOR_ID   0x00
 #define PCI_REG_DEVICE_ID   0x02

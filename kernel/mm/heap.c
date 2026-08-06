@@ -2,8 +2,6 @@
 
 #include "mm/pmm.h"
 
-#include <stdbool.h>
-
 #define HEAP_ALIGNMENT 16
 #define HEAP_ALIGN_UP(size, align) (((size) + (align) - 1) & ~((align) - 1))
 

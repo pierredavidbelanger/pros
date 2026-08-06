@@ -1,8 +1,7 @@
 #ifndef PROS_PMM_H
 #define PROS_PMM_H
 
-#include <stdint.h>
-#include <stddef.h>
+#include "stdc.h"
 
 #include <limine.h>
 

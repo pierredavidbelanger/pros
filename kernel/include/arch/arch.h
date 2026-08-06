@@ -1,8 +1,7 @@
 #ifndef PROS_ARCH_H
 #define PROS_ARCH_H
 
-#include <stdint.h>
-#include <stdbool.h>
+#include "stdc.h"
 
 void arch_init(void);
 

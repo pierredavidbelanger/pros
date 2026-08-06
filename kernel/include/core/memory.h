@@ -1,8 +1,7 @@
 #ifndef PROS_MEMORY_H
 #define PROS_MEMORY_H
 
-#include <stdint.h>
-#include <stddef.h>
+#include "stdc.h"
 
 void *memcpy(void *restrict dest, const void *restrict src, size_t n);
 void *memset(void *s, int c, size_t n);

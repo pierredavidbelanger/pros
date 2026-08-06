@@ -1,7 +1,7 @@
 #ifndef PROS_AARCH64_EXCEPTIONS_H
 #define PROS_AARCH64_EXCEPTIONS_H
 
-#include <stdint.h>
+#include "stdc.h"
 
 struct aarch64_registers {
     uint64_t x[31];       // x0..x30

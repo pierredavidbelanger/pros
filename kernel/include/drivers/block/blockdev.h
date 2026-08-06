@@ -1,8 +1,7 @@
 #ifndef BLOCKDEV_H
 #define BLOCKDEV_H
 
-#include <stddef.h>
-#include <stdint.h>
+#include "stdc.h"
 
 #define BLOCKDEV_MAX_NAME 32
 #define BLOCKDEV_MAX_DEVICES 16

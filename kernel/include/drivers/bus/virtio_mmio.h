@@ -1,8 +1,7 @@
 #ifndef VIRTIO_MMIO_H
 #define VIRTIO_MMIO_H
 
-#include <stdint.h>
-#include <stdbool.h>
+#include "stdc.h"
 
 #define VIRTIO_MMIO_MAGIC 0x74726976 // "virt" in Little Endian
 

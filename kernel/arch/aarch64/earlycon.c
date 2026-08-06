@@ -1,8 +1,8 @@
 #include "core/earlycon.h"
+
 #include "core/boot.h"
 
-#include <stdint.h>
-#include <stddef.h>
+#include "stdc.h"
 
 #define PL011_UART_BASE_PHYS 0x09000000
 
