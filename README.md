@@ -22,11 +22,19 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
   - Supports single-page and multi-page contiguous page allocations (`pmm_alloc(count)`).
   - Translates physical to virtual addresses via the Higher-Half Direct Map (`HHDM`) offset.
   - API: `pmm_init()`, `pmm_alloc()`, `pmm_free()`, `pmm_phys_to_virt()`, `pmm_virt_to_phys()`.
+- **Virtual Memory Management (VMM)**:
+  - Architecture-agnostic 4-level page table walk supporting both x86_64 and AArch64.
+  - Handles page mapping/unmapping, demand paging, and context switching.
+  - Manages Higher-Half MMIO access faults (e.g., PCIe ECAM) and lower-half user space demand paging.
 - **Kernel Dynamic Heap Allocator**:
   - First-fit linked free-list block allocator for sub-page and multi-page arbitrary byte allocations.
   - Enforces 16-byte memory alignment (`HEAP_ALIGNMENT`).
   - Implements header metadata tracking (`struct heap_block`), automatic block splitting, and dynamic heap expansion via PMM.
   - API: `heap_init()`, `kmalloc()`, `kfree()`, `kcalloc()`.
+- **Drivers & Device Discovery**:
+  - **PCI & ACPI**: ECAM-based PCI configuration space access; ACPI table parsing (RSDP, XSDT, MCFG).
+  - **VirtIO**: Support for both VirtIO MMIO (direct) and VirtIO PCI (Modern 1.0) transports.
+  - **Block Device**: `virtio-blk` driver with virtqueue management for sector-level read/write operations.
 - **Graphical Framebuffer & Terminal Engine**:
   - 32-bit ARGB/RGB direct pixel drawing and screen clearing (`fb_clear`).
   - Built-in 8x16 VGA bitmap font renderer supporting automatic text wrapping and full-screen vertical scrolling (`terminal_scroll`).
@@ -41,26 +49,20 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
 
 ## 📁 Project Structure
 
-```
+```text
 .
 ├── Makefile               # Root build script (FAT root dir setup, OVMF/Limine binaries, QEMU launchers)
 ├── limine.conf            # Limine bootloader configuration
 ├── README.md              # Project documentation
 ├── AGENT.md               # Development & mentorship guidelines
 └── kernel/                # Kernel source root
-    ├── Makefile           # Kernel compilation script (auto-fetches freestanding libs & printf)
-    ├── arch/              # Architecture configurations & linker scripts
-    │   ├── aarch64/       # AArch64 arch.c, config.mk, and linker.lds
-    │   └── x86_64/        # x86_64 arch.c, config.mk, and linker.lds
-    ├── include/           # Modular C headers (arch.h, boot.h, fb.h, heap.h, kprintf.h, memory.h, pmm.h)
-    └── src/               # Core kernel source
-        ├── main.c         # Entry point (_start), initialization calls, kprintf logs
-        ├── boot.c         # Limine boot protocol request structures (Framebuffer, HHDM, Memmap, DTB, RSDP, etc.)
-        ├── fb.c           # Framebuffer driver, terminal engine, scrolling, font renderer
-        ├── heap.c         # First-fit dynamic kernel heap allocator (kmalloc, kfree, kcalloc)
-        ├── kprintf.c      # Formatted kprintf implementation (wraps mpaland/printf) and panic handling
-        ├── memory.c       # Core C memory utilities (memcpy, memset, memmove, memcmp)
-        └── pmm.c          # Physical Memory Manager (page frame allocator for single/multi-page requests)
+    ├── Makefile           # Kernel compilation script
+    ├── arch/              # Architecture-specific code (aarch64, x86_64), linker scripts, exceptions, interrupts
+    ├── core/              # Core kernel subsystems (boot, fb, kprintf, main)
+    ├── drivers/           # Device drivers (acpi, block, bus, virtio)
+    ├── include/           # Kernel headers (arch, core, drivers, mm)
+    ├── libs/              # Downloaded third-party libraries (freestanding headers, printf, limine)
+    └── mm/                # Memory Management (pmm, vmm, heap)
 ```
 
 ---
