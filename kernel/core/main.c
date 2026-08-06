@@ -7,10 +7,11 @@
 #include "mm/pmm.h"
 #include "mm/heap.h"
 #include "mm/vmm.h"
-#include "drivers/blockdev.h"
-#include "drivers/acpi.h"
-#include "drivers/pci.h"
-#include "drivers/virtio_mmio.h"
+#include "drivers/block/blockdev.h"
+#include "drivers/acpi/acpi.h"
+#include "drivers/bus/pci.h"
+#include "drivers/bus/virtio_mmio.h"
+#include "drivers/virtio/virtio.h"
 
 void test_pmm(void);
 

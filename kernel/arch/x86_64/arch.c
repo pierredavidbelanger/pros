@@ -1,7 +1,7 @@
 #include "arch/arch.h"
 #include "idt.h"
 #include "mm/vmm.h"
-#include "drivers/acpi.h"
+#include "drivers/acpi/acpi.h"
 
 void arch_init(void) {
     idt_init();
