@@ -1,6 +1,7 @@
 #include "mm/heap.h"
 
 #include "mm/pmm.h"
+#include "core/memory.h"
 
 #define HEAP_ALIGNMENT 16
 #define HEAP_ALIGN_UP(size, align) (((size) + (align) - 1) & ~((align) - 1))
@@ -65,10 +66,24 @@ void *kmalloc(size_t size) {
 }
 
 void *kcalloc(size_t num, size_t size) {
-    // TODO
-    return NULL;
+    size_t total_size = HEAP_ALIGN_UP(num * size, HEAP_ALIGNMENT);
+    void *ptr = kmalloc(total_size);
+    memset(ptr, 0, total_size);
+    return ptr;
 }
 
 void kfree(void *virt_addr) {
-    // TODO
+    if (!virt_addr) return;
+    struct heap_block *block = virt_addr - sizeof(struct heap_block);
+    block->is_free = true;
+    // Coalesce the next following blocks, otherwise memory get fragmented over time
+    // check if next block exists at all, is free and is contiguous
+    void *block_end = (void *) block + sizeof(struct heap_block) + block->size;
+    while (block->next && block->next->is_free && block_end == (void *) block->next) {
+        // it is safe to coalesce
+        block->size += sizeof(struct heap_block) + block->next->size;
+        block->next = block->next->next;
+        // block has grow, recalculate its end
+        block_end = (void *) block + sizeof(struct heap_block) + block->size;
+    }
 }
