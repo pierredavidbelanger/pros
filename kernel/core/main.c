@@ -11,7 +11,6 @@
 #include "drivers/acpi/acpi.h"
 #include "drivers/bus/pci.h"
 #include "drivers/bus/virtio_mmio.h"
-#include "drivers/virtio/virtio.h"
 #include "drivers/block/virtio_blk.h"
 
 void test_pmm(void);
@@ -82,11 +81,8 @@ void _start(void) {
         kprintf("[FB   ] Initialized the framebuffer, ready to kprintf\n");
     }
 
-    kprintf("[K    ] Attempting ACPI shutdown...\n");
-    if (acpi_shutdown() != 0) {
-        kprintf("[K    ] ACPI shutdown not supported on this platform, falling back to arch shutdown...\n");
-        arch_shutdown();
-    }
+    kprintf("[K    ] Attempting to shut down...\n");
+    arch_shutdown();
 }
 
 void test_pmm(void) {

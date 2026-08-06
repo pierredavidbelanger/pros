@@ -115,7 +115,4 @@ int acpi_init(void *rsdp_virt);
 // Get discovered PCIe ECAM base physical address (returns 0 if not found)
 uint64_t acpi_get_mcfg_ecam_base(void);
 
-// Perform ACPI poweroff/shutdown using parsed FADT PM1a control block registers
-int acpi_shutdown(void);
-
 #endif // ACPI_H

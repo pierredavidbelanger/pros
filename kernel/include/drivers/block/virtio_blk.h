@@ -22,8 +22,6 @@ struct virtio_blk_req {
 struct virtio_blk_device {
     struct blockdev block_dev;
     struct virtq vq;
-    bool is_io_port;
-    uint16_t io_port;
     volatile uint32_t *mmio_base;
     volatile uint32_t *notify_reg;
 };

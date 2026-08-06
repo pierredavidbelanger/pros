@@ -40,12 +40,6 @@ void arch_halt(void) {
     }
 }
 
-uint8_t arch_inb(uint16_t port) { (void)port; return 0; }
-void arch_outb(uint16_t port, uint8_t val) { (void)port; (void)val; }
-uint16_t arch_inw(uint16_t port) { (void)port; return 0; }
-void arch_outw(uint16_t port, uint16_t val) { (void)port; (void)val; }
-uint32_t arch_inl(uint16_t port) { (void)port; return 0; }
-void arch_outl(uint16_t port, uint32_t val) { (void)port; (void)val; }
 
 void arch_shutdown(void) {
     // PSCI 0.2 SYSTEM_OFF Function ID 0x84000008 via HVC

@@ -13,39 +13,15 @@ void arch_halt(void) {
     }
 }
 
-uint8_t arch_inb(uint16_t port) {
-    uint8_t ret;
-    asm volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
-    return ret;
-}
 
-void arch_outb(uint16_t port, uint8_t val) {
-    asm volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
-}
 
-uint16_t arch_inw(uint16_t port) {
-    uint16_t ret;
-    asm volatile ("inw %1, %0" : "=a"(ret) : "Nd"(port));
-    return ret;
-}
-
-void arch_outw(uint16_t port, uint16_t val) {
+static void arch_outw(uint16_t port, uint16_t val) {
     asm volatile ("outw %0, %1" : : "a"(val), "Nd"(port));
 }
 
-uint32_t arch_inl(uint16_t port) {
-    uint32_t ret;
-    asm volatile ("inl %1, %0" : "=a"(ret) : "Nd"(port));
-    return ret;
-}
 
-void arch_outl(uint16_t port, uint32_t val) {
-    asm volatile ("outl %0, %1" : : "a"(val), "Nd"(port));
-}
 
 void arch_shutdown(void) {
-    // Dynamic ACPI FADT PM1a poweroff
-    acpi_shutdown();
     // QEMU q35 fallback port
     arch_outw(0x604, 0x2000);
     // Fallback: QEMU debug-exit port

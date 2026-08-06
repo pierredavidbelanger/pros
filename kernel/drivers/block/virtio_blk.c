@@ -55,9 +55,7 @@ static int virtio_blk_rw(struct virtio_blk_device *dev, uint64_t lba, uint32_t c
 
     dev->vq.avail->idx++;
 
-    if (dev->is_io_port) {
-        arch_outw(dev->io_port + 0x10, 0);
-    } else if (dev->notify_reg) {
+    if (dev->notify_reg) {
         *(volatile uint16_t *)dev->notify_reg = 0;
     }
 
@@ -128,7 +126,6 @@ int virtio_blk_init(void) {
         volatile uint64_t *cap_ptr = (volatile uint64_t *)((uint8_t *)mmio_base + 0x100);
         total_capacity_sectors = *cap_ptr;
 
-        dev->is_io_port = false;
         dev->mmio_base = mmio_base;
         dev->notify_reg = notify_reg;
 
@@ -228,7 +225,6 @@ int virtio_blk_init(void) {
                 total_capacity_sectors = *cap_ptr;
             }
 
-            dev->is_io_port = false;
             dev->block_dev.block_size = 512;
             dev->block_dev.total_blocks = (total_capacity_sectors && total_capacity_sectors < 0x100000000ULL) ? total_capacity_sectors : 204800;
             dev->block_dev.priv_data = dev;
@@ -241,49 +237,6 @@ int virtio_blk_init(void) {
             kprintf("[VBLK ] Initialized Modern VirtIO 1.0 PCI device 'hd0'\n");
             return 0;
         }
-
-        // Fallback to Legacy VirtIO PCI (Port I/O or direct BAR)
-        uint32_t bar0 = pci_dev.bar[0];
-        struct virtio_blk_device *dev = (struct virtio_blk_device *)kmalloc(sizeof(struct virtio_blk_device));
-        if (!dev) return -1;
-        memset(dev, 0, sizeof(struct virtio_blk_device));
-
-        if (bar0 & 1) {
-            dev->is_io_port = true;
-            dev->io_port = (uint16_t)(bar0 & ~0x3ULL);
-
-            arch_outb(dev->io_port + 0x12, 0);
-            arch_outb(dev->io_port + 0x12, 1);
-            arch_outb(dev->io_port + 0x12, 2);
-
-            arch_outw(dev->io_port + 0x0E, 0);
-            uint16_t qsize = arch_inw(dev->io_port + 0x0C);
-            if (qsize == 0) qsize = 128;
-
-            if (virtq_init(&dev->vq, qsize) != 0) {
-                kfree(dev);
-                return -1;
-            }
-
-            arch_outl(dev->io_port + 0x08, (uint32_t)(dev->vq.desc_phys / 4096));
-            arch_outb(dev->io_port + 0x12, 4);
-
-            uint32_t cap_lo = arch_inl(dev->io_port + 0x14);
-            uint32_t cap_hi = arch_inl(dev->io_port + 0x18);
-            total_capacity_sectors = ((uint64_t)cap_hi << 32) | cap_lo;
-        }
-
-        dev->block_dev.block_size = 512;
-        dev->block_dev.total_blocks = total_capacity_sectors ? total_capacity_sectors : 204800;
-        dev->block_dev.priv_data = dev;
-        dev->block_dev.read_blocks = virtio_blk_read_blocks;
-        dev->block_dev.write_blocks = virtio_blk_write_blocks;
-        strcpy(dev->block_dev.name, "hd0");
-
-        g_blk_dev = dev;
-        blockdev_register(&dev->block_dev);
-        kprintf("[VBLK ] Initialized VirtIO-Block PCI device 'hd0'\n");
-        return 0;
     }
 
     return -1;
