@@ -132,6 +132,8 @@ int virtio_blk_init(void) {
 
         dev->block_dev.block_size = 512;
         dev->block_dev.total_blocks = total_capacity_sectors ? total_capacity_sectors : 204800;
+        dev->block_dev.is_partition = false;
+        dev->block_dev.lba_offset = 0;
         dev->block_dev.priv_data = dev;
         dev->block_dev.read_blocks = virtio_blk_read_blocks;
         dev->block_dev.write_blocks = virtio_blk_write_blocks;
@@ -228,6 +230,8 @@ int virtio_blk_init(void) {
 
             dev->block_dev.block_size = 512;
             dev->block_dev.total_blocks = (total_capacity_sectors && total_capacity_sectors < 0x100000000ULL) ? total_capacity_sectors : 204800;
+            dev->block_dev.is_partition = false;
+            dev->block_dev.lba_offset = 0;
             dev->block_dev.priv_data = dev;
             dev->block_dev.read_blocks = virtio_blk_read_blocks;
             dev->block_dev.write_blocks = virtio_blk_write_blocks;

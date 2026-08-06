@@ -2,6 +2,7 @@
 
 #include "core/kprintf.h"
 #include "core/memory.h"
+#include "drivers/block/mbr.h"
 
 static blockdev_t *devices[BLOCKDEV_MAX_DEVICES];
 static size_t device_count = 0;
@@ -37,16 +38,24 @@ int blockdev_register(blockdev_t *dev) {
         if (devices[i] == NULL) {
             devices[i] = dev;
             device_count++;
-            kprintf("[BLK  ] Registered block device '%s' (block_size: %u B, total_blocks: %llu, cap: %llu MB)\n",
+            kprintf("[BLK  ] Registered block device '%s' (block_size: %u B, total_blocks: %llu, is_partition: %d, lba_offset: %p, cap: %llu MB)\n",
                     dev->name,
                     dev->block_size,
                     (unsigned long long)dev->total_blocks,
+                    (unsigned long long)dev->is_partition,
+                    (unsigned long long)dev->lba_offset,
                     (unsigned long long)(dev->total_blocks * dev->block_size / (1024 * 1024)));
-            return 0;
+            break;
         }
     }
 
-    return -1;
+    if (!dev->is_partition) {
+        if (mbr_parse(dev)) {
+            kprintf("[BLK  ] Error: Parsing MBR on '%s'\n", dev->name);
+        }
+    }
+
+    return 0;
 }
 
 int blockdev_unregister(blockdev_t *dev) {
@@ -80,6 +89,8 @@ int blockdev_read(blockdev_t *dev, uint64_t lba, uint32_t count, void *buf) {
     if (!dev || !buf || count == 0) return -1;
     if (!dev->read_blocks) return -1;
 
+    lba += dev->lba_offset;
+
     if (lba + count > dev->total_blocks) {
         kprintf("[BLK  ] Error: Read out of bounds on '%s' (LBA %llu + count %u > total %llu)\n",
                 dev->name, (unsigned long long)lba, count, (unsigned long long)dev->total_blocks);
@@ -92,6 +103,8 @@ int blockdev_read(blockdev_t *dev, uint64_t lba, uint32_t count, void *buf) {
 int blockdev_write(blockdev_t *dev, uint64_t lba, uint32_t count, const void *buf) {
     if (!dev || !buf || count == 0) return -1;
     if (!dev->write_blocks) return -1;
+
+    lba += dev->lba_offset;
 
     if (lba + count > dev->total_blocks) {
         kprintf("[BLK  ] Error: Write out of bounds on '%s' (LBA %llu + count %u > total %llu)\n",

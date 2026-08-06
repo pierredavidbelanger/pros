@@ -7,11 +7,12 @@
 #include "mm/pmm.h"
 #include "mm/heap.h"
 #include "mm/vmm.h"
-#include "drivers/block/blockdev.h"
 #include "drivers/acpi/acpi.h"
 #include "drivers/bus/pci.h"
 #include "drivers/bus/virtio_mmio.h"
+#include "drivers/block/blockdev.h"
 #include "drivers/block/virtio_blk.h"
+// #include "fs/fat.h"
 
 void test_pmm(void);
 
@@ -65,21 +66,23 @@ void _start(void) {
     // Initialize VirtIO Block driver
     virtio_blk_init();
 
-    blockdev_t *hd0 = blockdev_get_by_name("hd0");
-    if (hd0) {
-        uint8_t sector_buf[512];
-        if (blockdev_read(hd0, 0, 1, sector_buf) == 0) {
-            uint16_t sig = sector_buf[510] | (sector_buf[511] << 8);
-            kprintf("[BLK  ] Read sector 0 of 'hd0' successfully (Boot Signature: 0x%04X)\n", sig);
-        } else {
-            kprintf("[BLK  ] Error reading sector 0 of 'hd0'\n");
-        }
-    }
+    // blockdev_t *hd0 = blockdev_get_by_name("hd0");
+    // if (hd0) {
+        // uint8_t sector_buf[512];
+        // if (blockdev_read(hd0, 0, 1, sector_buf) == 0) {
+            // uint16_t sig = sector_buf[510] | (sector_buf[511] << 8);
+            // kprintf("[BLK  ] Read sector 0 of 'hd0' successfully (Boot Signature: 0x%04X)\n", sig);
+        // } else {
+            // kprintf("[BLK  ] Error reading sector 0 of 'hd0'\n");
+        // }
+    // }
 
     if (framebuffer_request.response) {
         fb_init(framebuffer_request.response);
         kprintf("[FB   ] Initialized the framebuffer, ready to kprintf also on the screen\n");
     }
+
+    // fat_init();
 
     // kprintf("[K    ] Attempting to shut down...\n");
     // arch_shutdown();

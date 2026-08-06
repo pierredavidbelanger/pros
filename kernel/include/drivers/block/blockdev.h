@@ -12,6 +12,8 @@ typedef struct blockdev {
     char name[BLOCKDEV_MAX_NAME];
     uint32_t block_size;     // Sector/block size in bytes (typically 512)
     uint64_t total_blocks;   // Total block/sector count
+    bool is_partition; // is this device a partition
+    uint64_t lba_offset; // where the partition actually starts
     void *priv_data;         // Private driver context pointer
 
     // Sector Read callback (returns 0 on success, negative error code on failure)
