@@ -22,6 +22,6 @@ struct mbr_sector {
     uint16_t signature;       // Must be 0xAA55
 } __attribute__((packed));
 
-int mbr_parse(blockdev_t *dev);
+int mbr_parse(struct blockdev *dev);
 
 #endif //PROS_MBR_H

@@ -4,7 +4,7 @@
 #include "core/memory.h"
 #include "drivers/block/mbr.h"
 
-static blockdev_t *devices[BLOCKDEV_MAX_DEVICES];
+static struct blockdev *devices[BLOCKDEV_MAX_DEVICES];
 static size_t device_count = 0;
 
 void blockdev_init(void) {
@@ -13,7 +13,7 @@ void blockdev_init(void) {
     kprintf("[BLK  ] Initialized block device subsystem\n");
 }
 
-int blockdev_register(blockdev_t *dev) {
+int blockdev_register(struct blockdev *dev) {
     if (!dev || !dev->name[0] || dev->block_size == 0) {
         kprintf("[BLK  ] Error: Invalid block device registration attempt\n");
         return -1;
@@ -58,7 +58,7 @@ int blockdev_register(blockdev_t *dev) {
     return 0;
 }
 
-int blockdev_unregister(blockdev_t *dev) {
+int blockdev_unregister(struct blockdev *dev) {
     if (!dev) return -1;
 
     for (size_t i = 0; i < BLOCKDEV_MAX_DEVICES; i++) {
@@ -73,7 +73,7 @@ int blockdev_unregister(blockdev_t *dev) {
     return -1;
 }
 
-blockdev_t *blockdev_get_by_name(const char *name) {
+struct blockdev *blockdev_get_by_name(const char *name) {
     if (!name) return NULL;
 
     for (size_t i = 0; i < BLOCKDEV_MAX_DEVICES; i++) {
@@ -85,7 +85,7 @@ blockdev_t *blockdev_get_by_name(const char *name) {
     return NULL;
 }
 
-int blockdev_read(blockdev_t *dev, uint64_t lba, uint32_t count, void *buf) {
+int blockdev_read(struct blockdev *dev, uint64_t lba, uint32_t count, void *buf) {
     if (!dev || !buf || count == 0) return -1;
     if (!dev->read_blocks) return -1;
 
@@ -100,7 +100,7 @@ int blockdev_read(blockdev_t *dev, uint64_t lba, uint32_t count, void *buf) {
     return dev->read_blocks(dev, lba, count, buf);
 }
 
-int blockdev_write(blockdev_t *dev, uint64_t lba, uint32_t count, const void *buf) {
+int blockdev_write(struct blockdev *dev, uint64_t lba, uint32_t count, const void *buf) {
     if (!dev || !buf || count == 0) return -1;
     if (!dev->write_blocks) return -1;
 

@@ -5,7 +5,7 @@
 
 #include <printf.h>
 
-int mbr_parse(blockdev_t *dev) {
+int mbr_parse(struct blockdev *dev) {
     if (!dev) return -1;
 
     // alloc for 1 block_size

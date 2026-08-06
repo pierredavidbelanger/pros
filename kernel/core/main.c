@@ -12,7 +12,7 @@
 #include "drivers/bus/virtio_mmio.h"
 #include "drivers/block/blockdev.h"
 #include "drivers/block/virtio_blk.h"
-// #include "fs/fat.h"
+#include "fs/fat.h"
 
 void test_pmm(void);
 
@@ -82,10 +82,13 @@ void _start(void) {
         kprintf("[FB   ] Initialized the framebuffer, ready to kprintf also on the screen\n");
     }
 
-    // fat_init();
+    struct blockdev *hd0p0 = blockdev_get_by_name("hd0p0");
+    fat_init(hd0p0);
 
     // kprintf("[K    ] Attempting to shut down...\n");
     // arch_shutdown();
+
+    kprintf("[K    ] Halt. All done here!\n");
     arch_halt();
 }
 

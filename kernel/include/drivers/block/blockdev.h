@@ -8,7 +8,7 @@
 
 struct blockdev;
 
-typedef struct blockdev {
+struct blockdev {
     char name[BLOCKDEV_MAX_NAME];
     uint32_t block_size;     // Sector/block size in bytes (typically 512)
     uint64_t total_blocks;   // Total block/sector count
@@ -21,24 +21,24 @@ typedef struct blockdev {
 
     // Sector Write callback (returns 0 on success, negative error code on failure)
     int (*write_blocks)(struct blockdev *dev, uint64_t lba, uint32_t count, const void *buf);
-} blockdev_t;
+};
 
 // Initialize block device subsystem
 void blockdev_init(void);
 
 // Register a block device into the global device table
-int blockdev_register(blockdev_t *dev);
+int blockdev_register(struct blockdev *dev);
 
 // Unregister a block device by pointer
-int blockdev_unregister(blockdev_t *dev);
+int blockdev_unregister(struct blockdev *dev);
 
 // Lookup registered block device by name (e.g., "hd0")
-blockdev_t *blockdev_get_by_name(const char *name);
+struct blockdev *blockdev_get_by_name(const char *name);
 
 // Sector Read helper with bounds checking
-int blockdev_read(blockdev_t *dev, uint64_t lba, uint32_t count, void *buf);
+int blockdev_read(struct blockdev *dev, uint64_t lba, uint32_t count, void *buf);
 
 // Sector Write helper with bounds checking
-int blockdev_write(blockdev_t *dev, uint64_t lba, uint32_t count, const void *buf);
+int blockdev_write(struct blockdev *dev, uint64_t lba, uint32_t count, const void *buf);
 
 #endif // BLOCKDEV_H
