@@ -18,14 +18,7 @@ void arch_init(void) {
         asm volatile ("msr cpacr_el1, %0\n\tisb" :: "r"(cpacr));
     }
 
-    // Align SP safely down inside mapped kernel stack space
-    asm volatile (
-        "mov x0, sp\n\t"
-        "and x0, x0, #~0xFFF\n\t"
-        "sub x0, x0, #4096\n\t"
-        "mov sp, x0\n\t"
-        ::: "x0", "memory"
-    );
+
 
     // Enable & configure TTBR0_EL1 in TCR_EL1 (Inner Shareable, WB Cacheable)
     uint64_t tcr;
@@ -47,10 +40,12 @@ void arch_halt(void) {
     }
 }
 
-void arch_outw(uint16_t port, uint16_t val) {
-    (void)port;
-    (void)val;
-}
+uint8_t arch_inb(uint16_t port) { (void)port; return 0; }
+void arch_outb(uint16_t port, uint8_t val) { (void)port; (void)val; }
+uint16_t arch_inw(uint16_t port) { (void)port; return 0; }
+void arch_outw(uint16_t port, uint16_t val) { (void)port; (void)val; }
+uint32_t arch_inl(uint16_t port) { (void)port; return 0; }
+void arch_outl(uint16_t port, uint32_t val) { (void)port; (void)val; }
 
 void arch_shutdown(void) {
     // PSCI 0.2 SYSTEM_OFF Function ID 0x84000008 via HVC

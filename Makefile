@@ -41,7 +41,7 @@ qemu-aarch64: root
 		-cpu cortex-a72 \
 		-drive if=pflash,unit=0,format=raw,file=bin/edk2-ovmf-bins/ovmf-code-aarch64.fd,readonly=on \
 		-drive if=none,id=hd0,file=fat:rw:root,format=raw \
-		-device virtio-blk-pci,drive=hd0 \
+		-device virtio-blk-pci,drive=hd0,disable-legacy=on \
 		-nographic
 
 .PHONY: qemu-x86_64
@@ -51,6 +51,6 @@ qemu-x86_64: root
 		-machine q35 \
 		-drive if=pflash,unit=0,format=raw,file=bin/edk2-ovmf-bins/ovmf-code-x86_64.fd,readonly=on \
 		-drive if=none,id=hd0,file=fat:rw:root,format=raw \
-		-device virtio-blk-pci,drive=hd0 \
+		-device virtio-blk-pci,drive=hd0,disable-legacy=on \
 		-nographic
 

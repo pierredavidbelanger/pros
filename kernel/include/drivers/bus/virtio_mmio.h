@@ -22,17 +22,21 @@
 #define VIRTIO_MMIO_REG_INTERRUPT_ACK      0x064
 #define VIRTIO_MMIO_REG_STATUS             0x070
 
-typedef struct virtio_mmio_slot {
+// VirtIO Device Status Bits
+#define VIRTIO_MMIO_STATUS_ACKNOWLEDGE 1
+#define VIRTIO_MMIO_STATUS_DRIVER      2
+#define VIRTIO_MMIO_STATUS_DRIVER_OK   4
+#define VIRTIO_MMIO_STATUS_FEATURES_OK 8
+#define VIRTIO_MMIO_STATUS_FAILED      128
+
+struct virtio_mmio_slot {
     uint64_t phys_base;
     uint32_t version;
     uint32_t device_id;
     uint32_t vendor_id;
-} virtio_mmio_slot_t;
+};
 
-// Probe QEMU VirtIO MMIO slots (e.g. 0x0A000000 - 0x0A003E00)
 void virtio_mmio_init(void);
-
-// Find a VirtIO MMIO slot matching device_id (returns true if found)
-bool virtio_mmio_find_device(uint32_t device_id, virtio_mmio_slot_t *out_slot);
+bool virtio_mmio_find_device(uint32_t device_id, struct virtio_mmio_slot *out_slot);
 
 #endif // VIRTIO_MMIO_H

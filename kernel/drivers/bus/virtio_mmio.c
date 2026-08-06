@@ -6,7 +6,7 @@
 #define VIRTIO_MMIO_SLOT_SIZE 0x200ULL
 #define VIRTIO_MMIO_SLOT_COUNT 32
 
-static virtio_mmio_slot_t discovered_slots[VIRTIO_MMIO_SLOT_COUNT];
+static struct virtio_mmio_slot discovered_slots[VIRTIO_MMIO_SLOT_COUNT];
 static size_t slot_count = 0;
 
 void virtio_mmio_init(void) {
@@ -21,7 +21,7 @@ void virtio_mmio_init(void) {
         if (magic != VIRTIO_MMIO_MAGIC) continue;
 
         uint32_t device_id = virt_base[VIRTIO_MMIO_REG_DEVICE_ID / 4];
-        if (device_id == 0) continue; // Unconnected slot
+        if (device_id == 0) continue;
 
         uint32_t version = virt_base[VIRTIO_MMIO_REG_VERSION / 4];
         uint32_t vendor_id = virt_base[VIRTIO_MMIO_REG_VENDOR_ID / 4];
@@ -37,7 +37,7 @@ void virtio_mmio_init(void) {
     }
 }
 
-bool virtio_mmio_find_device(uint32_t device_id, virtio_mmio_slot_t *out_slot) {
+bool virtio_mmio_find_device(uint32_t device_id, struct virtio_mmio_slot *out_slot) {
     for (size_t i = 0; i < slot_count; i++) {
         if (discovered_slots[i].device_id == device_id) {
             if (out_slot) {

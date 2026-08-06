@@ -13,8 +13,13 @@ void arch_halt(void);
 // Cleanly power off the machine
 void arch_shutdown(void);
 
-// Port IO helper for x86_64
-void arch_outw(uint16_t port, uint16_t val);
+// Port IO helpers for x86_64 (stubbed on AArch64)
+uint8_t  arch_inb(uint16_t port);
+void     arch_outb(uint16_t port, uint8_t val);
+uint16_t arch_inw(uint16_t port);
+void     arch_outw(uint16_t port, uint16_t val);
+uint32_t arch_inl(uint16_t port);
+void     arch_outl(uint16_t port, uint32_t val);
 
 // ─── VMM Architecture Primitives ─────────────────────────────
 

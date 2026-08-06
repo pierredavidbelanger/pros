@@ -121,9 +121,52 @@ bool pci_find_device(uint16_t vendor_id, uint16_t device_id, pci_device_t *out_d
     return false;
 }
 
-void pci_enable_bus_master(pci_device_t *dev) {
+void pci_enable_bus_master(struct pci_device *dev) {
     if (!dev) return;
     uint16_t cmd = pci_ecam_read16(dev->bus, dev->dev, dev->func, PCI_REG_COMMAND);
     cmd |= (PCI_CMD_BUS_MASTER | PCI_CMD_MEM_SPACE);
     pci_ecam_write16(dev->bus, dev->dev, dev->func, PCI_REG_COMMAND, cmd);
+}
+
+bool pci_find_capability(struct pci_device *dev, uint8_t cap_id, uint8_t cfg_type, uint8_t *out_bar, uint32_t *out_offset) {
+    uint8_t cap_ptr = pci_find_capability_offset(dev, cap_id, cfg_type);
+    if (!cap_ptr) return false;
+
+    if (out_bar) *out_bar = pci_ecam_read8(dev->bus, dev->dev, dev->func, cap_ptr + 4);
+    if (out_offset) *out_offset = pci_ecam_read32(dev->bus, dev->dev, dev->func, cap_ptr + 8);
+    return true;
+}
+
+uint8_t pci_find_capability_offset(struct pci_device *dev, uint8_t cap_id, uint8_t cfg_type) {
+    if (!dev || !ecam_base) return 0;
+
+    uint16_t status = pci_ecam_read16(dev->bus, dev->dev, dev->func, PCI_REG_STATUS);
+    if (!(status & (1 << 4))) return 0;
+
+    uint8_t cap_ptr = pci_ecam_read8(dev->bus, dev->dev, dev->func, PCI_REG_CAP_PTR);
+    while (cap_ptr != 0 && cap_ptr != 0xFF) {
+        uint8_t id = pci_ecam_read8(dev->bus, dev->dev, dev->func, cap_ptr);
+        if (id == cap_id) {
+            uint8_t type = pci_ecam_read8(dev->bus, dev->dev, dev->func, cap_ptr + 3);
+            if (cfg_type == 0 || type == cfg_type) {
+                return cap_ptr;
+            }
+        }
+        cap_ptr = pci_ecam_read8(dev->bus, dev->dev, dev->func, cap_ptr + 1);
+    }
+
+    return 0;
+}
+
+uint64_t pci_get_bar_phys(struct pci_device *dev, uint8_t bar_idx) {
+    if (!dev || bar_idx >= 6) return 0;
+    uint32_t bar_low = dev->bar[bar_idx];
+    if (bar_low & 1) {
+        return bar_low & ~0x3ULL;
+    }
+    uint64_t phys = bar_low & ~0xFULL;
+    if ((bar_low & 0x6) == 0x4 && bar_idx < 5) {
+        phys |= ((uint64_t)dev->bar[bar_idx + 1]) << 32;
+    }
+    return phys;
 }
