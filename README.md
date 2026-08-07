@@ -35,6 +35,10 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
   - **PCI & ACPI**: ECAM-based PCI configuration space access; ACPI table parsing (RSDP, XSDT, MCFG).
   - **VirtIO**: Support for both VirtIO MMIO (direct) and VirtIO PCI (Modern 1.0) transports.
   - **Block Device**: `virtio-blk` driver with virtqueue management for sector-level read/write operations.
+- **File Systems & Storage**:
+  - **Master Boot Record (MBR)**: Partition parsing to discover and register partition block devices.
+  - **Virtual File System (VFS)**: Abstraction layer supporting mount points, directory traversal, and basic file descriptor operations (`sys_open`).
+  - **FAT16 Filesystem**: Early support for mounting FAT16 partitions, parsing BIOS Parameter Block (BPB), and traversing root directories.
 - **Graphical Framebuffer & Terminal Engine**:
   - 32-bit ARGB/RGB direct pixel drawing and screen clearing (`fb_clear`).
   - Built-in 8x16 VGA bitmap font renderer supporting automatic text wrapping and full-screen vertical scrolling (`terminal_scroll`).
@@ -60,7 +64,8 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
     ├── arch/              # Architecture-specific code (aarch64, x86_64), linker scripts, exceptions, interrupts
     ├── core/              # Core kernel subsystems (boot, fb, kprintf, main)
     ├── drivers/           # Device drivers (acpi, block, bus, virtio)
-    ├── include/           # Kernel headers (arch, core, drivers, mm)
+    ├── fs/                # Virtual File System (VFS) and FAT16 filesystem implementation
+    ├── include/           # Kernel headers (arch, core, drivers, fs, mm)
     ├── libs/              # Downloaded third-party libraries (freestanding headers, printf, limine)
     └── mm/                # Memory Management (pmm, vmm, heap)
 ```
