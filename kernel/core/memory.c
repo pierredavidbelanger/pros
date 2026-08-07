@@ -98,3 +98,33 @@ char *strncpy(char *dest, const char *src, size_t n) {
     }
     return dest;
 }
+
+void strntrim(char *s, const char t, size_t n) {
+    if (s == NULL || n == 0) return;
+
+    size_t len = 0;
+    while (len < n && s[len] != '\0') {
+        len++;
+    }
+
+    if (len == 0) return;
+
+    size_t start = 0;
+    while (start < len && s[start] == t) {
+        start++;
+    }
+
+    size_t end = len;
+    while (end > start && s[end - 1] == t) {
+        end--;
+    }
+
+    size_t new_len = end - start;
+    for (size_t i = 0; i < new_len; i++) {
+        s[i] = s[start + i];
+    }
+
+    if (new_len < n) {
+        s[new_len] = '\0';
+    }
+}

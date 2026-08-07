@@ -3,6 +3,8 @@
 
 #include "stdc.h"
 
+#define VFS_NAME_SIZE 128
+
 // Node flags to distinguish between file types
 #define VFS_FILE        0x01
 #define VFS_DIRECTORY   0x02
@@ -25,7 +27,7 @@ struct vfs_ops {
 };
 
 struct vfs_node {
-    char name[128];
+    char name[VFS_NAME_SIZE];
     uint32_t flags;
     uint64_t inode;        // Unique ID for the file on disk
     uint64_t size;         // Size in bytes
@@ -35,7 +37,7 @@ struct vfs_node {
 };
 
 struct vfs_mount {
-    char path[128];
+    char path[VFS_NAME_SIZE];
     struct vfs_node *root;
     struct vfs_mount *next;
 };

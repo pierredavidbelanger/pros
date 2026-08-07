@@ -1,6 +1,7 @@
 #include "fs/vfs.h"
 
 #include "core/memory.h"
+#include "core/kprintf.h"
 #include "mm/heap.h"
 
 static struct vfs_mount *vfs_mount_list = NULL;
@@ -29,6 +30,8 @@ int vfs_mount(const char *path, struct vfs_node *root_node) {
     mount->next = vfs_mount_list;
     vfs_mount_list = mount;
 
+    kprintf("[VFS  ] mounted %s at %s\n", root_node->name, path);
+
     return 0;
 }
 
@@ -47,12 +50,9 @@ struct vfs_node *vfs_get_mountpoint(const char **path) {
 
         // Check if the beginning of the path matches the mount path
         if (strncmp(*path, current->path, mount_len) == 0) {
-            // Check if it's an exact match or followed by a directory separator
-            if ((*path)[mount_len] == '\0' || (*path)[mount_len] == '/') {
-                if (mount_len > best_match_len) {
-                    best_match = current;
-                    best_match_len = mount_len;
-                }
+            if (mount_len > best_match_len) {
+                best_match = current;
+                best_match_len = mount_len;
             }
         }
         current = current->next;
@@ -62,6 +62,8 @@ struct vfs_node *vfs_get_mountpoint(const char **path) {
         return NULL;
     }
 
+    kprintf("[VFS  ] found mount point %s for %s\n", best_match->root->name, *path);
+
     // Update the path pointer to point *after* the mount point string.
     // E.g., if mount point is "/" and path is "/boot", *path will become "boot"
     *path = *path + best_match_len;
@@ -70,6 +72,8 @@ struct vfs_node *vfs_get_mountpoint(const char **path) {
     while (**path == '/') {
         (*path)++;
     }
+
+    kprintf("[VFS  ] path inside mount point %s is %s\n", best_match->root->name, *path);
 
     return best_match->root;
 }

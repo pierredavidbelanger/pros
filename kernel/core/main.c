@@ -4,6 +4,7 @@
 #include "core/fb.h"
 #include "core/console.h"
 #include "core/kprintf.h"
+#include "core/syscalls.h"
 #include "mm/pmm.h"
 #include "mm/heap.h"
 #include "mm/vmm.h"
@@ -12,6 +13,7 @@
 #include "drivers/bus/virtio_mmio.h"
 #include "drivers/block/blockdev.h"
 #include "drivers/block/virtio_blk.h"
+#include "fs/vfs.h"
 #include "fs/fat.h"
 
 void test_pmm(void);
@@ -69,8 +71,9 @@ void _start(void) {
     // Initialize VirtIO Block driver
     virtio_blk_init();
 
-    struct blockdev *hd0p0 = blockdev_get_by_name("hd0p0");
-    fat_init(hd0p0);
+    vfs_mount("/", fat_mount(blockdev_get_by_name("hd0p0")));
+    int fd = sys_open("/NVVARS", O_RDONLY);
+    kprintf("[K    ] /NVVARS found fd=%d\n", fd);
 
     // kprintf("[K    ] Attempting to shut down...\n");
     // arch_shutdown();

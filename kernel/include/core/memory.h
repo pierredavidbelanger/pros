@@ -13,5 +13,6 @@ int strcmp(const char *s1, const char *s2);
 int strncmp(const char *s1, const char *s2, size_t n);
 char *strcpy(char *dest, const char *src);
 char *strncpy(char *dest, const char *src, size_t n);
+void strntrim(char *s, char t, size_t n);
 
 #endif //PROS_MEMORY_H
