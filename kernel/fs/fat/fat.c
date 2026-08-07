@@ -147,7 +147,17 @@ struct vfs_node *fat_mount(struct blockdev *dev) {
 }
 
 int fat_vfs_ops_close(struct vfs_node *node) {
-    return -1;
+    if (!node) return -1;
+    if (node->priv_data) {
+        struct fat_node_data *node_data = node->priv_data;
+        // free the entry, but leave bpb there, it will be free when root node is unmounted
+        if (node_data->entry) {
+            kfree(node_data->entry);
+        }
+        kfree(node_data);
+    }
+    kfree(node);
+    return 0;
 }
 
 struct vfs_node *fat_vfs_ops_finddir(struct vfs_node *node, const char *name) {
