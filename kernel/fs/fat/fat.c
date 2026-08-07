@@ -89,6 +89,39 @@ struct vfs_ops fat_vfs_ops = {
     .read = fat_vfs_ops_read,
 };
 
+static inline char to_upper(char c) {
+    return (c >= 'a' && c <= 'z') ? (c - 'a' + 'A') : c;
+}
+
+static bool match_fat16_filename(const char fat16_name[11], const char* search_name) {
+    // FAT16 is case-insensitive, we compare using uppercase
+    char formatted[11];
+    memset(formatted, ' ', 11); // Initialize with spaces
+    int i = 0; // index for search_name
+    int j = 0; // index for formatted
+    // Format the base name (up to 8 characters)
+    while (search_name[i] != '\0' && search_name[i] != '.') {
+        if (j >= 8) {
+            // base name is longer than 8 characters, its a no match
+            return false;
+        }
+        formatted[j++] = to_upper((unsigned char)search_name[i++]);
+    }
+    // Format the extension (up to 3 char), if it exists
+    if (search_name[i] == '.') {
+        i++; // Skip the '.'
+        j = 8; // Move to the extension offset in the FAT16 format
+        while (search_name[i] != '\0') {
+            if (j >= 11) {
+                // ext is longer than 3 characters, its a no match
+                return false;
+            }
+            formatted[j++] = to_upper((unsigned char)search_name[i++]);
+        }
+    }
+    // Compare the generated 11-byte array to the actual fat16_name
+    return memcmp(fat16_name, formatted, 11) == 0;
+}
 
 struct vfs_node *fat_mount(struct blockdev *dev) {
     if (!dev) return NULL;
@@ -210,8 +243,7 @@ struct vfs_node *fat_vfs_ops_finddir(struct vfs_node *node, const char *name) {
             found_entry_clean_name[char_idx++] = entry.name[j];
         }
         found_entry_clean_name[11] = '\0';
-        strntrim(found_entry_clean_name, ' ', 12);
-        if (strncmp(found_entry_clean_name, name, 11) == 0) {
+        if (match_fat16_filename(found_entry_clean_name, name)) {
             found_entry = &entry;
             break;
         }
@@ -256,7 +288,7 @@ struct vfs_node *fat_vfs_ops_finddir(struct vfs_node *node, const char *name) {
     sub_node_data->bpb = bpb;
     sub_node_data->entry = found_entry_copy;
 
-    strncpy(node->name, found_entry_clean_name, 11);
+    strncpy(sub_node->name, found_entry_clean_name, 11);
     sub_node->ops = &fat_vfs_ops;
     sub_node->priv_data = sub_node_data;
 
@@ -264,8 +296,47 @@ struct vfs_node *fat_vfs_ops_finddir(struct vfs_node *node, const char *name) {
 }
 
 int64_t fat_vfs_ops_read(struct vfs_node *node, uint64_t offset, uint64_t size, void *buffer) {
-    kprintf("[FAT  ] fat_vfs_ops_read\n");
-    return -1;
+    if (!node) return -1;
+
+    // A real read function has to follow the FAT chain across multiple clusters and handle offset.
+    // But here we only want to do a quick test and our test file has less bytes than a cluster,
+    // so the file is guaranteed to sit inside that single target_sector block
+
+    struct fat_node_data *node_data = node->priv_data;
+
+    struct blockdev *dev = node_data->dev;
+    struct fat_bpb *bpb = node_data->bpb;
+    struct fat_dir_entry *entry = node_data->entry;
+
+    uint32_t fat_start_sector = bpb->reserved_sector_count;
+    uint32_t fat_sectors = bpb->fat_size_16 ? bpb->fat_size_16 : bpb->fat_size_32;
+    uint32_t root_start_sector = fat_start_sector + (bpb->fat_count * fat_sectors);
+    uint32_t root_dir_sectors = ((bpb->root_entry_count * 32) + (bpb->bytes_per_sector - 1)) / bpb->bytes_per_sector;
+    // The data region starts exactly where the root directory ends
+    uint32_t data_start_sector = root_start_sector + root_dir_sectors;
+
+    uint32_t first_cluster = entry->fst_clus_lo;
+    uint32_t target_sector = data_start_sector + ((first_cluster - 2) * bpb->sectors_per_cluster);
+
+    uint32_t cluster_size = bpb->sectors_per_cluster * bpb->bytes_per_sector;
+    void *bounce_buffer = kmalloc(cluster_size);
+    if (!bounce_buffer) return -1;
+
+    if (blockdev_read(dev, target_sector, bpb->sectors_per_cluster, bounce_buffer) != 0) {
+        kfree(bounce_buffer);
+        return -1;
+    }
+
+    uint64_t bytes_to_copy = size;
+    if (bytes_to_copy > entry->file_size) {
+        bytes_to_copy = entry->file_size;
+    }
+
+    memcpy(buffer, bounce_buffer, bytes_to_copy);
+
+    kfree(bounce_buffer);
+
+    return bytes_to_copy;
 }
 
 static void old_reference_fat_init(struct blockdev *dev) {

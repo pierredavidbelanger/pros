@@ -72,8 +72,18 @@ void _start(void) {
     virtio_blk_init();
 
     vfs_mount("/", fat_mount(blockdev_get_by_name("hd0p0")));
-    int fd = sys_open("/NVVARS", O_RDONLY);
-    kprintf("[K    ] /NVVARS found fd=%d\n", fd);
+    int fd = sys_open("/test.txt", O_RDONLY);
+    if (fd >= 0) {
+        kprintf("[K    ] /test.txt found fd=%d\n", fd);
+        char buffer[2000];
+        int64_t bytes_read = sys_read(fd, buffer, 2000);
+        if (bytes_read > 0) {
+            // Null-terminate it just to be safe before printing
+            buffer[bytes_read] = '\0';
+            kprintf("\n--- /test.txt ---\n%s\n---------------------\n", buffer);
+        }
+        sys_close(fd);
+    }
 
     // kprintf("[K    ] Attempting to shut down...\n");
     // arch_shutdown();
