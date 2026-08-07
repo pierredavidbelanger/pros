@@ -17,10 +17,9 @@
 #include "fs/fat.h"
 
 void test_pmm(void);
-
 void test_heap(void);
-
 void test_vmm(void);
+void test_vfs(void);
 
 void _start(void) {
     if (!LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision)) {
@@ -72,18 +71,7 @@ void _start(void) {
     virtio_blk_init();
 
     vfs_mount("/", fat_mount(blockdev_get_by_name("hd0p0")));
-    int fd = sys_open("/test.txt", O_RDONLY);
-    if (fd >= 0) {
-        kprintf("[K    ] /test.txt found fd=%d\n", fd);
-        char buffer[2000];
-        int64_t bytes_read = sys_read(fd, buffer, 2000);
-        if (bytes_read > 0) {
-            // Null-terminate it just to be safe before printing
-            buffer[bytes_read] = '\0';
-            kprintf("\n--- /test.txt ---\n%s\n---------------------\n", buffer);
-        }
-        sys_close(fd);
-    }
+    test_vfs();
 
     // kprintf("[K    ] Attempting to shut down...\n");
     // arch_shutdown();
@@ -153,4 +141,34 @@ void test_vmm(void) {
 
     vmm_switch_context(vmm_kernel_context);
     vmm_destroy_context(user_ctx);
+}
+
+void test_vfs(void) {
+    int fd = sys_open("/", 0);
+    if (fd >= 0) {
+        kprintf("------------- ls / ------------\n");
+        struct vfs_dirent entry;
+        while (sys_readdir(fd, &entry) == 1) {
+            if (entry.flags == VFS_DIRECTORY) {
+                kprintf("[DIR]  %s\n", entry.name);
+            } else {
+                kprintf("[FILE] %s\n", entry.name);
+            }
+        }
+        kprintf("-------------------------------\n");
+        sys_close(fd);
+    }
+    fd = sys_open("/test.txt", O_RDONLY);
+    if (fd >= 0) {
+        char buffer[2000];
+        int64_t bytes_read = sys_read(fd, buffer, 2000);
+        if (bytes_read > 0) {
+            // Null-terminate it just to be safe before printing
+            buffer[bytes_read] = '\0';
+            kprintf("-------- cat /test.txt --------\n");
+            kprintf("%s\n", buffer);
+            kprintf("-------------------------------\n");
+        }
+        sys_close(fd);
+    }
 }

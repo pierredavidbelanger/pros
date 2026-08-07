@@ -6,6 +6,8 @@
 
 #include "stdc.h"
 
+// TODO: a lot of duplicated code in there, i barely know what i am doing, but this will hold for a while
+
 // The BIOS Parameter Block (BPB) sits at byte 0 of sector 0 of a FAT partition.
 // It describes the geometry of the disk and where the FAT tables are located.
 // We use __attribute__((packed)) because the compiler must NOT insert any padding bytes;
@@ -78,15 +80,15 @@ struct fat_node_data {
 };
 
 int fat_vfs_ops_close(struct vfs_node *node);
-
-struct vfs_node *fat_vfs_ops_finddir(struct vfs_node *node, const char *name);
-
 int64_t fat_vfs_ops_read(struct vfs_node *node, uint64_t offset, uint64_t size, void *buffer);
+struct vfs_node *fat_vfs_ops_finddir(struct vfs_node *node, const char *name);
+int fat_vfs_ops_readdir(struct vfs_node *node, uint32_t index, struct vfs_dirent *out);
 
 struct vfs_ops fat_vfs_ops = {
     .close = fat_vfs_ops_close,
-    .finddir = fat_vfs_ops_finddir,
     .read = fat_vfs_ops_read,
+    .finddir = fat_vfs_ops_finddir,
+    .readdir = fat_vfs_ops_readdir,
 };
 
 static inline char to_upper(char c) {
@@ -193,16 +195,59 @@ int fat_vfs_ops_close(struct vfs_node *node) {
     return 0;
 }
 
-struct vfs_node *fat_vfs_ops_finddir(struct vfs_node *node, const char *name) {
-    if (!node || !name) return NULL;
+int64_t fat_vfs_ops_read(struct vfs_node *node, uint64_t offset, uint64_t size, void *buffer) {
+    if (!node) return -1;
 
-    kprintf("[FAT  ] fat_vfs_ops_finddir( , %s)\n", name);
+    // A real read function has to follow the FAT chain across multiple clusters and handle offset.
+    // But here we only want to do a quick test and our test file has less bytes than a cluster,
+    // so the file is guaranteed to sit inside that single target_sector block
 
     struct fat_node_data *node_data = node->priv_data;
 
     struct blockdev *dev = node_data->dev;
     struct fat_bpb *bpb = node_data->bpb;
-    // struct fat_dir_entry *entry = node_data.entry;
+    struct fat_dir_entry *entry = node_data->entry;
+
+    uint32_t fat_start_sector = bpb->reserved_sector_count;
+    uint32_t fat_sectors = bpb->fat_size_16 ? bpb->fat_size_16 : bpb->fat_size_32;
+    uint32_t root_start_sector = fat_start_sector + (bpb->fat_count * fat_sectors);
+    uint32_t root_dir_sectors = ((bpb->root_entry_count * 32) + (bpb->bytes_per_sector - 1)) / bpb->bytes_per_sector;
+    // The data region starts exactly where the root directory ends
+    uint32_t data_start_sector = root_start_sector + root_dir_sectors;
+
+    uint32_t first_cluster = entry->fst_clus_lo;
+    uint32_t target_sector = data_start_sector + ((first_cluster - 2) * bpb->sectors_per_cluster);
+
+    uint32_t cluster_size = bpb->sectors_per_cluster * bpb->bytes_per_sector;
+    void *bounce_buffer = kmalloc(cluster_size);
+    if (!bounce_buffer) return -1;
+
+    if (blockdev_read(dev, target_sector, bpb->sectors_per_cluster, bounce_buffer) != 0) {
+        kfree(bounce_buffer);
+        return -1;
+    }
+
+    uint64_t bytes_to_copy = size;
+    if (bytes_to_copy > entry->file_size) {
+        bytes_to_copy = entry->file_size;
+    }
+
+    memcpy(buffer, bounce_buffer, bytes_to_copy);
+
+    kfree(bounce_buffer);
+
+    return bytes_to_copy;
+}
+
+struct vfs_node *fat_vfs_ops_finddir(struct vfs_node *node, const char *name) {
+    if (!node || !name) return NULL;
+
+    kprintf("[FAT  ] fat_vfs_ops_finddir name=%s\n", name);
+
+    struct fat_node_data *node_data = node->priv_data;
+
+    struct blockdev *dev = node_data->dev;
+    struct fat_bpb *bpb = node_data->bpb;
 
     uint32_t fat_start_sector = bpb->reserved_sector_count;
     uint32_t fat_sectors = bpb->fat_size_16 ? bpb->fat_size_16 : bpb->fat_size_32;
@@ -295,193 +340,78 @@ struct vfs_node *fat_vfs_ops_finddir(struct vfs_node *node, const char *name) {
     return sub_node;
 }
 
-int64_t fat_vfs_ops_read(struct vfs_node *node, uint64_t offset, uint64_t size, void *buffer) {
+int fat_vfs_ops_readdir(struct vfs_node *node, uint32_t index, struct vfs_dirent *out) {
     if (!node) return -1;
 
-    // A real read function has to follow the FAT chain across multiple clusters and handle offset.
-    // But here we only want to do a quick test and our test file has less bytes than a cluster,
-    // so the file is guaranteed to sit inside that single target_sector block
+    kprintf("[FAT  ] fat_vfs_ops_readdir as index=%d\n", index);
 
     struct fat_node_data *node_data = node->priv_data;
 
     struct blockdev *dev = node_data->dev;
     struct fat_bpb *bpb = node_data->bpb;
-    struct fat_dir_entry *entry = node_data->entry;
 
     uint32_t fat_start_sector = bpb->reserved_sector_count;
     uint32_t fat_sectors = bpb->fat_size_16 ? bpb->fat_size_16 : bpb->fat_size_32;
-    uint32_t root_start_sector = fat_start_sector + (bpb->fat_count * fat_sectors);
-    uint32_t root_dir_sectors = ((bpb->root_entry_count * 32) + (bpb->bytes_per_sector - 1)) / bpb->bytes_per_sector;
-    // The data region starts exactly where the root directory ends
-    uint32_t data_start_sector = root_start_sector + root_dir_sectors;
-
-    uint32_t first_cluster = entry->fst_clus_lo;
-    uint32_t target_sector = data_start_sector + ((first_cluster - 2) * bpb->sectors_per_cluster);
-
-    uint32_t cluster_size = bpb->sectors_per_cluster * bpb->bytes_per_sector;
-    void *bounce_buffer = kmalloc(cluster_size);
-    if (!bounce_buffer) return -1;
-
-    if (blockdev_read(dev, target_sector, bpb->sectors_per_cluster, bounce_buffer) != 0) {
-        kfree(bounce_buffer);
-        return -1;
-    }
-
-    uint64_t bytes_to_copy = size;
-    if (bytes_to_copy > entry->file_size) {
-        bytes_to_copy = entry->file_size;
-    }
-
-    memcpy(buffer, bounce_buffer, bytes_to_copy);
-
-    kfree(bounce_buffer);
-
-    return bytes_to_copy;
-}
-
-static void old_reference_fat_init(struct blockdev *dev) {
-    if (!dev) return;
-
-    // allocate a block_size buffer for the sector
-    void *bpb_buf = kmalloc(dev->block_size);
-    if (!bpb_buf) {
-        kprintf("[FAT  ] out of memory for bpb buffer\n");
-        return;
-    }
-
-    // read sector 0 into the buffer
-    if (blockdev_read(dev, 0, 1, bpb_buf) != 0) {
-        kprintf("[FAT  ] failed to read bpb sector 0\n");
-        kfree(bpb_buf);
-        return;
-    }
-
-    kprintf("[FAT  ] Successfully read Boot Sector (Sector 0)!\n");
-
-    // cast the raw bytes into the packed struct
-    struct fat_bpb *bpb = bpb_buf;
-    kprintf("[FAT  ] Bytes per Sector: %d\n", bpb->bytes_per_sector);
-    kprintf("[FAT  ] Sectors per Cluster: %d\n", bpb->sectors_per_cluster);
-
-    // the OEM name is exactly 8 bytes on disk without null-terminator
-    // copy it to a safe buffer to print it
-    char oem_name[9];
-    for (int i = 0; i < 8; i++) {
-        oem_name[i] = bpb->oem_name[i];
-    }
-    oem_name[8] = '\0';
-    kprintf("[FAT  ] OEM Name: %s\n", oem_name);
-
-    // FAT tables
-    uint32_t fat_start_sector = bpb->reserved_sector_count;
-    uint32_t fat_sectors = bpb->fat_size_16 ? bpb->fat_size_16 : bpb->fat_size_32;
-    kprintf("[FAT  ] FAT tables start sector: %d\n", fat_start_sector);
-    kprintf("[FAT  ] FAT count: %d\n", bpb->fat_count);
-    kprintf("[FAT  ] FAT sectors: %d\n", fat_sectors);
-
-    // root directory sectors
     uint32_t root_start_sector = fat_start_sector + (bpb->fat_count * fat_sectors);
     uint32_t root_dir_sectors = ((bpb->root_entry_count * 32) + (bpb->bytes_per_sector - 1)) / bpb->bytes_per_sector;
     kprintf("[FAT  ] Root start sector: %d\n", root_start_sector);
     kprintf("[FAT  ] Root directory sectors: %d\n", root_dir_sectors);
 
-    // where data region start
-    uint32_t data_start_sector = root_start_sector + root_dir_sectors;
-    kprintf("[FAT  ] Data start sector: %d\n", data_start_sector);
-
-    // official way to detect if FAT16 or FAT32
-    uint32_t total_sectors = bpb->total_sectors_16 ? bpb->total_sectors_16 : bpb->total_sectors_32;
-    uint32_t data_sectors = total_sectors - data_start_sector;
-    uint32_t total_clusters = data_sectors / bpb->sectors_per_cluster;
-    if (total_clusters < 4085) {
-        kprintf("[FAT  ] Type: FAT12\n");
-    } else if (total_clusters < 65525) {
-        kprintf("[FAT  ] Type: FAT16\n");
-    } else {
-        kprintf("[FAT  ] Type: FAT32\n");
-    }
-
-    // allocate a buffer for the FAT
-    void *fat_buf = kmalloc(bpb->fat_count * fat_sectors * bpb->bytes_per_sector);
-    if (!bpb_buf) {
-        kprintf("[FAT  ] out of memory for fat buffer\n");
-        kfree(bpb_buf);
-        return;
-    }
-
-    // read bpb->fat_count * fat_sectors from fat_start_sector into the buffer
-    if (blockdev_read(dev, fat_start_sector, bpb->fat_count * fat_sectors, fat_buf) != 0) {
-        kprintf("[FAT  ] failed to read fat sectors\n");
-        kfree(fat_buf);
-        kfree(bpb_buf);
-        return;
-    }
-
-    uint16_t *fat = fat_buf;
-
     // allocate a buffer large enough to read all the entries in the root
     void *root_entries_buf = kmalloc(root_dir_sectors * bpb->bytes_per_sector);
     if (!root_entries_buf) {
         kprintf("[FAT  ] out of memory for root entries buffer\n");
-        kfree(fat_buf);
-        kfree(bpb_buf);
-        return;
+        return -1;
     }
 
     // read root_dir_sectors from root_start_sector into the buffer
     if (blockdev_read(dev, root_start_sector, root_dir_sectors, root_entries_buf) != 0) {
         kprintf("[FAT  ] failed to read root sectors\n");
-        kfree(fat_buf);
         kfree(root_entries_buf);
-        kfree(bpb_buf);
-        return;
+        return -1;
     }
 
     struct fat_dir_entry *root_entries = root_entries_buf;
 
-    // iterate all the root entries
+    uint32_t current_valid_index = 0;
+
     for (int i = 0; i < (root_dir_sectors * 16); i++) {
         struct fat_dir_entry entry = root_entries[i];
-
-        // there are no more files in this directory
-        if ((uint8_t) entry.name[0] == DIR_ENTRY_FREE) {
-            break;
+        // no more files on disk
+        if ((uint8_t)entry.name[0] == DIR_ENTRY_FREE) {
+            kfree(root_entries_buf);
+            return 0; // EOF
         }
-
-        // this file was deleted, skip it!
-        if ((uint8_t) entry.name[0] == DIR_ENTRY_DELETED) {
-            continue;
+        // Skip invalid entries (Deleted, LFNs, Volume IDs)
+        if ((uint8_t)entry.name[0] == DIR_ENTRY_DELETED) continue;
+        if ((uint8_t)entry.attr == ATTR_LONG_NAME) continue;
+        // don't list the Volume name as a file
+        if ((uint8_t)entry.attr & ATTR_VOLUME_ID) continue;
+        // Is this the index the user asked for?
+        if (current_valid_index == index) {
+            // FOUND IT
+            char found_entry_clean_name[12];
+            int char_idx = 0;
+            uint8_t first_char = (entry.name[0] == DIR_ENTRY_KANJI) ? 0xE5 : entry.name[0];
+            found_entry_clean_name[char_idx++] = (char)first_char;
+            for (int j = 1; j < 11; j++) {
+                found_entry_clean_name[char_idx++] = entry.name[j];
+            }
+            found_entry_clean_name[11] = '\0';
+            strncpy(out->name, found_entry_clean_name, VFS_NAME_SIZE);
+            // Set the flags so the user knows if it's a folder or file
+            if (entry.attr & ATTR_DIRECTORY) {
+                out->flags = VFS_DIRECTORY;
+            } else {
+                out->flags = VFS_FILE;
+            }
+            kfree(root_entries_buf);
+            return 1; // Success
         }
-
-        // this is a Long File Name chunk, skip it for now
-        if ((uint8_t) entry.attr == ATTR_LONG_NAME) {
-            continue;
-        }
-
-        // Safely copy the 11-character name to a null-terminated buffer
-        char clean_name[12];
-        int char_idx = 0;
-        uint8_t first_char = (entry.name[0] == DIR_ENTRY_KANJI) ? 0xE5 : entry.name[0];
-        clean_name[char_idx++] = (char)first_char;
-        for (int j = 1; j < 11; j++) {
-            clean_name[char_idx++] = (char)entry.name[j];
-        }
-        clean_name[11] = '\0';
-
-        // Mask attributes using constants to know if we have ATTR_VOLUME_ID, ATTR_DIRECTORY a file (ATTR_ARCHIVE?)
-        if ((uint8_t) entry.attr & ATTR_VOLUME_ID) {
-            kprintf("[FAT  ] Found Volume Label: %s\n", clean_name);
-        } else if ((uint8_t) entry.attr & ATTR_DIRECTORY) {
-            kprintf("[FAT  ] Found Directory:    %s\n", clean_name);
-        } else {
-            kprintf("[FAT  ] Found File:         %s (%u bytes)\n", clean_name, entry.file_size);
-            kprintf("[FAT  ]   First cluster: %u\n", entry.fst_clus_lo);
-            kprintf("[FAT  ]   Next cluster: %u\n", fat[entry.fst_clus_lo]);
-        }
+        // but it wasn't the target index, keep counting
+        current_valid_index++;
     }
-
-    // free the memory
-    kfree(fat_buf);
     kfree(root_entries_buf);
-    kfree(bpb_buf);
+    // if we get here, the index was out of bounds
+    return 0;
 }

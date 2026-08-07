@@ -11,9 +11,8 @@
 #define VFS_CHARDEVICE  0x04
 #define VFS_BLOCKDEVICE 0x08
 
-// Forward declaration so vfs_ops can reference vfs_node
 struct vfs_node;
-struct vfs_dirent; // We'll need this later for reading directories
+struct vfs_dirent;
 
 struct vfs_ops {
     int (*open)(struct vfs_node *node);
@@ -34,6 +33,11 @@ struct vfs_node {
     
     struct vfs_ops *ops;   // Pointer to the functions that implement this node
     void *priv_data;       // A driver-specific pointer (e.g., FAT cluster info)
+};
+
+struct vfs_dirent {
+    char name[VFS_NAME_SIZE];
+    uint32_t flags; // E.g., VFS_FILE or VFS_DIRECTORY
 };
 
 struct vfs_mount {

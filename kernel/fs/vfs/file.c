@@ -90,6 +90,24 @@ int sys_close(int fd) {
     return 0;
 }
 
+int sys_readdir(int fd, struct vfs_dirent *out) {
+    if (fd < 0 || fd >= MAX_OPEN_FILES || !out) return -1;
+
+    struct file *f = &open_files[fd];
+    if (f->ref_count == 0 || !f->node) return -1;
+    if (!f->node->ops || !f->node->ops->readdir) return -1;
+    // Use f->offset as the directory index
+    int res = f->node->ops->readdir(f->node, f->offset, out);
+
+    // If the driver successfully found a file at this index, increment the offset
+    // this way, the next time sys_readdir is called, it fetches the NEXT file
+    if (res == 1) {
+        f->offset++;
+    }
+
+    return res;
+}
+
 int64_t sys_read(int fd, void *buf, uint64_t count) {
     if (fd < 0 || fd >= MAX_OPEN_FILES || !buf) {
         return -1;
