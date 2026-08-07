@@ -72,6 +72,21 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
 
 ---
 
+## 🗺️ Development Roadmap & Status
+
+PrOS is being developed in iterative phases, moving towards a full userland graphical environment.
+
+- [x] **Phase 0: Boot, PMM & Architecture Setup** – UEFI boot, Limine protocol integration, Physical Memory Management (PMM), and base architecture setup.
+- [x] **Phase 1: Virtual Memory Management (VMM)** – Page-table abstractions to isolate kernel memory and support dynamic mapping.
+- [ ] **Phase 2: Disk Storage & VFS** – VirtIO block driver, MBR partition parsing, Virtual File System (VFS) abstraction, and basic FAT16 read support.
+- [ ] **Phase 3: Kernel Preemption & Syscalls** – Userland task switching (Ring 3 / EL0), preemptive scheduler, ELF loader, and launching `/bin/init`.
+- [ ] **Phase 4: C Library & BusyBox Shell** – C library porting (mlibc/Newlib), TTY subsystem, POSIX signals, and interactive shell on `/dev/tty1`.
+- [ ] **Phase 5: Framebuffer & Inputs (PTYs)** – `/dev/fb0` device, mouse drivers, and pseudo-terminals for windowing systems.
+- [ ] **Phase 6: X Server, lwm & xterm** – UNIX sockets, TinyX (`Xfbdev`), Light Window Manager (`lwm`), and terminal emulator.
+- [ ] **Phase 7: Networking & Web Browser** – VirtIO-Net, TCP/IP stack (lwIP), and a console web browser like `lynx` or `elinks`.
+
+---
+
 ## 🛠️ Prerequisites
 
 To build and run PrOS, ensure you have the following installed on your host:
