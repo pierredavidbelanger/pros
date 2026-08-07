@@ -24,7 +24,7 @@ struct fat_bpb {
     uint16_t head_count;             // 0x1A: Number of heads
     uint32_t hidden_sectors;         // 0x1C: Hidden sectors
     uint32_t total_sectors_32;       // 0x20: Total sectors (if total_sectors_16 is 0)
-    
+
     // FAT32 Extended Fields (Only valid if fat_size_16 == 0)
     uint32_t fat_size_32;            // 0x24: Sectors per FAT for FAT32
     uint16_t ext_flags;              // 0x28: Extended flags
@@ -39,6 +39,35 @@ struct fat_bpb {
     uint32_t volume_id;              // 0x43: Volume serial number
     char     volume_label[11];       // 0x47: Volume label
     char     fs_type[8];             // 0x52: "FAT32   "
+} __attribute__((packed));
+
+// Attribute Flags (Offset 0x0B)
+#define ATTR_READ_ONLY  0x01
+#define ATTR_HIDDEN     0x02
+#define ATTR_SYSTEM     0x04
+#define ATTR_VOLUME_ID  0x08
+#define ATTR_DIRECTORY  0x10
+#define ATTR_ARCHIVE    0x20
+#define ATTR_LONG_NAME  (ATTR_READ_ONLY | ATTR_HIDDEN | ATTR_SYSTEM | ATTR_VOLUME_ID)
+
+// Special First Characters in Name (Offset 0x00)
+#define DIR_ENTRY_FREE      0x00  // Entry is free and all subsequent entries are free
+#define DIR_ENTRY_DELETED   0xE5  // Entry is deleted, but can be reused
+#define DIR_ENTRY_KANJI     0x05  // Replaces character 0x05 with 0xE5 (Kanji support)
+
+struct fat_dir_entry {
+    char name[11];            // 0x00: 8.3 format (8 char name, 3 char extension, no dot)
+    uint8_t attr;             // 0x0B: Attributes (0x10 = Directory, 0x0F = Long File Name)
+    uint8_t nt_res;
+    uint8_t crt_time_tenth;
+    uint16_t crt_time;
+    uint16_t crt_date;
+    uint16_t lst_acc_date;
+    uint16_t fst_clus_hi;     // High 16 bits of cluster (0 on FAT16)
+    uint16_t wrt_time;
+    uint16_t wrt_date;
+    uint16_t fst_clus_lo;     // Low 16 bits of cluster
+    uint32_t file_size;       // Size in bytes
 } __attribute__((packed));
 
 void fat_init(struct blockdev *dev);

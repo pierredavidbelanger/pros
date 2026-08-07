@@ -42,10 +42,13 @@ void _start(void) {
     test_heap();
 
     vmm_init();
-    kprintf("[VMM  ] Initialized VMM, kernel root at phys:%p virt:%p\n",
-            (void *)vmm_kernel_context->root_phys,
-            vmm_kernel_context->root_virt);
+    kprintf("[VMM  ] Initialized VMM, kernel root at phys:%p virt:%p\n", (void *)vmm_kernel_context->root_phys, vmm_kernel_context->root_virt);
     test_vmm();
+
+    if (framebuffer_request.response) {
+        fb_init(framebuffer_request.response);
+        kprintf("[FB   ] Initialized the framebuffer, ready to kprintf also on the screen\n");
+    }
 
     blockdev_init();
 
@@ -65,22 +68,6 @@ void _start(void) {
 
     // Initialize VirtIO Block driver
     virtio_blk_init();
-
-    // blockdev_t *hd0 = blockdev_get_by_name("hd0");
-    // if (hd0) {
-        // uint8_t sector_buf[512];
-        // if (blockdev_read(hd0, 0, 1, sector_buf) == 0) {
-            // uint16_t sig = sector_buf[510] | (sector_buf[511] << 8);
-            // kprintf("[BLK  ] Read sector 0 of 'hd0' successfully (Boot Signature: 0x%04X)\n", sig);
-        // } else {
-            // kprintf("[BLK  ] Error reading sector 0 of 'hd0'\n");
-        // }
-    // }
-
-    if (framebuffer_request.response) {
-        fb_init(framebuffer_request.response);
-        kprintf("[FB   ] Initialized the framebuffer, ready to kprintf also on the screen\n");
-    }
 
     struct blockdev *hd0p0 = blockdev_get_by_name("hd0p0");
     fat_init(hd0p0);
