@@ -196,8 +196,8 @@ struct vfs_node *fat_vfs_ops_finddir(struct vfs_node *node, const char *name) {
         int char_idx = 0;
         uint8_t first_char = (entry.name[0] == DIR_ENTRY_KANJI) ? 0xE5 : entry.name[0];
         found_entry_clean_name[char_idx++] = (char)first_char;
-        for (int i = 1; i < 11; i++) {
-            found_entry_clean_name[char_idx++] = entry.name[i];
+        for (int j = 1; j < 11; j++) {
+            found_entry_clean_name[char_idx++] = entry.name[j];
         }
         found_entry_clean_name[11] = '\0';
         strntrim(found_entry_clean_name, ' ', 12);
@@ -382,8 +382,8 @@ static void old_reference_fat_init(struct blockdev *dev) {
         int char_idx = 0;
         uint8_t first_char = (entry.name[0] == DIR_ENTRY_KANJI) ? 0xE5 : entry.name[0];
         clean_name[char_idx++] = (char)first_char;
-        for (int i = 1; i < 11; i++) {
-            clean_name[char_idx++] = (char)entry.name[i];
+        for (int j = 1; j < 11; j++) {
+            clean_name[char_idx++] = (char)entry.name[j];
         }
         clean_name[11] = '\0';
 
