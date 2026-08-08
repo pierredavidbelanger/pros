@@ -4,6 +4,7 @@
 #include "core/fb.h"
 #include "core/console.h"
 #include "core/kprintf.h"
+#include "core/memory.h"
 #include "core/syscalls.h"
 #include "mm/pmm.h"
 #include "mm/heap.h"
@@ -27,18 +28,26 @@ void _start(void) {
 
     kprintf("[K    ] Wellcome to PjErOS!\n");
 
+    // Self-tests are enabled in the limine.conf, this serves two purpose:
+    // 1- i learn how to actually use limine cmdline feature
+    // 2- i can make the kernel less verbose when i want
+    const char *cmdline = cmdline_request.response ? cmdline_request.response->cmdline : NULL;
+    bool tests_enabled = cmdline && strstr(cmdline, "pros.tests") != NULL;
+    kprintf("[K    ] Self-tests %s (cmdline: \"%s\")\n", tests_enabled ? "enabled" : "disabled", cmdline ? cmdline : "");
+
     size_t pages = pmm_init(hhdm_request.response, memmap_request.response);
     kprintf("[PMM  ] Initialized PMM, ready to alloc/free physical pages\n");
     kprintf("[PMM  ] PMM manage %zu pages of %zu B for a total of %zu MB kernel heap available\n", pages, PAGE_SIZE, pages * PAGE_SIZE / 1024 / 1024);
-    test_pmm();
+    if (tests_enabled) test_pmm();
 
     heap_init();
     kprintf("[HEAP ] Initialized Heap, ready to kmalloc/kfree dynamic virtual memory block\n");
-    test_heap();
+    if (tests_enabled) test_heap();
 
     vmm_init();
     kprintf("[VMM  ] Initialized VMM, default context root at phys:%p virt:%p (kernel table root at phys:%p)\n", (void *)vmm_kernel_context->root_phys, vmm_kernel_context->root_virt, (void *)arch_vmm_get_kernel_root());
-    test_vmm();
+    if (tests_enabled) test_vmm();
+    if (tests_enabled) test_vfs();
 
     if (framebuffer_request.response) {
         fb_init(framebuffer_request.response);
