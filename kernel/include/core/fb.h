@@ -7,8 +7,6 @@
 
 void fb_init(struct limine_framebuffer_response *framebuffer_response);
 
-void fb_draw_string(size_t start_x, size_t start_y, const char *str, uint32_t fg_color, uint32_t bg_color);
-
 void fb_terminal_print_char(char c);
 
 bool fb_is_active(void);

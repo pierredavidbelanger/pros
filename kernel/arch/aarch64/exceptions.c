@@ -32,8 +32,7 @@ void aarch64_exception_handler(struct aarch64_registers *regs) {
     // EC=0x24: Data Abort from lower EL
     // EC=0x25: Data Abort from current EL
     if (esr_ec == 0x20 || esr_ec == 0x21 || esr_ec == 0x24 || esr_ec == 0x25) {
-        uint64_t far = regs->far;
-        if (vmm_handle_page_fault(far, regs->esr)) {
+        if (vmm_handle_page_fault(regs->far, regs->esr)) {
             return;  // Resolved — CPU will eret back and re-execute
         }
     }

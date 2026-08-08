@@ -1,25 +1,22 @@
 #include "arch/arch.h"
 
 #include "mm/vmm.h"
+#include "mm/pmm.h"
+#include "core/memory.h"
 
 void arch_init(void) {
-    // Enable FPU & SIMD in EL1 / EL2
-    uint64_t current_el;
-    asm volatile ("mrs %0, CurrentEL" : "=r"(current_el));
-    current_el = (current_el >> 2) & 3;
-    if (current_el == 2) {
-        uint64_t cptr;
-        asm volatile ("mrs %0, cptr_el2" : "=r"(cptr));
-        cptr &= ~(1ULL << 10);
-        asm volatile ("msr cptr_el2, %0\n\tisb" :: "r"(cptr));
-    } else if (current_el == 1) {
-        uint64_t cpacr;
-        asm volatile ("mrs %0, cpacr_el1" : "=r"(cpacr));
-        cpacr |= (3ULL << 20);
-        asm volatile ("msr cpacr_el1, %0\n\tisb" :: "r"(cpacr));
-    }
+    // Enable FPU & SIMD access at EL1 (and EL0, once user space exists).
+    // Limine always drop to EL1 before jumping to the kernel
+    uint64_t cpacr;
+    asm volatile ("mrs %0, cpacr_el1" : "=r"(cpacr));
+    cpacr |= (3ULL << 20); // FPEN = 0b11: don't trap FP/SIMD instructions at EL0 or EL1
+    asm volatile ("msr cpacr_el1, %0\n\tisb" :: "r"(cpacr));
 
-
+    // Define what arch_vmm_make_pte() AttrIndx bits actually mean, instead of silently getting what limine set MAIR_EL1 to.
+    // Index 0: Normal, Write-Back Cacheable (AttrIndx = 0)
+    // Index 1: Device-nGnRnE (AttrIndx = 1, VMM_CACHE_DISABLE)
+    uint64_t mair = (0xFFULL << 0) | (0x00ULL << 8);
+    asm volatile ("msr mair_el1, %0\n\tisb" :: "r"(mair) : "memory");
 
     // Enable & configure TTBR0_EL1 in TCR_EL1 (Inner Shareable, WB Cacheable)
     uint64_t tcr;
@@ -106,24 +103,49 @@ uint64_t arch_vmm_get_kernel_root(void) {
     return val & 0x0000FFFFFFFFFFFEULL;
 }
 
-void arch_vmm_set_kernel_root(uint64_t phys_addr) {
-    asm volatile ("msr ttbr1_el1, %0\n\tisb" :: "r"(phys_addr) : "memory");
-}
-
-uint64_t arch_vmm_get_user_root(void) {
-    uint64_t val;
-    asm volatile ("mrs %0, ttbr0_el1" : "=r"(val));
-    return val & 0x0000FFFFFFFFFFFEULL;
-}
-
 void arch_vmm_set_user_root(uint64_t phys_addr) {
     asm volatile ("msr ttbr0_el1, %0\n\tdsb ish\n\ttlbi vmalle1is\n\tdsb ish\n\tisb" :: "r"(phys_addr) : "memory");
 }
 
-uint64_t arch_vmm_get_fault_addr(void) {
-    uint64_t val;
-    asm volatile ("mrs %0, far_el1" : "=r"(val));
-    return val;
+uint64_t arch_vmm_ensure_user_root(void) {
+    uint64_t root_phys;
+    asm volatile ("mrs %0, ttbr0_el1" : "=r"(root_phys));
+    root_phys &= 0x0000FFFFFFFFFFFEULL;
+    if (root_phys != 0) {
+        return root_phys;
+    }
+    // Limine leaves TTBR0_EL1 unset on AArch64 — install a fresh, blank root table.
+    root_phys = pmm_alloc(1);
+    uint64_t *root_virt = pmm_phys_to_virt(root_phys);
+    memset(root_virt, 0, PAGE_SIZE);
+    arch_vmm_set_user_root(root_phys);
+    return root_phys;
+}
+
+uint64_t arch_vmm_new_context_root(uint64_t kernel_root_phys) {
+    // AArch64 keeps the kernel's mappings in TTBR1_EL1, entirely separate from a context's
+    // own TTBR0_EL1 root — nothing to clone from kernel_root_phys.
+    (void)kernel_root_phys;
+    uint64_t root_phys = pmm_alloc(1);
+    if (!root_phys) return 0;
+    uint64_t *root_virt = pmm_phys_to_virt(root_phys);
+    memset(root_virt, 0, PAGE_SIZE);
+    return root_phys;
+}
+
+// fault_code is the raw ESR_EL1 value. ISS[5:0] is the Data/Instruction Fault Status Code
+// (DFSC): a Translation fault (entry not present at some level, encoded 0b0000LL) is the
+// only case treated as a legitimate not-present fault — permission faults, address-size
+// faults, etc. are all real violations. ISS bit 6 (WnR) reports a write access.
+
+bool arch_vmm_fault_is_present(uint64_t fault_code) {
+    uint32_t dfsc = fault_code & 0x3FULL;
+    bool is_translation_fault = (dfsc & 0x3CULL) == 0x04ULL;
+    return !is_translation_fault;
+}
+
+bool arch_vmm_fault_is_write(uint64_t fault_code) {
+    return (fault_code & (1ULL << 6)) != 0;
 }
 
 void arch_vmm_invlpg(void *virt_addr) {

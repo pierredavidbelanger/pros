@@ -55,3 +55,31 @@ qemu-x86_64: root
 		-drive if=none,id=hd0,file=fat:rw:root,format=raw \
 		-device virtio-blk-pci,drive=hd0,disable-legacy=on
 
+.PHONY: qemu-aarch64-nographic
+qemu-aarch64-nographic: root
+	mkdir -p logs
+	qemu-system-aarch64 \
+		-m 2G \
+		-machine virt \
+		-cpu cortex-a72 \
+		-display none \
+		-serial stdio \
+		-drive if=pflash,unit=0,format=raw,file=bin/edk2-ovmf-bins/ovmf-code-aarch64.fd,readonly=on \
+		-drive if=none,id=hd0,file=fat:rw:root,format=raw \
+		-device virtio-blk-pci,drive=hd0,disable-legacy=on \
+		-device ramfb \
+		| tee logs/qemu-aarch64.log
+
+.PHONY: qemu-x86_64-nographic
+qemu-x86_64-nographic: root
+	mkdir -p logs
+	qemu-system-x86_64 \
+		-m 2G \
+		-machine q35 \
+		-display none \
+		-serial stdio \
+		-drive if=pflash,unit=0,format=raw,file=bin/edk2-ovmf-bins/ovmf-code-x86_64.fd,readonly=on \
+		-drive if=none,id=hd0,file=fat:rw:root,format=raw \
+		-device virtio-blk-pci,drive=hd0,disable-legacy=on \
+		| tee logs/qemu-x86_64.log
+

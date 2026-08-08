@@ -13,6 +13,7 @@ struct pmm_node {
 static struct pmm_node *free_list_head = NULL;
 
 static uint64_t hhdm_offset = 0;
+static uint64_t max_phys_addr = 0;
 
 size_t pmm_init(struct limine_hhdm_response *hhdm_response, struct limine_memmap_response *memmap_response) {
     if (hhdm_response == NULL) {
@@ -28,6 +29,14 @@ size_t pmm_init(struct limine_hhdm_response *hhdm_response, struct limine_memmap
 
     for (uint64_t i = 0; i < memmap_response->entry_count; i++) {
         struct limine_memmap_entry *entry = memmap_response->entries[i];
+
+        // Track the highest physical address across every entry type (not just USABLE),
+        // so MMIO/reserved regions above RAM are still covered by the HHDM extent.
+        uint64_t entry_top = entry->base + entry->length;
+        if (entry_top > max_phys_addr) {
+            max_phys_addr = entry_top;
+        }
+
         if (entry->type != LIMINE_MEMMAP_USABLE) {
             continue;
         }
@@ -57,6 +66,10 @@ uint64_t pmm_virt_to_phys(void *virt_addr) {
 
 uint64_t pmm_get_hhdm_offset(void) {
     return hhdm_offset;
+}
+
+uint64_t pmm_get_max_phys_addr(void) {
+    return max_phys_addr;
 }
 
 uint64_t pmm_alloc(size_t count) {
@@ -111,4 +124,13 @@ void pmm_free(uint64_t phys_addr, size_t count) {
         free_list_head = node;
         next_addr += PAGE_SIZE;
     }
+}
+
+size_t pmm_get_free_page_count(void) {
+    // yeah, we have no "tail", so must iterate from the head
+    size_t count = 0;
+    for (struct pmm_node *node = free_list_head; node != NULL; node = node->next) {
+        count++;
+    }
+    return count;
 }

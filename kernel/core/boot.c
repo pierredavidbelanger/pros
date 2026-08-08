@@ -25,6 +25,17 @@ volatile struct limine_memmap_request memmap_request = {
 };
 
 __attribute__((used, section(".limine_requests")))
+volatile struct limine_paging_mode_request paging_mode_request = {
+    .id = LIMINE_PAGING_MODE_REQUEST_ID,
+    .revision = 0,
+    // 4-level paging is value 0 on both x86_64 and AArch64
+    // (LIMINE_PAGING_MODE_X86_64_4LVL == LIMINE_PAGING_MODE_AARCH64_4LVL == 0)
+    .mode = 0,
+    .max_mode = 0,
+    .min_mode = 0
+};
+
+__attribute__((used, section(".limine_requests")))
 volatile struct limine_rsdp_request rsdp_request = {
     .id = LIMINE_RSDP_REQUEST_ID,
     .revision = 0

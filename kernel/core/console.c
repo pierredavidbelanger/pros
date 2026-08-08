@@ -20,9 +20,3 @@ void console_putc(char c) {
         fb_terminal_print_char(c);
     }
 }
-
-void console_puts(const char *s) {
-    while (*s) {
-        console_putc(*s++);
-    }
-}

@@ -5,14 +5,10 @@
 
 void arch_init(void);
 
-void arch_putc(char c);
-
 void arch_halt(void);
 
 // Cleanly power off the machine
 void arch_shutdown(void);
-
-
 
 // ─── VMM Architecture Primitives ─────────────────────────────
 
@@ -26,14 +22,30 @@ bool arch_vmm_pte_is_present(uint64_t pte);
 // Extract the physical address from a hardware PTE (mask off flag bits)
 uint64_t arch_vmm_pte_get_phys(uint64_t pte);
 
-// Get/set the physical base address of root page tables
+// Get the physical base address of the kernel's root page table, and set the currently
+// active low-half (user) root.
+// No arch_vmm_get_user_root()/arch_vmm_set_kernel_root() needed.
+// "the user root" and "the kernel root" is the same on x86_64, and arch_vmm_ensure_user_root() below is the only place that distinction ever mattered, so each arch do it directly
 uint64_t arch_vmm_get_kernel_root(void);
-void     arch_vmm_set_kernel_root(uint64_t phys_addr);
-uint64_t arch_vmm_get_user_root(void);
 void     arch_vmm_set_user_root(uint64_t phys_addr);
 
-// Read faulting virtual address during Page Fault / Data Abort
-uint64_t arch_vmm_get_fault_addr(void);
+// Ensure the current low-half root register holds a valid root table,
+// allocating and installing a fresh one if the bootloader didn't already set one up (needed on aarch64).
+// Return the physical address of the root table.
+uint64_t arch_vmm_ensure_user_root(void);
+
+// Build a fresh, zeroed root page-table for a new address space (context), with whatever
+// architecture-specific setup is needed so it correctly sees the kernel's existing mappings
+// (e.g. cloning shared entries on a single-root architecture; nothing to do on a dual-root
+// one). `kernel_root_phys` is the kernel's own root table (arch_vmm_get_kernel_root()).
+// Returns the physical address of the new root, or 0 on allocation failure.
+uint64_t arch_vmm_new_context_root(uint64_t kernel_root_phys);
+
+// Decode the fault_code passed to vmm_handle_page_fault() (x86_64 #PF error code, or the
+// raw AArch64 ESR_EL1 value): distinguishes a legitimate not-present (demand-pageable) fault
+// from a real protection violation, and whether the faulting access was a write.
+bool arch_vmm_fault_is_present(uint64_t fault_code);
+bool arch_vmm_fault_is_write(uint64_t fault_code);
 
 // Invalidate TLB entry for a specific virtual address
 void arch_vmm_invlpg(void *virt_addr);

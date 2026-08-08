@@ -13,11 +13,24 @@
 #define VMM_CACHE_DISABLE (1ULL << 3)
 #define VMM_NO_EXECUTE    (1ULL << 4)
 
+// ─── Paging Geometry (architecture-neutral, 4-level / 4 KiB granule) ──
+// Single source of truth for the page-table walk math, instead of the shift/mask
+// literals it replaces being hand-copied at every call site in vmm.c.
+
+#define VMM_LEVEL_BITS 9                                   // index bits per page-table level
+#define VMM_LEVELS     4                                   // page-table depth (root..leaf)
+#define VMM_VA_BITS    (12 + VMM_LEVELS * VMM_LEVEL_BITS)  // usable virtual-address width (48)
+
+// Canonical split between the per-context lower half and the shared kernel upper half.
+#define VMM_ADDR_SPLIT (1ULL << (VMM_VA_BITS - 1))
+
 // ─── VMM Context ─────────────────────────────────────────────
 
 struct vmm_context {
-    uint64_t root_phys;   // Physical address of root page table
-    uint64_t *root_virt;  // HHDM virtual address of root page table
+    uint64_t root_phys;      // Physical address of root page table
+    uint64_t *root_virt;     // HHDM virtual address of root page table
+    uint64_t demand_page_lo; // Start of this context's demand-pageable range
+    uint64_t demand_page_hi; // End (exclusive) of the demand-pageable range (0/0 = disabled)
 };
 
 extern struct vmm_context *vmm_kernel_context;
@@ -31,7 +44,7 @@ void vmm_init(void);
 // Create a new address space (clones kernel upper-half entries)
 struct vmm_context *vmm_create_context(void);
 
-// Destroy an address space (frees root table + context struct)
+// Destroy an address space (frees the entire lower-half page-table tree + context struct)
 void vmm_destroy_context(struct vmm_context *ctx);
 
 // Map a single 4 KiB page: virt_addr → phys_addr with given flags

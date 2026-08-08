@@ -128,7 +128,7 @@ static void fb_draw_char(struct limine_framebuffer *fb, size_t x, size_t y, char
 
 struct limine_framebuffer *fb;
 
-void fb_clear(uint32_t color) {
+static void fb_clear(uint32_t color) {
     if (!fb) return;
     volatile uint32_t *fb_ptr = (volatile uint32_t *)fb->address;
     size_t num_pixels = (fb->pitch / 4) * fb->height;
@@ -140,25 +140,6 @@ void fb_clear(uint32_t color) {
 void fb_init(struct limine_framebuffer_response *framebuffer_response) {
     fb = framebuffer_response->framebuffers[0];
     fb_clear(0x00000000);
-}
-
-void fb_draw_string(size_t start_x, size_t start_y, const char *str, uint32_t fg_color, uint32_t bg_color) {
-    size_t x = start_x;
-    size_t y = start_y;
-    while (*str) {
-        if (*str == '\n') {
-            x = start_x;
-            y += FONT_HEIGHT;
-        } else {
-            fb_draw_char(fb, x, y, *str, fg_color, bg_color);
-            x += FONT_WIDTH;
-            if (x + FONT_WIDTH >= fb->width) {
-                x = start_x;
-                y += FONT_HEIGHT;
-            }
-        }
-        str++;
-    }
 }
 
 static size_t cursor_x = 0;

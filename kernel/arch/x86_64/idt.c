@@ -128,9 +128,11 @@ void idt_init(void) {
 }
 
 void x86_64_exception_handler(struct x86_64_registers *regs) {
+    uint64_t cr2;
+    asm volatile ("mov %%cr2, %0" : "=r"(cr2));
+
     if (regs->int_no == 14) {
         // Page Fault — try demand paging
-        uint64_t cr2 = arch_vmm_get_fault_addr();
         if (vmm_handle_page_fault(cr2, regs->error_code)) {
             return;  // Resolved — CPU will re-execute the faulting instruction
         }
@@ -155,8 +157,6 @@ void x86_64_exception_handler(struct x86_64_registers *regs) {
     kprintf(" R13: 0x%016lx  R14: 0x%016lx  R15: 0x%016lx\n",
             regs->r13, regs->r14, regs->r15);
     if (regs->int_no == 14) {
-        uint64_t cr2;
-        asm volatile ("mov %%cr2, %0" : "=r"(cr2));
         kprintf(" CR2: 0x%016lx\n", cr2);
     }
     kprintf("===================================================\n");

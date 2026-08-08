@@ -15,8 +15,14 @@ uint64_t pmm_virt_to_phys(void *virt_addr);
 
 uint64_t pmm_get_hhdm_offset(void);
 
+// Highest physical address (base + length) reported by any Limine memmap entry (no matter of type)
+uint64_t pmm_get_max_phys_addr(void);
+
 uint64_t pmm_alloc(size_t count);
 
 void pmm_free(uint64_t phys_addr, size_t count);
+
+// Number of free pages currently on the free list (for debug/test)
+size_t pmm_get_free_page_count(void);
 
 #endif //PROS_PMM_H

@@ -30,23 +30,23 @@ void _start(void) {
     size_t pages = pmm_init(hhdm_request.response, memmap_request.response);
     kprintf("[PMM  ] Initialized PMM, ready to alloc/free physical pages\n");
     kprintf("[PMM  ] PMM manage %zu pages of %zu B for a total of %zu MB kernel heap available\n", pages, PAGE_SIZE, pages * PAGE_SIZE / 1024 / 1024);
-    //test_pmm();
+    test_pmm();
 
     heap_init();
     kprintf("[HEAP ] Initialized Heap, ready to kmalloc/kfree dynamic virtual memory block\n");
-    //test_heap();
+    test_heap();
 
     vmm_init();
-    kprintf("[VMM  ] Initialized VMM, kernel root at phys:%p virt:%p\n", (void *)vmm_kernel_context->root_phys, vmm_kernel_context->root_virt);
-    //test_vmm();
+    kprintf("[VMM  ] Initialized VMM, default context root at phys:%p virt:%p (kernel table root at phys:%p)\n", (void *)vmm_kernel_context->root_phys, vmm_kernel_context->root_virt, (void *)arch_vmm_get_kernel_root());
+    test_vmm();
 
     if (framebuffer_request.response) {
         fb_init(framebuffer_request.response);
         kprintf("[FB   ] Initialized the framebuffer, ready to kprintf also on the screen\n");
     }
 
-    kprintf("[K    ] Halt. All done here!\n");
-    arch_halt();
+    kprintf("[K    ] All done here, shutting down.\n");
+    arch_shutdown();
 }
 
 void test_pmm(void) {
@@ -91,8 +91,12 @@ void test_vmm(void) {
     pmm_free(test_phys, 1);
 
     // Test 2: Context creation + isolation
+    size_t free_pages_before = pmm_get_free_page_count();
     struct vmm_context *user_ctx = vmm_create_context();
     kprintf("[VMM  ] Created user context phys:%p\n", (void *)user_ctx->root_phys);
+    // Opt this context into demand paging over a fixed test range (disabled by default).
+    user_ctx->demand_page_lo = 0x60000000ULL;
+    user_ctx->demand_page_hi = 0x70000000ULL;
     vmm_switch_context(user_ctx);
     kprintf("[VMM  ] Switched to user context (kernel kprintf still works!)\n");
 
@@ -108,8 +112,17 @@ void test_vmm(void) {
 
     kprintf("[VMM  ] Demand paging test PASSED!\n");
 
+    // Negative test, this is not a valid demand-paging, it should fall through and panic.
+    // *(volatile uint32_t *)0x80000000ULL = 0xBAADF00D;
+
     vmm_switch_context(vmm_kernel_context);
     vmm_destroy_context(user_ctx);
+
+    // Test 4: Context teardown must not leak the pages it allocated (root + intermediate page tables + the two demand-paged frames from Test 3).
+    size_t free_pages_after = pmm_get_free_page_count();
+    kprintf("[VMM  ] Context teardown leak check: %zu pages before, %zu after (%s)\n",
+            free_pages_before, free_pages_after,
+            free_pages_before == free_pages_after ? "PASS" : "LEAK");
 }
 
 void test_vfs(void) {
