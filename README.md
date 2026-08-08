@@ -56,6 +56,7 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
 ├── Makefile               # Root build script (EFI System Partition setup, OVMF/Limine binaries, QEMU launchers)
 ├── limine.conf            # Limine bootloader configuration
 ├── README.md              # Project documentation
+├── doc/                   # Roadmap & design working documents
 └── kernel/                # Kernel source root
     ├── Makefile           # Kernel compilation script
     ├── arch/              # Architecture-specific code (aarch64, x86_64), linker scripts, exceptions, interrupts
@@ -70,11 +71,11 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
 
 ## 🗺️ Development Roadmap & Status
 
-PrOS is being developed in iterative phases, moving towards a full userland graphical environment.
+PrOS is being developed in iterative phases, moving towards a full userland graphical environment. Detailed working documents for each phase live in [`doc/`](doc/ROADMAP.md).
 
 - [x] **Phase 0: Boot, PMM & Architecture Setup** – UEFI boot, Limine protocol integration, Physical Memory Management (PMM), and base architecture setup.
 - [x] **Phase 1: Virtual Memory Management (VMM)** – Page-table abstractions to isolate kernel memory and support dynamic mapping, later revisited for an architecture-neutral redesign (shared paging constants, a real per-context demand-paging policy, a fixed context-teardown memory leak).
-- [ ] **Phase 2: In-Memory Root Filesystem & VFS** – The original disk-backed attempt (VirtIO block driver, PCI/ACPI bus discovery, MBR partitioning, FAT16) has been ripped out; the VFS abstraction and syscalls survive unchanged. Next up: iterative VFS path resolution, then a Limine-module-loaded **tmpfs from an `initrd.tar`** as the new root filesystem.
+- [ ] **Phase 2: In-Memory Root Filesystem & VFS** – The original disk-backed attempt (VirtIO block driver, PCI/ACPI bus discovery, MBR partitioning, FAT16) has been ripped out; the VFS abstraction and syscalls survive unchanged. Iterative VFS path resolution (`vfs_lookup`) is done. In progress: a Limine-module-loaded **tmpfs from an `initrd.tar`** as the new root filesystem — see [`doc/PHASE2_TAR_DRIVER.md`](doc/PHASE2_TAR_DRIVER.md) for the design.
 - [ ] **Phase 3: Kernel Preemption & Syscalls** – Userland task switching (Ring 3 / EL0), preemptive scheduler, ELF loader, and launching `/bin/init`.
 - [ ] **Phase 4: C Library & BusyBox Shell** – C library porting (mlibc/Newlib), TTY subsystem, POSIX signals, and interactive shell on `/dev/tty1`.
 - [ ] **Phase 5: Framebuffer & Inputs (PTYs)** – `/dev/fb0` device, mouse drivers, and pseudo-terminals for windowing systems.
