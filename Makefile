@@ -28,8 +28,8 @@ kernel:
 	$(MAKE) -C kernel ARCH=x86_64 bin/kernel-x86_64
 
 initrd.tar:
-	mkdir -p initrd
-	echo 'HelloWorld' > initrd/hello.txt
+	mkdir -p initrd/root
+	echo 'HelloWorld' > initrd/root/hello.txt
 	cd initrd && tar --format=ustar -cf ../initrd.tar * && cd ..
 
 root: bin initrd.tar kernel

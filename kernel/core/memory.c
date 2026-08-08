@@ -144,3 +144,48 @@ void strntrim(char *s, const char t, size_t n) {
         s[new_len] = '\0';
     }
 }
+
+// check if a character matches any delimiter
+static int is_delim(char c, const char *delim) {
+    while (*delim) {
+        if (c == *delim++) return 1;
+    }
+    return 0;
+}
+
+char *strtokr(char *str, const char *delim, char **saveptr) {
+    // If str is NULL, pick up where the saveptr context left off
+    char *next = (str != NULL) ? str : *saveptr;
+
+    if (next == NULL || *next == '\0') {
+        *saveptr = NULL;
+        return NULL;
+    }
+
+    // Skip leading delimiters
+    while (*next && is_delim(*next, delim)) {
+        next++;
+    }
+
+    if (*next == '\0') {
+        *saveptr = next;
+        return NULL;
+    }
+
+    // Mark the start of the token
+    char *token_start = next;
+
+    // Scan for the end of the token
+    while (*next) {
+        if (is_delim(*next, delim)) {
+            *next = '\0';          // Null-terminate the token
+            *saveptr = next + 1;   // Save the next position into the caller's context
+            return token_start;
+        }
+        next++;
+    }
+
+    // End of string reached
+    *saveptr = next;
+    return token_start;
+}

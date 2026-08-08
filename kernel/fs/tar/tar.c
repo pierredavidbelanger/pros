@@ -1,6 +1,10 @@
 #include "fs/tar/tar.h"
+
 #include "core/kprintf.h"
 #include "core/memory.h"
+#include "mm/heap.h"
+
+#include <printf.h>
 
 // TAR Header Field Sizes
 #define TAR_NAME_SIZE     100
@@ -62,6 +66,9 @@ struct ustar_header {
     char padding[TAR_PADDING_SIZE];   /* 500: Zero-padding to reach 512 bytes */
 };
 
+static struct vfs_ops tar_ops = {
+};
+
 static uint64_t tar_parse_octal(const char *field, size_t field_len) {
     uint64_t value = 0;
     for (size_t i = 0; i < field_len && field[i] >= '0' && field[i] <= '7'; i++) {
@@ -73,18 +80,36 @@ static uint64_t tar_parse_octal(const char *field, size_t field_len) {
 struct vfs_node *tar_mount(uint64_t tar_addr, size_t tar_size) {
     if (tar_size < TAR_BLOCK_SIZE) return NULL;
 
+    struct vfs_node *root = kcalloc(1, sizeof(struct vfs_node));
+    snprintf(root->name, VFS_NAME_SIZE, "%s", "/");
+    root->flags = VFS_DIRECTORY;
+    root->size = 0;
+    root->ops = &tar_ops;
+
+    char name_buf[TAR_NAME_SIZE];
+    char *saveptr;
+
     uint64_t addr = tar_addr;
     while (addr < tar_addr + tar_size) {
         struct ustar_header *header = (struct ustar_header *) addr;
         if (memcmp(header->magic, TMAGIC, TAR_MAGIC_SIZE)) return NULL;
         if (memcmp(header->version, TVERSION, TAR_VERSION_SIZE)) return NULL;
 
-        kprintf("[TAR  ] %s\n", header->name);
+        memcpy(name_buf, header->name, TAR_NAME_SIZE);
+        // TODO: this stump the last byte, name CAN be TAR_NAME_SIZE long
+        name_buf[TAR_NAME_SIZE - 1] = '\0';
+
+        kprintf("[TAR  ] Parse %s\n", name_buf);
+        char *token = strtokr(name_buf, "/", &saveptr);
+        while (token != NULL) {
+            kprintf("[TAR  ]   Token: %s\n", token);
+            token = strtokr(NULL, "/", &saveptr);
+        }
 
         uint64_t size = tar_parse_octal(header->size, TAR_SIZE_SIZE);
 
         addr += TAR_BLOCK_SIZE + (size + TAR_BLOCK_SIZE - 1) / TAR_BLOCK_SIZE * TAR_BLOCK_SIZE;
     }
 
-    return NULL;
+    return root;
 }
