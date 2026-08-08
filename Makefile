@@ -30,7 +30,7 @@ kernel:
 initrd.tar:
 	mkdir -p initrd
 	echo 'HelloWorld' > initrd/hello.txt
-	pushd initrd && tar --format=ustar -cf ../initrd.tar * && popd
+	cd initrd && tar --format=ustar -cf ../initrd.tar * && cd ..
 
 root: bin initrd.tar kernel
 	mkdir -p root/boot/limine root/EFI/BOOT
