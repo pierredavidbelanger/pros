@@ -77,3 +77,35 @@ struct vfs_node *vfs_get_mountpoint(const char **path) {
 
     return best_match->root;
 }
+
+struct vfs_node *vfs_lookup(const char *path) {
+    if (!path) return NULL;
+
+    struct vfs_node *target = vfs_get_mountpoint(&path);
+    if (!target) return NULL;
+
+    char subpath[VFS_NAME_SIZE];
+    int subpath_index = 0;
+    int path_index = 0;
+
+    while (true) {
+        char c = path[path_index];
+        if ((c == '/' || c == '\0') && subpath_index > 0) {
+            subpath[subpath_index] = '\0';
+            if (!target->ops || !target->ops->finddir) return NULL;
+            target = target->ops->finddir(target, subpath);
+            if (!target) return NULL;
+            subpath_index = 0;
+            continue;
+        }
+        if (c != '/' && c != '\0') {
+            subpath[subpath_index] = c;
+            subpath_index++;
+            if (subpath_index >= VFS_NAME_SIZE) return NULL;
+        }
+        if (c == '\0') break;
+        path_index++;
+    }
+
+    return target;
+}

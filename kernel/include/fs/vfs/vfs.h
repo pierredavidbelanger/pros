@@ -49,5 +49,6 @@ struct vfs_mount {
 void vfs_init(void);
 int vfs_mount(const char *path, struct vfs_node *root_node);
 struct vfs_node *vfs_get_mountpoint(const char **path);
+struct vfs_node *vfs_lookup(const char *path);
 
 #endif //PROS_VFS_H

@@ -25,25 +25,8 @@ int sys_open(const char *path, int flags) {
         return -1;
     }
 
-    struct vfs_node *mount_root = vfs_get_mountpoint(&path);
-    if (!mount_root) {
-        return -1; // No mount point found for this path
-    }
-
-    // Now path points to the remainder string (e.g. "boot/limine.conf")
-    struct vfs_node *target_node = NULL;
-    
-    // If the path is empty, they just opened the root of the mount point itself
-    if (*path == '\0') {
-        target_node = mount_root;
-    } else {
-        // Otherwise, ask the mount root to search for the specific file
-        if (!mount_root->ops || !mount_root->ops->finddir) {
-            return -1; // Filesystem doesn't support searching directories
-        }
-        target_node = mount_root->ops->finddir(mount_root, path);
-    }
-
+    // vfs_lookup will get the mount point and search each path segment with target->ops->finddir
+    struct vfs_node *target_node = vfs_lookup(path);
     if (!target_node) {
         return -1; // File not found
     }
