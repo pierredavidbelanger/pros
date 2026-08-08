@@ -1,9 +1,12 @@
-# Working Document: Phase 2 Step 13 — TAR/Initramfs Filesystem Driver [STATUS: DESIGN, READY TO CODE 🚀]
+# Working Document: Phase 2 Step 13 — TAR/Initramfs Filesystem Driver [STATUS: READ PATH WORKING ✅, WRITE STILL OPEN 🚧]
 
 This working document expands `PHASE2_VFS.md` Step 13 into a full design — how the archive gets loaded, how the driver is structured, and specifically how read *and* write work on a filesystem that's explicitly RAM-only and non-persistent by design.
 
 > [!NOTE]
-> Mentor-mode reminder (`.rules.md`): this is a design reference to code from by hand, not code to paste in. `vfs_lookup()` (iterative path resolution) is already done and working — this is the next real milestone.
+> **Status**: Parts 1-3 are implemented and verified end-to-end at boot — `module_request` loads the archive, `tar_mount()` builds a real `vfs_node` tree (first-child/next-sibling, see `kernel/fs/tar/tar.c`), and `finddir`/`readdir`/`read` all work (`ls /` and `cat` against the mounted archive both confirmed working). Part 4 (write support / copy-on-write promotion into heap memory) is still just a design below, not yet built.
+
+> [!NOTE]
+> Mentor-mode reminder (`.rules.md`): this is a design reference to code from by hand, not code to paste in.
 
 ---
 
@@ -103,14 +106,14 @@ This is the actual design question. Two approaches, worth understanding both so 
 
 ---
 
-## 📁 Critical files (once this is actually implemented)
+## 📁 Critical files
 
-- `kernel/core/boot.c` / `kernel/include/core/boot.h` — register `module_request`
-- `limine.conf` — module directive (syntax to verify against the real Limine tool)
-- `kernel/fs/tar/tar.c` + a new `kernel/include/fs/tar.h` — the driver itself: parse-at-mount, `vfs_ops` (`read`/`write`/`finddir`/`readdir`), the promote-on-write logic
-- `kernel/core/main.c` — replace the removed `vfs_mount("/", fat_mount(...))` call with `vfs_mount("/", tar_mount(module_request.response->modules[0]->address, ...->size))` (mirrors the old `fat_mount()` call shape exactly)
-- `kernel/include/core/syscalls.h` — `O_CREAT` already exists; wiring it into `sys_open()` is a natural follow-up once file creation is wanted, not required for read/write of files that already exist in the archive
+- ✅ `kernel/core/boot.c` / `kernel/include/core/boot.h` — `module_request` registered
+- ✅ `limine.conf` — module directive in place (`module_path:`), confirmed working
+- ✅ `kernel/fs/tar/tar.c` + `kernel/include/fs/tar/tar.h` — `tar_mount()`, `vfs_ops` (`read`/`finddir`/`readdir` — `write`/`open`/`close` not yet implemented), tree built as `struct tar_node_data { next_sibling, first_child, data }` (first-child/next-sibling, not the array-of-children shape originally sketched below — simpler, no `krealloc` needed at all)
+- ✅ `kernel/core/main.c` — `vfs_mount("/", tar_mount(module_request.response->modules[0]->address, ...->size))` wired in, running before `test_vfs()`
+- `kernel/include/core/syscalls.h` — `O_CREAT` already exists; wiring it into `sys_open()` is still open, needed once file creation (Part 4) is built
 
-## 🪜 Verification (once implemented)
+## 🪜 Verification
 
-`test_vfs()` in `main.c` already exists, is fully generic (`sys_open`/`sys_readdir`/`sys_read`/`sys_close` only), and is currently gated behind the `pros.tests` cmdline flag but never gets to do anything meaningful because nothing is mounted. The moment `tar_mount()` is wired up, `test_vfs()` should start working completely unmodified — that's the natural end-to-end check. A write test (open, write, read back, confirm) would need a small addition to `test_vfs()` or a new `test_tar_write()`.
+✅ Done — `test_vfs()` in `main.c` ran unmodified against the mounted archive and confirmed the whole read path: `ls /` correctly lists the real directory structure from the archive, `cat` reads real file content back out of the loaded TAR blob. A write test (open, write, read back, confirm) would need a small addition to `test_vfs()` or a new `test_tar_write()`, once Part 4 is built.

@@ -48,7 +48,6 @@ void _start(void) {
     vmm_init();
     kprintf("[VMM  ] Initialized VMM, default context root at phys:%p virt:%p (kernel table root at phys:%p)\n", (void *)vmm_kernel_context->root_phys, vmm_kernel_context->root_virt, (void *)arch_vmm_get_kernel_root());
     if (tests_enabled) test_vmm();
-    if (tests_enabled) test_vfs();
 
     if (framebuffer_request.response) {
         fb_init(framebuffer_request.response);
@@ -56,7 +55,12 @@ void _start(void) {
     }
 
     if (module_request.response && module_request.response->modules && module_request.response->modules[0]) {
-        tar_mount((uint64_t) module_request.response->modules[0]->address, module_request.response->modules[0]->size);
+        struct vfs_node *tar_root = tar_mount((uint64_t) module_request.response->modules[0]->address, module_request.response->modules[0]->size);
+        if (tar_root) {
+            if (vfs_mount("/", tar_root) == 0) {
+                if (tests_enabled) test_vfs();
+            }
+        }
     }
 
     kprintf("[K    ] All done here, shutting down.\n");
@@ -153,18 +157,22 @@ void test_vfs(void) {
         }
         kprintf("-------------------------------\n");
         sys_close(fd);
+    } else {
+        kprintf("cannot open /\n");
     }
-    fd = sys_open("/test.txt", O_RDONLY);
+    fd = sys_open("/root/hello.txt", O_RDONLY);
     if (fd >= 0) {
         char buffer[2000];
         int64_t bytes_read = sys_read(fd, buffer, 2000);
         if (bytes_read > 0) {
             // Null-terminate it just to be safe before printing
             buffer[bytes_read] = '\0';
-            kprintf("-------- cat /test.txt --------\n");
+            kprintf("------ cat root/hello.txt -----\n");
             kprintf("%s\n", buffer);
             kprintf("-------------------------------\n");
         }
         sys_close(fd);
+    } else {
+        kprintf("cannot open /root/hello.txt\n");
     }
 }

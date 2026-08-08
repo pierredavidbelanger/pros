@@ -22,14 +22,15 @@ Pairing the kernel's Linux ABI syscall dispatcher with a standard C library allo
 ---
 
 ### Phase 2: In-Memory Root Filesystem (Initramfs) & VFS
-* **Status**: **In Progress** 🚧 (Detailed working doc: [`PHASE2_VFS.md`](PHASE2_VFS.md))
+* **Status**: **Read path complete** ✅ — write support still open (Detailed working doc: [`PHASE2_TAR_DRIVER.md`](PHASE2_TAR_DRIVER.md))
 * **Goal**: Mount a real root filesystem with no disk driver at all, by reading a `ustar` archive Limine already loads into RAM as a boot module.
 * **History**: The original plan targeted a disk-backed FAT filesystem over a hand-written VirtIO-block/PCI/ACPI stack (`PHASE2_VFS.md` Steps 1-9) — it worked, but wasn't clean enough to keep, and was fully removed (`git log`: *"rip out everything i found not clean enough, will redo later"*) in favor of the simpler initrd approach below. The VFS core (`fs/vfs/`) and its syscalls were untouched by the rip-out and remain exactly as originally built.
 * **Key Tasks**:
-  1. **Iterative VFS path resolution** (`vfs_lookup`): replace `sys_open`'s current single-segment shortcut (it hands the whole remaining path to one `finddir()` call) with real `/`-delimited path tokenization, so nested directories resolve correctly.
-  2. **Limine module parsing**: register a `limine_module_request` (same pattern as the existing `paging_mode_request`/`cmdline_request` in `boot.c`) and locate the `initrd.tar` Limine loads into memory at boot.
-  3. **TAR filesystem driver** (`fs/tar/tar.c`): a `vfs_ops` implementation that parses `ustar` headers and serves file reads directly out of the in-memory archive — no disk I/O needed.
-  4. **Mount to VFS root `/`**.
+  1. ✅ **Iterative VFS path resolution** (`vfs_lookup`) — `sys_open`'s old single-segment shortcut replaced with real `/`-delimited path tokenization.
+  2. ✅ **Limine module parsing** — `module_request` registered in `boot.c`, `limine.conf` carries the module directive, `initrd.tar` built and staged by the Makefile.
+  3. ✅ **TAR filesystem driver** (`fs/tar/tar.c`) — `tar_mount()` parses the `ustar` archive into a real `vfs_node` tree (first-child/next-sibling representation), with `finddir`/`readdir`/`read` all implemented and working directly out of the in-memory archive, no disk I/O.
+  4. ✅ **Mount to VFS root `/`** — wired into `main.c`, verified end-to-end at boot (`ls /` lists the archive's real directory structure, `cat` reads actual file content back out of it).
+  5. **Write support** — not yet implemented. See `PHASE2_TAR_DRIVER.md` Part 4 for the copy-on-write-into-heap design (promote a node's data pointer from the read-only archive to a `kmalloc`'d buffer on first write).
 
 ---
 
