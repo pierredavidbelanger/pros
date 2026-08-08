@@ -71,16 +71,9 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
 
 ## 🗺️ Development Roadmap & Status
 
-PrOS is being developed in iterative phases, moving towards a full userland graphical environment. Detailed working documents for each phase live in [`doc/`](doc/ROADMAP.md).
+Development happens in iterative phases, tracked entirely in [`doc/`](doc/ROADMAP.md) — `ROADMAP.md` holds the current phase breakdown and status, and each phase gets its own working document (e.g. `PHASE2_TAR_DRIVER.md`) while it's actively being designed or built. That's the source of truth for what's done and what's next, not this README.
 
-- [x] **Phase 0: Boot, PMM & Architecture Setup** – UEFI boot, Limine protocol integration, Physical Memory Management (PMM), and base architecture setup.
-- [x] **Phase 1: Virtual Memory Management (VMM)** – Page-table abstractions to isolate kernel memory and support dynamic mapping, later revisited for an architecture-neutral redesign (shared paging constants, a real per-context demand-paging policy, a fixed context-teardown memory leak).
-- [ ] **Phase 2: In-Memory Root Filesystem & VFS** – The original disk-backed attempt (VirtIO block driver, PCI/ACPI bus discovery, MBR partitioning, FAT16) has been ripped out; the VFS abstraction and syscalls survive unchanged. Iterative VFS path resolution (`vfs_lookup`) is done. In progress: a Limine-module-loaded **tmpfs from an `initrd.tar`** as the new root filesystem — see [`doc/PHASE2_TAR_DRIVER.md`](doc/PHASE2_TAR_DRIVER.md) for the design.
-- [ ] **Phase 3: Kernel Preemption & Syscalls** – Userland task switching (Ring 3 / EL0), preemptive scheduler, ELF loader, and launching `/bin/init`.
-- [ ] **Phase 4: C Library & BusyBox Shell** – C library porting (mlibc/Newlib), TTY subsystem, POSIX signals, and interactive shell on `/dev/tty1`.
-- [ ] **Phase 5: Framebuffer & Inputs (PTYs)** – `/dev/fb0` device, mouse drivers, and pseudo-terminals for windowing systems.
-- [ ] **Phase 6: X Server, lwm & xterm** – UNIX sockets, TinyX (`Xfbdev`), Light Window Manager (`lwm`), and terminal emulator.
-- [ ] **Phase 7: Networking & Web Browser** – VirtIO-Net, TCP/IP stack (lwIP), and a console web browser like `lynx` or `elinks`.
+AI is used extensively to help manage that folder — keeping the roadmap organized, writing up designs before any code gets touched, and tracking what's actually done versus still open. I write all the kernel code myself, that's the whole point of this project, but having a tutor around to explain the *why* behind a design, walk through how something actually works at the hardware level, and keep an honest paper trail of decisions (including the ones that got ripped out and redone) makes it a lot easier to stay oriented on a project this size, built a little at a time.
 
 ---
 
