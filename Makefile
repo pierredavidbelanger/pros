@@ -4,7 +4,7 @@ default: root
 
 .PHONY: clean
 clean:
-	rm -rf root logs
+	rm -rf root initrd initrd.tar logs
 	$(MAKE) -C kernel clean
 
 .PHONY: distclean
@@ -27,12 +27,18 @@ kernel:
 	$(MAKE) -C kernel ARCH=aarch64 bin/kernel-aarch64
 	$(MAKE) -C kernel ARCH=x86_64 bin/kernel-x86_64
 
-root: bin kernel
+initrd.tar:
+	mkdir -p initrd
+	echo 'HelloWorld' > initrd/hello.txt
+	pushd initrd && tar --format=ustar -cf ../initrd.tar * && popd
+
+root: bin initrd.tar kernel
 	mkdir -p root/boot/limine root/EFI/BOOT
 	cp limine.conf root/boot/limine/
 	cp bin/limine-binary/BOOTAA64.EFI root/EFI/BOOT/
 	cp bin/limine-binary/BOOTX64.EFI root/EFI/BOOT/
 	cp kernel/bin/kernel-* root/boot/
+	cp initrd.tar root/boot/
 
 .PHONY: qemu-aarch64
 qemu-aarch64: root

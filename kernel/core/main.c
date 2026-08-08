@@ -10,6 +10,7 @@
 #include "mm/heap.h"
 #include "mm/vmm.h"
 #include "fs/vfs/vfs.h"
+#include "fs/tar/tar.h"
 
 void test_pmm(void);
 void test_heap(void);
@@ -52,6 +53,10 @@ void _start(void) {
     if (framebuffer_request.response) {
         fb_init(framebuffer_request.response);
         kprintf("[FB   ] Initialized the framebuffer, ready to kprintf also on the screen\n");
+    }
+
+    if (module_request.response && module_request.response->modules && module_request.response->modules[0]) {
+        tar_mount((uint64_t) module_request.response->modules[0]->address, module_request.response->modules[0]->size);
     }
 
     kprintf("[K    ] All done here, shutting down.\n");
