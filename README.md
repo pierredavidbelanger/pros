@@ -12,7 +12,7 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
 
 - **Architecture & Boot Protocol**:
   - Targets: **AArch64 (ARM 64-bit)** (`qemu-system-aarch64` with `virt` machine) and **x86_64 (AMD64)** (`qemu-system-x86_64` with `q35` machine), both booting via **UEFI** using EDK2 OVMF.
-  - **Limine Protocol (v6)** integration handling Framebuffer, HHDM, Memory Map, DTB (AArch64), RSDP/ACPI (x86_64), Stack Size, and Entry Point requests.
+  - **Limine Protocol (v6)** integration handling Framebuffer, HHDM, Memory Map, Paging Mode, Executable Command Line, DTB (AArch64), RSDP/ACPI (x86_64), Stack Size, and Entry Point requests.
   - **Architecture Initialization**:
     - **AArch64**: Early boot activation of Coprocessor Access Control Register (`CPACR_EL1`) enabling AArch64 FPU/NEON hardware instructions.
     - **x86_64**: Higher-half kernel execution (`0xffffffff80000000`) compiled with `-mcmodel=kernel`, `-mno-red-zone`, and `-fno-sanitize=undefined`.
@@ -23,9 +23,10 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
   - Translates physical to virtual addresses via the Higher-Half Direct Map (`HHDM`) offset.
   - API: `pmm_init()`, `pmm_alloc()`, `pmm_free()`, `pmm_phys_to_virt()`, `pmm_virt_to_phys()`.
 - **Virtual Memory Management (VMM)**:
-  - Architecture-agnostic 4-level page table walk supporting both x86_64 and AArch64.
-  - Handles page mapping/unmapping, demand paging, and context switching.
-  - Manages Higher-Half MMIO access faults (e.g., PCIe ECAM) and lower-half user space demand paging.
+  - Architecture-neutral 4-level page-table walk — single source of truth for the level/index math, with real hardware differences (single-root x86_64 `CR3` vs. dual-root AArch64 `TTBR0_EL1`/`TTBR1_EL1`) delegated to per-architecture `arch_vmm_*` primitives instead of leaking into the shared walker.
+  - Handles page mapping/unmapping, context switching, and a real per-context demand-paging policy (opt-in address range per `vmm_context`, decoded against the actual hardware fault reason rather than assuming every fault is legitimate).
+  - Negotiates paging mode with Limine at boot and refuses to continue if it doesn't get 4-level paging.
+  - Manages Higher-Half MMIO access faults (e.g., PCIe ECAM) mapped on demand from the HHDM window.
 - **Kernel Dynamic Heap Allocator**:
   - First-fit linked free-list block allocator for sub-page and multi-page arbitrary byte allocations.
   - Enforces 16-byte memory alignment (`HEAP_ALIGNMENT`).
@@ -72,8 +73,8 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
 PrOS is being developed in iterative phases, moving towards a full userland graphical environment.
 
 - [x] **Phase 0: Boot, PMM & Architecture Setup** – UEFI boot, Limine protocol integration, Physical Memory Management (PMM), and base architecture setup.
-- [x] **Phase 1: Virtual Memory Management (VMM)** – Page-table abstractions to isolate kernel memory and support dynamic mapping. A follow-up architectural cleanup (arch-neutral paging constants, per-context fault policy, context-teardown leak fix) is planned.
-- [ ] **Phase 2: In-Memory Root Filesystem & VFS** – The original disk-backed attempt (VirtIO block driver, PCI/ACPI bus discovery, MBR partitioning, FAT16) has been ripped out; the VFS abstraction and syscalls survive unchanged. Next up: a Limine-module-loaded **tmpfs from an `initrd.tar`** as the new root filesystem.
+- [x] **Phase 1: Virtual Memory Management (VMM)** – Page-table abstractions to isolate kernel memory and support dynamic mapping, later revisited for an architecture-neutral redesign (shared paging constants, a real per-context demand-paging policy, a fixed context-teardown memory leak).
+- [ ] **Phase 2: In-Memory Root Filesystem & VFS** – The original disk-backed attempt (VirtIO block driver, PCI/ACPI bus discovery, MBR partitioning, FAT16) has been ripped out; the VFS abstraction and syscalls survive unchanged. Next up: iterative VFS path resolution, then a Limine-module-loaded **tmpfs from an `initrd.tar`** as the new root filesystem.
 - [ ] **Phase 3: Kernel Preemption & Syscalls** – Userland task switching (Ring 3 / EL0), preemptive scheduler, ELF loader, and launching `/bin/init`.
 - [ ] **Phase 4: C Library & BusyBox Shell** – C library porting (mlibc/Newlib), TTY subsystem, POSIX signals, and interactive shell on `/dev/tty1`.
 - [ ] **Phase 5: Framebuffer & Inputs (PTYs)** – `/dev/fb0` device, mouse drivers, and pseudo-terminals for windowing systems.
@@ -118,7 +119,24 @@ These commands will:
 4. Generate the bootable EFI System Partition structure in `root/` (Limine's EFI binary, `limine.conf`, and the compiled kernel).
 5. Launch QEMU with UEFI firmware, presenting `root/` as a `virtio-blk-pci` disk so OVMF can find and chainload it — this disk is currently only used for boot; the kernel itself mounts nothing at `/` yet.
 
-### 2. Manual Kernel Build Steps
+The kernel calls `arch_shutdown()` once boot finishes, so QEMU exits **on its own** — no need to close the window or kill the process manually.
+
+### 2. Headless / No-Window Runs
+
+For a fast, terminal-only run with no graphical window — useful over SSH or when you just want the boot log:
+
+```bash
+make qemu-x86_64-nographic
+make qemu-aarch64-nographic
+```
+
+Same boot as above, but with `-display none`, and the full serial output is also saved to `logs/qemu-<arch>.log` (gitignored) so you can inspect it afterward.
+
+### 3. Toggling Kernel Self-Tests
+
+`test_pmm()`/`test_heap()`/`test_vmm()`/`test_vfs()` in `kernel/core/main.c` run at boot by default, controlled by the Limine command line rather than being commented in/out of the source. Each `/Kernel (...)` entry in `limine.conf` carries `cmdline: pros.tests`; remove that line (or edit its value) to boot without running the self-tests — no kernel rebuild required, `make` will re-stage `root/` from the edited config on the next run.
+
+### 4. Manual Kernel Build Steps
 
 If you only want to compile the kernel binaries without launching QEMU:
 
@@ -148,7 +166,7 @@ make distclean
 
 ## 💡 Exiting QEMU
 
-When running QEMU in the terminal, exit using standard QEMU shortcuts:
+The kernel shuts itself down at the end of boot, so QEMU normally exits on its own — nothing to do. If you need to bail out early (e.g. it's stuck, or you're debugging a hang), use the standard QEMU shortcuts:
 - **Direct Exit**: Press `Ctrl+A` then `X`.
 - **Monitor Console**: Press `Ctrl+A` then `C`, then type `q` and press `Enter`.
 
