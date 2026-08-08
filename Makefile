@@ -32,7 +32,6 @@ root: bin kernel
 	cp limine.conf root/boot/limine/
 	cp bin/limine-binary/BOOT*.EFI root/EFI/BOOT/
 	cp kernel/bin/kernel-* root/boot/
-	echo "HelloWorld!" > root/test.txt
 
 .PHONY: qemu-aarch64
 qemu-aarch64: root

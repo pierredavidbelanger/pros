@@ -1,7 +1,7 @@
 #ifndef PROS_SYSCALLS_H
 #define PROS_SYSCALLS_H
 
-#include "fs/vfs.h"
+#include "fs/vfs/vfs.h"
 
 #include "stdc.h"
 

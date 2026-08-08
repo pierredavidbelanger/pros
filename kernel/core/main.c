@@ -8,13 +8,7 @@
 #include "mm/pmm.h"
 #include "mm/heap.h"
 #include "mm/vmm.h"
-#include "drivers/acpi/acpi.h"
-#include "drivers/bus/pci.h"
-#include "drivers/bus/virtio_mmio.h"
-#include "drivers/block/blockdev.h"
-#include "drivers/bus/virtio_pci.h"
-#include "fs/vfs.h"
-#include "fs/fat.h"
+#include "fs/vfs/vfs.h"
 
 void test_pmm(void);
 void test_heap(void);
@@ -50,26 +44,6 @@ void _start(void) {
         fb_init(framebuffer_request.response);
         kprintf("[FB   ] Initialized the framebuffer, ready to kprintf also on the screen\n");
     }
-
-    blockdev_init();
-
-    if (rsdp_request.response) {
-        kprintf("[RSDP ] Root System Description Pointer is at %p\n", rsdp_request.response->address);
-        acpi_init(rsdp_request.response->address);
-        virtio_pci_init();
-        pci_init();
-    } else if (dtb_request.response) {
-        kprintf("[DTB  ] Device Tree Binary is at %p\n", dtb_request.response->dtb_ptr);
-    }
-
-    // Always probe direct VirtIO MMIO slots just in case we run in QEMU
-    virtio_mmio_init();
-
-    vfs_mount("/", fat_mount(blockdev_get_by_name("hd0p0")));
-    //test_vfs();
-
-    // kprintf("[K    ] Attempting to shut down...\n");
-    // arch_shutdown();
 
     kprintf("[K    ] Halt. All done here!\n");
     arch_halt();

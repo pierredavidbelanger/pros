@@ -31,14 +31,11 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
   - Enforces 16-byte memory alignment (`HEAP_ALIGNMENT`).
   - Implements header metadata tracking (`struct heap_block`), automatic block splitting, and dynamic heap expansion via PMM.
   - API: `heap_init()`, `kmalloc()`, `kfree()`, `kcalloc()`.
-- **Drivers & Device Discovery**:
-  - **PCI & ACPI**: ECAM-based PCI configuration space access; ACPI table parsing (RSDP, XSDT, MCFG).
-  - **VirtIO**: Support for both VirtIO MMIO (direct) and VirtIO PCI (Modern 1.0) transports.
-  - **Block Device**: `virtio-blk` driver with virtqueue management for sector-level read/write operations.
-- **File Systems & Storage**:
-  - **Master Boot Record (MBR)**: Partition parsing to discover and register partition block devices.
-  - **Virtual File System (VFS)**: Abstraction layer supporting mount points, directory traversal, and basic file descriptor operations (`sys_open`).
-  - **FAT16 Filesystem**: Early support for mounting FAT16 partitions, parsing BIOS Parameter Block (BPB), and traversing root directories.
+- **Virtual File System (VFS)**:
+  - Architecture-agnostic mount table with longest-prefix-match path resolution (`vfs_mount()`, `vfs_get_mountpoint()`).
+  - Generic `struct vfs_node` / `vfs_ops` vtable (`open`, `close`, `read`, `write`, `finddir`, `readdir`) so any backing filesystem can plug in without touching the VFS core.
+  - File descriptor table and Linux-style syscalls: `sys_open`, `sys_close`, `sys_read`, `sys_write`, `sys_readdir`, `sys_lseek`.
+  - No filesystem is currently mounted at `/` — the first-pass disk stack (VirtIO block driver, PCI/ACPI bus discovery, MBR partitioning, FAT16) was ripped out in favor of a Limine-module-loaded **tmpfs from an `initrd.tar`**, which is the next thing being built.
 - **Graphical Framebuffer & Terminal Engine**:
   - 32-bit ARGB/RGB direct pixel drawing and screen clearing (`fb_clear`).
   - Built-in 8x16 VGA bitmap font renderer supporting automatic text wrapping and full-screen vertical scrolling (`terminal_scroll`).
@@ -55,17 +52,15 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
 
 ```text
 .
-├── Makefile               # Root build script (FAT root dir setup, OVMF/Limine binaries, QEMU launchers)
+├── Makefile               # Root build script (EFI System Partition setup, OVMF/Limine binaries, QEMU launchers)
 ├── limine.conf            # Limine bootloader configuration
 ├── README.md              # Project documentation
-├── AGENT.md               # Development & mentorship guidelines
 └── kernel/                # Kernel source root
     ├── Makefile           # Kernel compilation script
     ├── arch/              # Architecture-specific code (aarch64, x86_64), linker scripts, exceptions, interrupts
     ├── core/              # Core kernel subsystems (boot, fb, kprintf, main)
-    ├── drivers/           # Device drivers (acpi, block, bus, virtio)
-    ├── fs/                # Virtual File System (VFS) and FAT16 filesystem implementation
-    ├── include/           # Kernel headers (arch, core, drivers, fs, mm)
+    ├── fs/                # Virtual File System (VFS) — no backing filesystem mounted yet
+    ├── include/           # Kernel headers (arch, core, fs, mm)
     ├── libs/              # Downloaded third-party libraries (freestanding headers, printf, limine)
     └── mm/                # Memory Management (pmm, vmm, heap)
 ```
@@ -77,8 +72,8 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
 PrOS is being developed in iterative phases, moving towards a full userland graphical environment.
 
 - [x] **Phase 0: Boot, PMM & Architecture Setup** – UEFI boot, Limine protocol integration, Physical Memory Management (PMM), and base architecture setup.
-- [x] **Phase 1: Virtual Memory Management (VMM)** – Page-table abstractions to isolate kernel memory and support dynamic mapping.
-- [ ] **Phase 2: Disk Storage & VFS** – VirtIO block driver, MBR partition parsing, Virtual File System (VFS) abstraction, and basic FAT16 read support.
+- [x] **Phase 1: Virtual Memory Management (VMM)** – Page-table abstractions to isolate kernel memory and support dynamic mapping. A follow-up architectural cleanup (arch-neutral paging constants, per-context fault policy, context-teardown leak fix) is planned.
+- [ ] **Phase 2: In-Memory Root Filesystem & VFS** – The original disk-backed attempt (VirtIO block driver, PCI/ACPI bus discovery, MBR partitioning, FAT16) has been ripped out; the VFS abstraction and syscalls survive unchanged. Next up: a Limine-module-loaded **tmpfs from an `initrd.tar`** as the new root filesystem.
 - [ ] **Phase 3: Kernel Preemption & Syscalls** – Userland task switching (Ring 3 / EL0), preemptive scheduler, ELF loader, and launching `/bin/init`.
 - [ ] **Phase 4: C Library & BusyBox Shell** – C library porting (mlibc/Newlib), TTY subsystem, POSIX signals, and interactive shell on `/dev/tty1`.
 - [ ] **Phase 5: Framebuffer & Inputs (PTYs)** – `/dev/fb0` device, mouse drivers, and pseudo-terminals for windowing systems.
@@ -120,8 +115,8 @@ These commands will:
 1. Download EDK2 OVMF UEFI binaries (AArch64 / x86_64) and the Limine bootloader into `bin/` (if missing).
 2. Download freestanding headers, runtime, limine protocol, and `mpaland/printf` into `kernel/libs/` (if missing).
 3. Compile the kernel (`kernel/bin/kernel-aarch64` and `kernel/bin/kernel-x86_64`).
-4. Generate the bootable FAT filesystem structure in `root/`.
-5. Launch QEMU with UEFI firmware and appropriate virtio devices (`virtio-blk-device` on ARM64 / `virtio-blk-pci` on x86_64).
+4. Generate the bootable EFI System Partition structure in `root/` (Limine's EFI binary, `limine.conf`, and the compiled kernel).
+5. Launch QEMU with UEFI firmware, presenting `root/` as a `virtio-blk-pci` disk so OVMF can find and chainload it — this disk is currently only used for boot; the kernel itself mounts nothing at `/` yet.
 
 ### 2. Manual Kernel Build Steps
 

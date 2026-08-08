@@ -1,4 +1,4 @@
-#include "fs/file.h"
+#include "fs/vfs/file.h"
 
 #include "core/syscalls.h"
 #include "core/memory.h"

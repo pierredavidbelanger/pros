@@ -1,7 +1,7 @@
 #ifndef PROS_FILE_H
 #define PROS_FILE_H
 
-#include "fs/vfs.h"
+#include "fs/vfs/vfs.h"
 
 #define MAX_OPEN_FILES 256
 

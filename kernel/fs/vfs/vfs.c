@@ -1,4 +1,4 @@
-#include "fs/vfs.h"
+#include "fs/vfs/vfs.h"
 
 #include "core/memory.h"
 #include "core/kprintf.h"
