@@ -12,7 +12,7 @@
 #include "drivers/bus/pci.h"
 #include "drivers/bus/virtio_mmio.h"
 #include "drivers/block/blockdev.h"
-#include "drivers/block/virtio_blk.h"
+#include "drivers/bus/virtio_pci.h"
 #include "fs/vfs.h"
 #include "fs/fat.h"
 
@@ -36,15 +36,15 @@ void _start(void) {
     size_t pages = pmm_init(hhdm_request.response, memmap_request.response);
     kprintf("[PMM  ] Initialized PMM, ready to alloc/free physical pages\n");
     kprintf("[PMM  ] PMM manage %zu pages of %zu B for a total of %zu MB kernel heap available\n", pages, PAGE_SIZE, pages * PAGE_SIZE / 1024 / 1024);
-    test_pmm();
+    //test_pmm();
 
     heap_init();
     kprintf("[HEAP ] Initialized Heap, ready to kmalloc/kfree dynamic virtual memory block\n");
-    test_heap();
+    //test_heap();
 
     vmm_init();
     kprintf("[VMM  ] Initialized VMM, kernel root at phys:%p virt:%p\n", (void *)vmm_kernel_context->root_phys, vmm_kernel_context->root_virt);
-    test_vmm();
+    //test_vmm();
 
     if (framebuffer_request.response) {
         fb_init(framebuffer_request.response);
@@ -56,10 +56,8 @@ void _start(void) {
     if (rsdp_request.response) {
         kprintf("[RSDP ] Root System Description Pointer is at %p\n", rsdp_request.response->address);
         acpi_init(rsdp_request.response->address);
-        uint64_t ecam_base = acpi_get_mcfg_ecam_base();
-        if (ecam_base) {
-            pci_init(ecam_base);
-        }
+        virtio_pci_init();
+        pci_init();
     } else if (dtb_request.response) {
         kprintf("[DTB  ] Device Tree Binary is at %p\n", dtb_request.response->dtb_ptr);
     }
@@ -67,11 +65,8 @@ void _start(void) {
     // Always probe direct VirtIO MMIO slots just in case we run in QEMU
     virtio_mmio_init();
 
-    // Initialize VirtIO Block driver
-    virtio_blk_init();
-
     vfs_mount("/", fat_mount(blockdev_get_by_name("hd0p0")));
-    test_vfs();
+    //test_vfs();
 
     // kprintf("[K    ] Attempting to shut down...\n");
     // arch_shutdown();

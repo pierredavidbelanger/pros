@@ -89,13 +89,13 @@ int blockdev_read(struct blockdev *dev, uint64_t lba, uint32_t count, void *buf)
     if (!dev || !buf || count == 0) return -1;
     if (!dev->read_blocks) return -1;
 
-    lba += dev->lba_offset;
-
     if (lba + count > dev->total_blocks) {
         kprintf("[BLK  ] Error: Read out of bounds on '%s' (LBA %llu + count %u > total %llu)\n",
                 dev->name, (unsigned long long)lba, count, (unsigned long long)dev->total_blocks);
         return -1;
     }
+
+    lba += dev->lba_offset;
 
     return dev->read_blocks(dev, lba, count, buf);
 }
@@ -104,13 +104,13 @@ int blockdev_write(struct blockdev *dev, uint64_t lba, uint32_t count, const voi
     if (!dev || !buf || count == 0) return -1;
     if (!dev->write_blocks) return -1;
 
-    lba += dev->lba_offset;
-
     if (lba + count > dev->total_blocks) {
         kprintf("[BLK  ] Error: Write out of bounds on '%s' (LBA %llu + count %u > total %llu)\n",
                 dev->name, (unsigned long long)lba, count, (unsigned long long)dev->total_blocks);
         return -1;
     }
+
+    lba += dev->lba_offset;
 
     return dev->write_blocks(dev, lba, count, buf);
 }

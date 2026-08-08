@@ -28,14 +28,6 @@
 #define VIRTIO_MMIO_STATUS_FEATURES_OK 8
 #define VIRTIO_MMIO_STATUS_FAILED      128
 
-struct virtio_mmio_slot {
-    uint64_t phys_base;
-    uint32_t version;
-    uint32_t device_id;
-    uint32_t vendor_id;
-};
-
 void virtio_mmio_init(void);
-bool virtio_mmio_find_device(uint32_t device_id, struct virtio_mmio_slot *out_slot);
 
 #endif // VIRTIO_MMIO_H

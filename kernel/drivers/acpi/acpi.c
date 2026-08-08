@@ -5,7 +5,9 @@
 #include "core/memory.h"
 #include "mm/pmm.h"
 
-static uint64_t mcfg_ecam_base = 0;
+static uint8_t *acpi_table_ptrs = NULL;
+static size_t acpi_num_entries = 0;
+static bool acpi_is_xsdt = false;
 
 int acpi_init(void *rsdp_virt) {
     if (!rsdp_virt) {
@@ -54,27 +56,33 @@ int acpi_init(void *rsdp_virt) {
         acpi_header_t *header = pmm_phys_to_virt(table_phys);
         kprintf("[ACPI ]   Table [%.4s] at phys:%p (len: %u B)\n",
                 header->signature, (void *)table_phys, header->length);
-
-        if (memcmp(header->signature, "MCFG", 4) == 0) {
-            acpi_mcfg_t *mcfg = (acpi_mcfg_t *)header;
-            size_t num_mcfg_entries = (mcfg->header.length - sizeof(acpi_header_t) - 8) / sizeof(acpi_mcfg_entry_t);
-            if (num_mcfg_entries > 0) {
-                mcfg_ecam_base = mcfg->entries[0].base_address;
-                kprintf("[ACPI ]     Discovered PCIe ECAM base at phys:%p (Buses %u..%u)\n",
-                        (void *)mcfg_ecam_base,
-                        mcfg->entries[0].start_bus,
-                        mcfg->entries[0].end_bus);
-            }
-        }
     }
 
-    if (mcfg_ecam_base == 0) {
-        kprintf("[ACPI ] Warning: MCFG table not found\n");
-    }
+    acpi_table_ptrs = table_ptrs;
+    acpi_num_entries = num_entries;
+    acpi_is_xsdt = is_xsdt;
 
     return 0;
 }
 
-uint64_t acpi_get_mcfg_ecam_base(void) {
-    return mcfg_ecam_base;
+uint64_t acpi_find_table(const char *signature) {
+    if (!acpi_table_ptrs || acpi_num_entries == 0) return 0;
+
+    for (size_t i = 0; i < acpi_num_entries; i++) {
+        uint64_t table_phys = 0;
+        if (acpi_is_xsdt) {
+            table_phys = *(uint64_t *)(acpi_table_ptrs + i * 8);
+        } else {
+            table_phys = *(uint32_t *)(acpi_table_ptrs + i * 4);
+        }
+
+        if (!table_phys) continue;
+
+        acpi_header_t *header = pmm_phys_to_virt(table_phys);
+        if (memcmp(header->signature, signature, 4) == 0) {
+            return table_phys;
+        }
+    }
+    
+    return 0;
 }

@@ -110,7 +110,8 @@ typedef struct acpi_fadt {
 // Initialize ACPI subsystem with virtual RSDP pointer provided by Limine
 int acpi_init(void *rsdp_virt);
 
-// Get discovered PCIe ECAM base physical address (returns 0 if not found)
-uint64_t acpi_get_mcfg_ecam_base(void);
+// Find an ACPI table by its 4-character signature (e.g. "MCFG", "FACP")
+// Returns physical address of the table, or 0 if not found.
+uint64_t acpi_find_table(const char *signature);
 
 #endif // ACPI_H

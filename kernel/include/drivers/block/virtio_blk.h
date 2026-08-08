@@ -19,13 +19,14 @@ struct virtio_blk_req {
     uint64_t sector;
 } __attribute__((packed));
 
+#include "drivers/virtio/virtio_transport.h"
+
 struct virtio_blk_device {
     struct blockdev block_dev;
     struct virtq vq;
-    volatile uint32_t *mmio_base;
-    volatile uint32_t *notify_reg;
+    struct virtio_transport *transport;
 };
 
-int virtio_blk_init(void);
+int virtio_blk_probe(struct virtio_transport *transport);
 
 #endif // VIRTIO_BLK_H

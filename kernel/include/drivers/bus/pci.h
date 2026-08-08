@@ -40,7 +40,18 @@ struct pci_device {
 
 typedef struct pci_device pci_device_t;
 
-void pci_init(uint64_t ecam_base_phys);
+typedef void (*pci_probe_func)(struct pci_device *);
+
+struct pci_driver {
+    uint16_t vendor_id;
+    uint16_t device_id;
+    pci_probe_func probe;
+};
+
+void pci_init(void);
+
+void pci_register_driver(struct pci_driver *driver);
+void pci_scan(void (*callback)(struct pci_device *dev));
 
 uint32_t pci_ecam_read32(uint8_t bus, uint8_t dev, uint8_t func, uint16_t offset);
 void pci_ecam_write32(uint8_t bus, uint8_t dev, uint8_t func, uint16_t offset, uint32_t val);

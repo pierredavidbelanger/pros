@@ -2,8 +2,19 @@
 
 #include "core/kprintf.h"
 #include "mm/pmm.h"
+#include "drivers/acpi/acpi.h"
 
 static uint64_t ecam_base = 0;
+
+#define MAX_PCI_DRIVERS 16
+static struct pci_driver *pci_drivers[MAX_PCI_DRIVERS];
+static size_t num_pci_drivers = 0;
+
+void pci_register_driver(struct pci_driver *driver) {
+    if (num_pci_drivers < MAX_PCI_DRIVERS) {
+        pci_drivers[num_pci_drivers++] = driver;
+    }
+}
 
 static inline volatile uint32_t *pci_ecam_ptr(uint8_t bus, uint8_t dev, uint8_t func, uint16_t offset) {
     if (!ecam_base) return NULL;
@@ -42,45 +53,8 @@ uint8_t pci_ecam_read8(uint8_t bus, uint8_t dev, uint8_t func, uint16_t offset) 
     return (uint8_t)((val >> ((offset & 3) * 8)) & 0xFF);
 }
 
-void pci_init(uint64_t ecam_base_phys) {
-    ecam_base = ecam_base_phys;
-    if (!ecam_base) {
-        kprintf("[PCI  ] Warning: Initialized PCI with null ECAM base\n");
-        return;
-    }
-
-    kprintf("[PCI  ] Initialized PCIe ECAM MMIO bus controller at phys:%p\n", (void *)ecam_base);
-
-    // Enumerate bus 0..7 to log discovered devices
-    for (uint16_t b = 0; b < 8; b++) {
-        for (uint8_t d = 0; d < 32; d++) {
-            for (uint8_t f = 0; f < 8; f++) {
-                uint32_t vendor_device = pci_ecam_read32((uint8_t)b, d, f, PCI_REG_VENDOR_ID);
-                uint16_t vendor = vendor_device & 0xFFFF;
-                uint16_t device = (vendor_device >> 16) & 0xFFFF;
-
-                if (vendor == 0xFFFF || vendor == 0x0000) continue;
-
-                uint8_t class_code = pci_ecam_read8((uint8_t)b, d, f, PCI_REG_CLASS);
-                uint8_t subclass = pci_ecam_read8((uint8_t)b, d, f, PCI_REG_SUBCLASS);
-
-                kprintf("[PCI  ] Discovered device %02x:%02x.%x [Vendor %04x Device %04x Class %02x Sub %02x]\n",
-                        b, d, f, vendor, device, class_code, subclass);
-
-                // Skip non-multi-function device functions > 0
-                if (f == 0) {
-                    uint8_t header_type = pci_ecam_read8((uint8_t)b, d, f, PCI_REG_HEADER_TYPE);
-                    if ((header_type & 0x80) == 0) {
-                        break; // Not a multi-function device
-                    }
-                }
-            }
-        }
-    }
-}
-
-bool pci_find_device(uint16_t vendor_id, uint16_t device_id, pci_device_t *out_dev) {
-    if (!ecam_base) return false;
+void pci_scan(void (*callback)(struct pci_device *dev)) {
+    if (!ecam_base) return;
 
     for (uint16_t b = 0; b < 256; b++) {
         for (uint8_t d = 0; d < 32; d++) {
@@ -91,23 +65,22 @@ bool pci_find_device(uint16_t vendor_id, uint16_t device_id, pci_device_t *out_d
 
                 if (vendor == 0xFFFF || vendor == 0x0000) continue;
 
-                if (vendor == vendor_id && device == device_id) {
-                    if (out_dev) {
-                        out_dev->bus = (uint8_t)b;
-                        out_dev->dev = d;
-                        out_dev->func = f;
-                        out_dev->vendor_id = vendor;
-                        out_dev->device_id = device;
-                        out_dev->class_code = pci_ecam_read8((uint8_t)b, d, f, PCI_REG_CLASS);
-                        out_dev->subclass = pci_ecam_read8((uint8_t)b, d, f, PCI_REG_SUBCLASS);
-                        out_dev->prog_if = pci_ecam_read8((uint8_t)b, d, f, PCI_REG_PROG_IF);
-                        out_dev->header_type = pci_ecam_read8((uint8_t)b, d, f, PCI_REG_HEADER_TYPE);
+                if (callback) {
+                    struct pci_device dev;
+                    dev.bus = (uint8_t)b;
+                    dev.dev = d;
+                    dev.func = f;
+                    dev.vendor_id = vendor;
+                    dev.device_id = device;
+                    dev.class_code = pci_ecam_read8((uint8_t)b, d, f, PCI_REG_CLASS);
+                    dev.subclass = pci_ecam_read8((uint8_t)b, d, f, PCI_REG_SUBCLASS);
+                    dev.prog_if = pci_ecam_read8((uint8_t)b, d, f, PCI_REG_PROG_IF);
+                    dev.header_type = pci_ecam_read8((uint8_t)b, d, f, PCI_REG_HEADER_TYPE);
 
-                        for (int i = 0; i < 6; i++) {
-                            out_dev->bar[i] = pci_ecam_read32((uint8_t)b, d, f, PCI_REG_BAR0 + (i * 4));
-                        }
+                    for (int i = 0; i < 6; i++) {
+                        dev.bar[i] = pci_ecam_read32((uint8_t)b, d, f, PCI_REG_BAR0 + (i * 4));
                     }
-                    return true;
+                    callback(&dev);
                 }
 
                 if (f == 0) {
@@ -119,7 +92,58 @@ bool pci_find_device(uint16_t vendor_id, uint16_t device_id, pci_device_t *out_d
             }
         }
     }
-    return false;
+}
+
+static struct pci_device *target_dev_ptr;
+static uint16_t target_vendor;
+static uint16_t target_device;
+static bool target_found;
+
+static void find_device_cb(struct pci_device *dev) {
+    if (target_found) return;
+    if (dev->vendor_id == target_vendor && dev->device_id == target_device) {
+        if (target_dev_ptr) *target_dev_ptr = *dev;
+        target_found = true;
+    }
+}
+
+bool pci_find_device(uint16_t vendor_id, uint16_t device_id, struct pci_device *out_dev) {
+    target_vendor = vendor_id;
+    target_device = device_id;
+    target_dev_ptr = out_dev;
+    target_found = false;
+    pci_scan(find_device_cb);
+    return target_found;
+}
+
+static void init_scan_cb(struct pci_device *dev) {
+    kprintf("[PCI  ] Discovered device %02x:%02x.%x [Vendor %04x Device %04x Class %02x Sub %02x]\n",
+            dev->bus, dev->dev, dev->func, dev->vendor_id, dev->device_id, dev->class_code, dev->subclass);
+
+    for (size_t i = 0; i < num_pci_drivers; i++) {
+        if (pci_drivers[i]->vendor_id == dev->vendor_id && pci_drivers[i]->device_id == dev->device_id) {
+            pci_drivers[i]->probe(dev);
+        }
+    }
+}
+
+void pci_init(void) {
+    uint64_t mcfg_phys = acpi_find_table("MCFG");
+    if (mcfg_phys) {
+        acpi_mcfg_t *mcfg = (acpi_mcfg_t *)pmm_phys_to_virt(mcfg_phys);
+        size_t num_mcfg_entries = (mcfg->header.length - sizeof(acpi_header_t) - 8) / sizeof(acpi_mcfg_entry_t);
+        if (num_mcfg_entries > 0) {
+            ecam_base = mcfg->entries[0].base_address;
+        }
+    }
+
+    if (!ecam_base) {
+        kprintf("[PCI  ] Warning: Initialized PCI with null ECAM base\n");
+        return;
+    }
+
+    kprintf("[PCI  ] Initialized PCIe ECAM MMIO bus controller at phys:%p\n", (void *)ecam_base);
+    pci_scan(init_scan_cb);
 }
 
 void pci_enable_bus_master(struct pci_device *dev) {

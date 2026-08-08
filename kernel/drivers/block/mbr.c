@@ -10,6 +10,7 @@ int mbr_parse(struct blockdev *dev) {
 
     // alloc for 1 block_size
     char *buffer = kmalloc(dev->block_size);
+    if (!buffer) return -1;
 
     // read 1 block
     if (blockdev_read(dev, 0, 1, buffer)) {
@@ -29,6 +30,10 @@ int mbr_parse(struct blockdev *dev) {
         if (partition->type != 0x0) {
             // we create a new device that represent this partition
             struct blockdev *part = kmalloc(sizeof(struct blockdev));
+            if (!part) {
+                kfree(buffer);
+                return -1;
+            }
             snprintf(part->name, BLOCKDEV_MAX_NAME, "%sp%d", dev->name, i);
             part->block_size = dev->block_size;
             part->total_blocks = partition->sector_count;
@@ -38,7 +43,9 @@ int mbr_parse(struct blockdev *dev) {
             part->read_blocks = dev->read_blocks;
             part->write_blocks = dev->write_blocks;
             // register it
-            blockdev_register(part);
+            if (blockdev_register(part) != 0) {
+                kfree(part);
+            }
         }
     }
 
