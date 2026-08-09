@@ -29,9 +29,11 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
   - Manages Higher-Half MMIO access faults (e.g., PCIe ECAM) mapped on demand from the HHDM window.
 - **Kernel Dynamic Heap Allocator**:
   - First-fit linked free-list block allocator for sub-page and multi-page arbitrary byte allocations.
-  - Enforces 16-byte memory alignment (`HEAP_ALIGNMENT`).
-  - Implements header metadata tracking (`struct heap_block`), automatic block splitting, and dynamic heap expansion via PMM.
-  - API: `heap_init()`, `kmalloc()`, `kfree()`, `kcalloc()`.
+  - Guarantees 16-byte alignment (`HEAP_ALIGNMENT`) on every returned pointer, not merely on the requested size — the block header is padded up to `HEAP_HEADER_SIZE` so payload addresses inherit the alignment by construction.
+  - Implements header metadata tracking (`struct heap_block`), automatic block splitting, forward coalescing on free, and dynamic heap expansion via PMM.
+  - `krealloc()` grows in place where it can — absorbing free, physically contiguous neighbours — and falls back to allocate-copy-free only when it must.
+  - Overflow-guarded: `kcalloc()` rejects `num * size` before it can wrap, and `kmalloc()` rejects sizes that would overflow its own alignment and page-count arithmetic.
+  - API: `heap_init()`, `kmalloc()`, `kcalloc()`, `krealloc()`, `kfree()`.
 - **Virtual File System (VFS)**:
   - Architecture-agnostic mount table with longest-prefix-match path resolution (`vfs_mount()`, `vfs_get_mountpoint()`).
   - Generic `struct vfs_node` / `vfs_ops` vtable (`create`, `open`, `close`, `read`, `write`, `finddir`, `readdir`) so any backing filesystem can plug in without touching the VFS core.
@@ -47,7 +49,12 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
   - Built-in 8x16 VGA bitmap font renderer supporting automatic text wrapping and full-screen vertical scrolling (`terminal_scroll`).
 - **Kernel Logging & Panic Handling**:
   - Integrated `mpaland/printf` streaming formatted text through `_putchar` to the terminal engine.
-  - Supports `kprintf`, `kpanic` error reporting, and architecture-specific `khcf` (Halt and Catch Fire using `wfi` on ARM/RISC-V or `hlt` on x86_64).
+  - `kprintf(tag, format, ...)` prefixes every line with a `[TAG  ]` padded to `KPRINTF_TAG_WIDTH`, so subsystem output lands in one column and the boot log stays greppable by tag.
+  - Supports `kpanic` error reporting, and architecture-specific `khcf` (Halt and Catch Fire using `wfi` on ARM/RISC-V or `hlt` on x86_64).
+- **Kernel Self-Tests**:
+  - One file per subsystem under `kernel/core/test/`, all gated behind the `pros.tests` Limine command line so a normal boot stays quiet.
+  - Shared `test_report(tag, name, ok)` prints one aligned `PASS`/`FAIL` line per check.
+  - Currently 18 checks across PMM, heap (12, covering alignment, zeroing, overflow rejection, all three `krealloc` paths and block reuse), VMM and VFS.
 - **Toolchain & Freestanding Runtime**:
   - Cross-compiles using `zig cc` (`-target aarch64-freestanding-none` or `-target x86_64-freestanding-none`).
   - Bundles freestanding C headers, compiler runtime, and custom `memcpy`, `memset`, `memmove`, and `memcmp` implementations.
@@ -65,7 +72,7 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
 └── kernel/                # Kernel source root
     ├── Makefile           # Kernel compilation script
     ├── arch/              # Architecture-specific code (aarch64, x86_64), linker scripts, exceptions, interrupts
-    ├── core/              # Core kernel subsystems (boot, fb, kprintf, main)
+    ├── core/              # Core kernel subsystems (boot, fb, console, kprintf, main) and test/ (one self-test file per subsystem)
     ├── fs/                # Filesystems: vfs/ (core + fd table), ramfs/ (in-memory root), tar/ (initrd loader)
     ├── include/           # Kernel headers (arch, core, fs, mm)
     ├── libs/              # Downloaded third-party libraries (freestanding headers, printf, limine)
@@ -76,7 +83,7 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
 
 ## 🗺️ Development Roadmap & Status
 
-Development happens in iterative phases, tracked entirely in [`doc/`](doc/ROADMAP.md) — `ROADMAP.md` holds the current phase breakdown and status, and each phase gets its own working document (e.g. `PHASE2_TAR_DRIVER.md`) while it's actively being designed or built. That's the source of truth for what's done and what's next, not this README.
+Development happens in iterative phases, tracked entirely in [`doc/`](doc/ROADMAP.md) — `ROADMAP.md` holds the current phase breakdown and status, and each phase gets its own working document (currently `PHASE2_RAMFS.md`) while it's actively being designed or built. Superseded designs are kept and marked rather than deleted — `PHASE2_TAR_DRIVER.md` and `PHASE2_VFS.md` are both still there with banners explaining what replaced them and why. That's the source of truth for what's done and what's next, not this README.
 
 AI is used extensively to help manage that folder — keeping the roadmap organized, writing up designs before any code gets touched, and tracking what's actually done versus still open. I write all the kernel code myself, that's the whole point of this project, but having a tutor around to explain the *why* behind a design, walk through how something actually works at the hardware level, and keep an honest paper trail of decisions (including the ones that got ripped out and redone) makes it a lot easier to stay oriented on a project this size, built a little at a time.
 
@@ -147,16 +154,22 @@ All four QEMU targets pipe their serial output through `ansifilter` before `tee`
 
 ### 3. Toggling Kernel Self-Tests
 
-`test_pmm()`/`test_heap()`/`test_vmm()`/`test_vfs()` in `kernel/core/main.c` are gated on the Limine command line rather than being commented in/out of the source. Each `/Kernel (...)` entry in `limine.conf` has a `cmdline: pros.tests` line, currently **commented out** (with `;`, Limine's comment marker) so a normal boot stays quiet:
+`test_pmm()`/`test_heap()`/`test_vmm()`/`test_vfs()` live one-per-file under `kernel/core/test/` and are gated on the Limine command line rather than being commented in/out of the source. Each `/Kernel (...)` entry in `limine.conf` carries `cmdline: pros.tests`, currently **enabled**:
 
 ```ini
 /Kernel (ARM64)
     protocol: limine
     if_arch: aarch64
-;     cmdline: pros.tests
+    cmdline: pros.tests
 ```
 
-Uncomment it to run the self-tests. No kernel rebuild is required either way — `make` re-stages `root/` from the edited config on the next run.
+Comment that line out with `;` (Limine's comment marker) for a quiet boot. No kernel rebuild is required either way — `make` re-stages `root/` from the edited config on the next run.
+
+Each check prints a single line through the shared `test_report()`:
+
+```
+[TEST ] [HEAP ] krealloc grow in place                 PASS
+```
 
 ### 4. Manual Kernel Build Steps
 

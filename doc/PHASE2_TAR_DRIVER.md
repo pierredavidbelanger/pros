@@ -1,9 +1,16 @@
-# Working Document: Phase 2 Step 13 — TAR/Initramfs Filesystem Driver [STATUS: READ PATH WORKING ✅, WRITE STILL OPEN 🚧]
+# Working Document: Phase 2 Step 13 — TAR/Initramfs Filesystem Driver [STATUS: PARTLY SUPERSEDED 🗄️]
 
 This working document expands `PHASE2_VFS.md` Step 13 into a full design — how the archive gets loaded, how the driver is structured, and specifically how read *and* write work on a filesystem that's explicitly RAM-only and non-persistent by design.
 
+> [!IMPORTANT]
+> **Superseded by [`PHASE2_RAMFS.md`](PHASE2_RAMFS.md).** Parts 1 and 2 below (Limine module loading, the ustar block format) are still accurate and still describe the shipped code. **Parts 3 and 4 are not** — they describe a design where the TAR driver *is* the filesystem, holding the node tree and serving reads straight out of the archive blob, with writes handled by copy-on-write promotion into the heap.
+>
+> That design was built and then deliberately taken apart. The reason: once a tar-backed filesystem becomes writable it isn't a tar filesystem any more — it's a RAM filesystem that happens to have been kickstarted from an archive, and every node would have had to carry an "is this pointer heap-owned or blob-owned?" flag forever. The archive format was welded to the storage layer.
+>
+> The replacement follows Linux's `rootfs` + `unpack_to_rootfs()` split: `fs/ramfs/` owns storage, `fs/tar/` is reduced to a parser that calls the public VFS API, and neither knows anything about the other. `tar_mount()` no longer exists; it is now `tar_load(addr, size)`, which returns no node and takes no root, working purely through absolute paths.
+
 > [!NOTE]
-> **Status**: Parts 1-3 are implemented and verified end-to-end at boot — `module_request` loads the archive, `tar_mount()` builds a real `vfs_node` tree (first-child/next-sibling, see `kernel/fs/tar/tar.c`), and `finddir`/`readdir`/`read` all work (`ls /` and `cat` against the mounted archive both confirmed working). Part 4 (write support / copy-on-write promotion into heap memory) is still just a design below, not yet built.
+> **Status of what this document describes**: Parts 1-2 ✅ shipped. Parts 3-4 🗄️ superseded, kept for the reasoning trail.
 
 > [!NOTE]
 > Mentor-mode reminder (`.rules.md`): this is a design reference to code from by hand, not code to paste in.
@@ -74,7 +81,10 @@ That's genuinely most of what's needed to read every entry out of the archive.
 
 ---
 
-## 🏗️ Part 3: Parse once at mount time, not on every access
+## 🗄️ Part 3 (SUPERSEDED): Parse once at mount time, not on every access
+
+> [!WARNING]
+> Superseded. The "parse once, don't re-scan" instinct survived; putting the tree *inside the TAR driver* did not. The tree now lives in `fs/ramfs/`, and `tar_load()` builds it through `vfs_mkdir_parents()`/`vfs_create()` without ever touching a `vfs_node` field directly.
 
 The natural design — and the one that sets up cleanly for write support in Part 4 — is: walk the whole archive **once**, when it's mounted, and build a real in-memory tree of `struct vfs_node`s (same struct every other filesystem in this codebase uses), rather than re-scanning the raw 512-byte blocks on every `finddir()`/`readdir()` call.
 
@@ -90,7 +100,10 @@ The natural design — and the one that sets up cleanly for write support in Par
 
 ---
 
-## 🏗️ Part 4: How read *and* write work, given it's RAM-only and won't persist
+## 🗄️ Part 4 (SUPERSEDED): How read *and* write work, given it's RAM-only and won't persist
+
+> [!WARNING]
+> Superseded by [`PHASE2_RAMFS.md`](PHASE2_RAMFS.md) Part 2. The copy-on-write promotion below was rejected in favour of **always copying** into ramfs-owned memory at load time, which removes the per-node heap-vs-blob ownership flag entirely, and of a **sparse page list** rather than one flat buffer — the representation real `tmpfs` uses, and the one `mmap` will need in Phase 5. Kept below for the reasoning trail.
 
 This is the actual design question. Two approaches, worth understanding both so the "why" of the recommended one is clear:
 
@@ -100,7 +113,7 @@ This is the actual design question. Two approaches, worth understanding both so 
 
 - **Reading** a file that's never been written: `memcpy` straight out of the original TAR blob, same as always.
 - **First write** to a file: "promote" it — `kmalloc()` a fresh heap buffer (sized to whatever the write needs, which may be larger than the original), `memcpy` the existing content into it, and repoint the node's data pointer at the new heap buffer instead of the read-only archive. This is the copy-on-write moment — the original archive bytes are left untouched; the node just stops pointing at them.
-- **Later writes** to an already-promoted file: operate directly on its own heap buffer. If a write needs to grow the file, allocate a bigger buffer, copy the old content over, `kfree()` the old one (this codebase's `heap.c` has no `krealloc`, so "grow" means "allocate new, copy, free old" — same pattern used elsewhere in this codebase, e.g. `vmm_create_context`'s table allocations).
+- **Later writes** to an already-promoted file: operate directly on its own heap buffer. If a write needs to grow the file, allocate a bigger buffer, copy the old content over, `kfree()` the old one. *(No longer true as written: `heap.c` gained a real `krealloc()` during this work, which grows in place by absorbing free contiguous neighbours and only falls back to allocate-copy-free when it has to.)*
 - **Creating a brand-new file** (once `sys_open`'s `O_CREAT` flag is actually wired up — it's already `#define`d in `syscalls.h` but unimplemented) is the same shape one level up: allocate a new `vfs_node` + private struct with a `NULL`/zero-size data pointer, link it into its parent directory's children, and let the first `write()` promote it exactly like an existing file.
 - **Why this is the right shape, not over-engineering**: it reuses exactly the primitives already in this codebase (`kmalloc`/`kfree`/`memcpy`, the same allocate-copy-free pattern already used for VMM page tables), it's the standard way an actual RAM-backed filesystem separates "content" from "backing storage," and — matching what you already know — the moment the kernel halts or reboots, every heap-backed byte is gone and only the original archive shape (whatever was in the `initrd.tar` file on disk) would come back on the next boot. That's not a shortcut being taken here, it's the accurate, honest model of what "non-persistent" means for this design.
 
@@ -110,10 +123,11 @@ This is the actual design question. Two approaches, worth understanding both so 
 
 - ✅ `kernel/core/boot.c` / `kernel/include/core/boot.h` — `module_request` registered
 - ✅ `limine.conf` — module directive in place (`module_path:`), confirmed working
-- ✅ `kernel/fs/tar/tar.c` + `kernel/include/fs/tar/tar.h` — `tar_mount()`, `vfs_ops` (`read`/`finddir`/`readdir` — `write`/`open`/`close` not yet implemented), tree built as `struct tar_node_data { next_sibling, first_child, data }` (first-child/next-sibling, not the array-of-children shape originally sketched below — simpler, no `krealloc` needed at all)
-- ✅ `kernel/core/main.c` — `vfs_mount("/", tar_mount(module_request.response->modules[0]->address, ...->size))` wired in, running before `test_vfs()`
-- `kernel/include/core/syscalls.h` — `O_CREAT` already exists; wiring it into `sys_open()` is still open, needed once file creation (Part 4) is built
+- 🗄️ `kernel/fs/tar/tar.c` + `kernel/include/fs/tar/tar.h` — **no longer as described here**. `tar_mount()` and `struct tar_node_data` are gone, along with the driver's whole `vfs_ops` vtable; the file shrank from 232 lines to roughly 113. What remains is `struct ustar_header`, `tar_parse_octal()`, the 512-byte block walk, and `int tar_load(uint64_t addr, size_t size)`.
+- 🗄️ `kernel/core/main.c` — now mounts *first*, loads second: `ramfs_create_root()` → `vfs_mount("/", ramfs)` → `tar_load(...)`. The old one-liner mounted the return value of `tar_mount()`, which is exactly the coupling the split removed.
+- ✅ `kernel/fs/ramfs/ramfs.c` + `kernel/include/fs/ramfs/ramfs.h` — where the node tree lives now. See [`PHASE2_RAMFS.md`](PHASE2_RAMFS.md).
+- `kernel/include/core/syscalls.h` — `O_CREAT` already exists; wiring it into `sys_open()` is still open. Not currently blocking: `vfs_create()` creates the node and the loader then opens it `O_WRONLY`.
 
 ## 🪜 Verification
 
-✅ Done — `test_vfs()` in `main.c` ran unmodified against the mounted archive and confirmed the whole read path: `ls /` correctly lists the real directory structure from the archive, `cat` reads real file content back out of the loaded TAR blob. A write test (open, write, read back, confirm) would need a small addition to `test_vfs()` or a new `test_tar_write()`, once Part 4 is built.
+🗄️ Historical — this section described the state before the split, when `cat` read directly out of the TAR blob. That path no longer exists. Today `test_vfs()` confirms the *structure* loads (`/root` resolves, `readdir` lists `hello.txt`, `/root/hello.txt` opens) but prints no content, because `ramfs_ops_read`/`ramfs_ops_write` are still stubs. Restoring `cat` is the acceptance criterion for [`PHASE2_RAMFS.md`](PHASE2_RAMFS.md) Part 5 step 2.

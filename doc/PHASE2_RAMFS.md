@@ -1,4 +1,11 @@
-# Working Document: Phase 2 Step 14 — ramfs Core + TAR Loader Split [STATUS: DESIGN 📐]
+# Working Document: Phase 2 Step 14 — ramfs Core + TAR Loader Split [STATUS: SPLIT DONE ✅, PAGE STORAGE OPEN 🚧]
+
+> [!NOTE]
+> **Where this stands.** The structural half is built and boots on both architectures: ramfs
+> owns the tree, `tar_load()` is a pure parser, and `/root/hello.txt` resolves through the
+> mount table. What remains is the page storage in Part 2 — `ramfs_ops_read` and
+> `ramfs_ops_write` are still stubs, so file *content* is not stored yet and `cat` prints
+> nothing. See Part 5 for the per-step status.
 
 This working document supersedes [`PHASE2_TAR_DRIVER.md`](PHASE2_TAR_DRIVER.md) **Part 4**
 (copy-on-write promotion). Parts 1-3 of that document still stand — how the archive reaches
@@ -115,10 +122,13 @@ with forward-only coalescing, so asking it for one 4 MiB block is optimistic.
 
 **Two independent growth axes.** Keeping these straight is most of the work:
 
-1. **The `pages` array itself** grows by allocate-copy-free with doubling
-   (`kmalloc` new / `memcpy` / `kfree` old) — same pattern already used in
-   `vmm_create_context`, since `heap.c` has no `krealloc`. It stays small: 512 entries is
-   4 KiB and covers a 2 MiB file.
+1. **The `pages` array itself** grows by doubling. This originally read "allocate-copy-free,
+   since `heap.c` has no `krealloc`" — no longer true: `krealloc()` was built during this work
+   and is the right call here. It grows in place when the array's own split remainder is free
+   and physically contiguous (the common case for a repeatedly doubled array) and falls back
+   to allocate-copy-free only when it must. Note `krealloc` does **not** zero the grown tail,
+   so new slots still need clearing before they can be read as holes. The array stays small:
+   512 entries is 4 KiB and covers a 2 MiB file.
 2. **Individual pages** come from `pmm_alloc(1)`, and **must be `memset` to 0** on
    allocation. Forget this and a new file reads back whatever the last process left in that
    page.
@@ -266,18 +276,23 @@ never called.
 
 Each step boots green on its own — no long broken window.
 
-1. **ramfs tree only** — node struct, `ramfs_create_root`, `create`, `finddir`, `readdir`.
-   Mount an empty ramfs at `/`, boot, `ls /` prints nothing. `tar.c` untouched and unused.
-2. **ramfs page storage** — `read`, `write`, `truncate`. Add `test_ramfs()` to `main.c`:
-   create a file, write, read back; `lseek` past EOF and write, assert the hole reads as
-   zeros; truncate down then grow, assert no stale bytes.
+1. ✅ **ramfs tree only** — node struct, `ramfs_create_root`, `create`, `finddir`, `readdir`.
+2. 🚧 **ramfs page storage** — `read`, `write`, `truncate`. **This is the remaining work.**
+   `truncate` was deferred: it is only needed once `O_TRUNC` is wired, and it is the one path
+   by which pages return to the PMM (`unlink` will reuse it as `truncate(node, 0)`).
+   Add `test_ramfs.c` under `core/test/`: create a file, write, read back; `lseek` past EOF and
+   write, assert the hole reads as zeros; truncate down then grow, assert no stale bytes.
    **This tests the filesystem with zero archive involvement** — the main payoff of the split,
-   and something that is literally impossible with the current design.
-3. **VFS verbs** — `vfs_ops.create`/`truncate`, `vfs_create`/`vfs_mkdir_parents`/
-   `vfs_lookup_parent`, `VFS_PATH_MAX`, `O_CREAT`/`O_TRUNC` in `sys_open`.
-4. **Rewrite `tar.c` as loader**, swap `main.c`. Acceptance criterion: **`test_vfs()` passes
-   unmodified** — same `ls /`, same `hello.txt` contents. That's the regression proof the
-   refactor is behaviour-preserving rather than behaviour-adjacent.
+   and something that was literally impossible with the pre-split design.
+3. ✅ **VFS verbs** — `vfs_ops.create`, `vfs_create`/`vfs_mkdir_parents`, `VFS_PATH_MAX`.
+   Two deviations from the plan: `vfs_lookup_parent` was not needed (`vfs_lookup`,
+   `vfs_create` and `vfs_mkdir_parents` all share one resolver, `vfs_inner_find_and_create`,
+   parameterised by *what it is permitted to create*), and `O_CREAT`/`O_TRUNC` in `sys_open`
+   turned out not to be a prerequisite — the loader calls `vfs_create()` and then opens the
+   existing node. `truncate` is not in the vtable yet.
+4. ✅ **Rewrite `tar.c` as loader**, swap `main.c`. The acceptance criterion was
+   "`test_vfs()` passes unmodified" — **partially met**: the `ls` half matches exactly, the
+   `cat` half cannot until step 2 lands. That gap is the honest measure of what is left.
 
 ---
 
@@ -306,18 +321,22 @@ Each step boots green on its own — no long broken window.
 
 ## 📁 Critical files
 
-- 🆕 `kernel/fs/ramfs/ramfs.c` + `kernel/include/fs/ramfs/ramfs.h` — the whole storage layer
-- ✏️ `kernel/include/fs/vfs/vfs.h` — `create`/`truncate` in `vfs_ops`, `VFS_PATH_MAX`
-- ✏️ `kernel/fs/vfs/vfs.c` — `vfs_lookup_parent`, `vfs_create`, `vfs_mkdir_parents`
-- ✏️ `kernel/fs/vfs/file.c` — `O_CREAT` / `O_TRUNC` in `sys_open`
-- ✏️ `kernel/fs/tar/tar.c` + `kernel/include/fs/tar/tar.h` — reduced to `tar_load()`
-- ✏️ `kernel/core/main.c` — ramfs root + `tar_load`, plus `test_ramfs()`; call `vfs_init()`/`file_init()`
+- ✅ `kernel/fs/ramfs/ramfs.c` + `kernel/include/fs/ramfs/ramfs.h` — the whole storage layer.
+  Tree, `create`, `finddir`, `readdir` done; `ramfs_ops_read`/`ramfs_ops_write` still stubs.
+- ✅ `kernel/include/fs/vfs/vfs.h` — `create` in `vfs_ops`, `VFS_PATH_MAX`. `truncate` not added.
+- ✅ `kernel/fs/vfs/vfs.c` — `vfs_create`, `vfs_mkdir_parents`, both over one shared resolver
+- ⬜ `kernel/fs/vfs/file.c` — `O_CREAT` / `O_TRUNC` in `sys_open` still unwired (not blocking)
+- ✅ `kernel/fs/tar/tar.c` + `kernel/include/fs/tar/tar.h` — reduced to `tar_load()`
+- ✅ `kernel/core/main.c` — ramfs root mounted, then `tar_load`. `vfs_init()`/`file_init()` are
+  still never called; harmless while both only zero already-zero statics, worth fixing.
+- ⬜ `kernel/core/test/test_ramfs.c` — the archive-free storage test, once step 2 lands
 
 ## 📝 Docs to update alongside the code
 
-- `ROADMAP.md:33` — Phase 2 task 5 currently describes the CoW promotion design; replace with
-  this split and point at this document.
-- `PHASE2_TAR_DRIVER.md` — mark Part 4 superseded by this document (Parts 1-3 still stand).
+- ✅ `ROADMAP.md` — Phase 2 tasks 3-6 rewritten around the split, pointing here.
+- ✅ `PHASE2_TAR_DRIVER.md` — Parts 3 and 4 marked superseded (Parts 1-2 still stand).
+- ✅ `README.md` — ramfs/initrd subsystem, `krealloc`, tagged `kprintf`, `core/test/` layout.
+- ⬜ Once page storage lands: flip this document's status banner and Part 5 step 2.
 - `README.md:39` and `README.md:64` are **already stale**: they claim no filesystem is mounted
   at `/` and that the initrd tmpfs "is the next thing being built", but the tar read path has
   been mounted and working since commit `13b8ced`. Fix as part of this work.

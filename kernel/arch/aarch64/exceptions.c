@@ -38,19 +38,17 @@ void aarch64_exception_handler(struct aarch64_registers *regs) {
     }
 
     // Unrecoverable — dump register state
-    kprintf("============= [ UNHANDLED EXCEPTION ] =============\n");
-    const char *vec_name = (regs->vector_type < 16)
-                           ? vector_names[regs->vector_type] : "Unknown";
-    kprintf(" Vector %zu: %s\n", regs->vector_type, vec_name);
-    kprintf(" ESR_EL1: 0x%016lx (EC=0x%02x)\n", regs->esr, esr_ec);
-    kprintf(" FAR_EL1: 0x%016lx\n", regs->far);
-    kprintf(" ELR_EL1: 0x%016lx\n", regs->elr);
-    kprintf(" SPSR_EL1: 0x%016lx  SP: 0x%016lx\n", regs->spsr, regs->sp);
+    kprintf("ARM64", "============= [ UNHANDLED EXCEPTION ] =============\n");
+    const char *vec_name = (regs->vector_type < 16) ? vector_names[regs->vector_type] : "Unknown";
+    kprintf("ARM64", " Vector %zu: %s\n", regs->vector_type, vec_name);
+    kprintf("ARM64", " ESR_EL1: 0x%016lx (EC=0x%02x)\n", regs->esr, esr_ec);
+    kprintf("ARM64", " FAR_EL1: 0x%016lx\n", regs->far);
+    kprintf("ARM64", " ELR_EL1: 0x%016lx\n", regs->elr);
+    kprintf("ARM64", " SPSR_EL1: 0x%016lx  SP: 0x%016lx\n", regs->spsr, regs->sp);
     for (int i = 0; i < 30; i += 3) {
-        kprintf(" X%02d: 0x%016lx  X%02d: 0x%016lx  X%02d: 0x%016lx\n",
-                i, regs->x[i], i+1, regs->x[i+1], i+2, regs->x[i+2]);
+        kprintf("ARM64", " X%02d: 0x%016lx  X%02d: 0x%016lx  X%02d: 0x%016lx\n", i, regs->x[i], i+1, regs->x[i+1], i+2, regs->x[i+2]);
     }
-    kprintf(" X30 (LR): 0x%016lx\n", regs->x[30]);
-    kprintf("===================================================\n");
+    kprintf("ARM64", " X30 (LR): 0x%016lx\n", regs->x[30]);
+    kprintf("ARM64", "===================================================\n");
     kpanic("");
 }

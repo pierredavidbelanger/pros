@@ -260,7 +260,7 @@ kernel/
 ---
 
 ### Step 11: Implement Iterative VFS Path Resolution (`vfs_lookup`)
-* **Status**: 🚧 Planned
+* **Status**: ✅ Completed — and since extended. `vfs_lookup()` is one of three entry points onto a shared resolver (`vfs_inner_find_and_create` in `kernel/fs/vfs/vfs.c`) parameterised by what it is permitted to create; the others are `vfs_create()` and `vfs_mkdir_parents()`. The tokenizer works on a stack copy of the path, because `strtokr` mutates its input.
 * **Target Files**: `kernel/include/fs/vfs.h`, `kernel/fs/vfs/vfs.c`, `kernel/fs/vfs/file.c`
 * **Goal**: Replace the shortcut in `sys_open` with a proper VFS path tokenization engine that can traverse subdirectories natively (e.g., resolving `/boot/limine.conf`).
 * **Tasks**:
@@ -282,7 +282,7 @@ kernel/
 ---
 
 ### Step 13: Implement Initramfs (TAR Filesystem)
-* **Status**: 🚧 Planned — full design + read/write model in [`PHASE2_TAR_DRIVER.md`](PHASE2_TAR_DRIVER.md)
+* **Status**: ✅ Structure complete, 🚧 file content open — and built differently from the sketch below. There is no "TAR VFS driver" with its own `vfs_ops`: storage lives in `fs/ramfs/` and `fs/tar/` is only a parser calling the public VFS API. Current design in [`PHASE2_RAMFS.md`](PHASE2_RAMFS.md); [`PHASE2_TAR_DRIVER.md`](PHASE2_TAR_DRIVER.md) Parts 3-4 are superseded.
 * **Target Files**: `kernel/fs/tar/tar.c`, `kernel/core/boot.c`
 * **Goal**: Mount an in-memory TAR archive provided by the Limine bootloader to serve as the initial RAM disk, bypassing disk I/O for early boot files.
 * **Tasks**:

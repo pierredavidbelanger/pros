@@ -25,7 +25,7 @@ void vmm_init(void) {
     if (!paging_mode_request.response || paging_mode_request.response->mode != paging_mode_request.min_mode) {
         kpanic("[VMM  ] bootloader returned an unsupported paging mode.");
     }
-    kprintf("[VMM  ] Paging mode: %lu (%d-level)\n", paging_mode_request.response->mode, VMM_LEVELS);
+    kprintf("VMM", "Paging mode: %lu (%d-level)\n", paging_mode_request.response->mode, VMM_LEVELS);
 
     vmm_kernel_context = kmalloc(sizeof(struct vmm_context));
     if (!vmm_kernel_context) {
@@ -231,7 +231,7 @@ static bool try_handle_demand_page_fault(uint64_t fault_addr, uint64_t error_cod
         // not-present demand-paging fault. Return false rather than panicking here directly —
         // the caller's existing unhandled-exception path dumps full register state before
         // panicking, which is strictly more useful for debugging.
-        kprintf("[VMM  ] Fault: disallowed %s access to present page at %p\n",
+        kprintf("VMM", "Fault: disallowed %s access to present page at %p\n",
                 arch_vmm_fault_is_write(error_code) ? "write" : "read", (void *)fault_addr);
         return false;
     }
@@ -248,7 +248,7 @@ static bool try_handle_demand_page_fault(uint64_t fault_addr, uint64_t error_cod
         return false;
     }
 
-    kprintf("[VMM  ] Demand Paging: mapped virt %p -> phys %p\n", (void *)aligned_virt, (void *)phys_addr);
+    kprintf("VMM", "Demand Paging: mapped virt %p -> phys %p\n", (void *)aligned_virt, (void *)phys_addr);
     return true;
 }
 

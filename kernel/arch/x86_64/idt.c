@@ -139,26 +139,20 @@ void x86_64_exception_handler(struct x86_64_registers *regs) {
     }
 
     // Unrecoverable — dump register state
-    kprintf("============= [ UNHANDLED EXCEPTION ] =============\n");
+    kprintf("X8664", "============= [ UNHANDLED EXCEPTION ] =============\n");
     const char *name = (regs->int_no < 32) ? exception_names[regs->int_no] : "Unknown";
-    kprintf(" Exception %zu: %s\n", regs->int_no, name);
-    kprintf(" Error Code: 0x%lx\n", regs->error_code);
-    kprintf(" RIP: 0x%016lx  CS: 0x%04lx  RFLAGS: 0x%016lx\n",
-            regs->rip, regs->cs, regs->rflags);
-    kprintf(" RSP: 0x%016lx  SS: 0x%04lx\n", regs->rsp, regs->ss);
-    kprintf(" RAX: 0x%016lx  RBX: 0x%016lx  RCX: 0x%016lx\n",
-            regs->rax, regs->rbx, regs->rcx);
-    kprintf(" RDX: 0x%016lx  RSI: 0x%016lx  RDI: 0x%016lx\n",
-            regs->rdx, regs->rsi, regs->rdi);
-    kprintf(" RBP: 0x%016lx   R8: 0x%016lx   R9: 0x%016lx\n",
-            regs->rbp, regs->r8, regs->r9);
-    kprintf(" R10: 0x%016lx  R11: 0x%016lx  R12: 0x%016lx\n",
-            regs->r10, regs->r11, regs->r12);
-    kprintf(" R13: 0x%016lx  R14: 0x%016lx  R15: 0x%016lx\n",
-            regs->r13, regs->r14, regs->r15);
+    kprintf("X8664", " Exception %zu: %s\n", regs->int_no, name);
+    kprintf("X8664", " Error Code: 0x%lx\n", regs->error_code);
+    kprintf("X8664", " RIP: 0x%016lx  CS: 0x%04lx  RFLAGS: 0x%016lx\n", regs->rip, regs->cs, regs->rflags);
+    kprintf("X8664", " RSP: 0x%016lx  SS: 0x%04lx\n", regs->rsp, regs->ss);
+    kprintf("X8664", " RAX: 0x%016lx  RBX: 0x%016lx  RCX: 0x%016lx\n", regs->rax, regs->rbx, regs->rcx);
+    kprintf("X8664", " RDX: 0x%016lx  RSI: 0x%016lx  RDI: 0x%016lx\n", regs->rdx, regs->rsi, regs->rdi);
+    kprintf("X8664", " RBP: 0x%016lx   R8: 0x%016lx   R9: 0x%016lx\n", regs->rbp, regs->r8, regs->r9);
+    kprintf("X8664", " R10: 0x%016lx  R11: 0x%016lx  R12: 0x%016lx\n", regs->r10, regs->r11, regs->r12);
+    kprintf("X8664", " R13: 0x%016lx  R14: 0x%016lx  R15: 0x%016lx\n", regs->r13, regs->r14, regs->r15);
     if (regs->int_no == 14) {
-        kprintf(" CR2: 0x%016lx\n", cr2);
+        kprintf("X8664", " CR2: 0x%016lx\n", cr2);
     }
-    kprintf("===================================================\n");
+    kprintf("X8664", "===================================================\n");
     kpanic("");
 }

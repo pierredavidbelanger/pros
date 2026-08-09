@@ -22,15 +22,16 @@ Pairing the kernel's Linux ABI syscall dispatcher with a standard C library allo
 ---
 
 ### Phase 2: In-Memory Root Filesystem (Initramfs) & VFS
-* **Status**: **Read path complete** ✅ — write support still open (Detailed working doc: [`PHASE2_TAR_DRIVER.md`](PHASE2_TAR_DRIVER.md))
+* **Status**: **Directory tree loads end-to-end** ✅ — **file content storage still open** 🚧 (Detailed working doc: [`PHASE2_RAMFS.md`](PHASE2_RAMFS.md), which supersedes [`PHASE2_TAR_DRIVER.md`](PHASE2_TAR_DRIVER.md))
 * **Goal**: Mount a real root filesystem with no disk driver at all, by reading a `ustar` archive Limine already loads into RAM as a boot module.
 * **History**: The original plan targeted a disk-backed FAT filesystem over a hand-written VirtIO-block/PCI/ACPI stack (`PHASE2_VFS.md` Steps 1-9) — it worked, but wasn't clean enough to keep, and was fully removed (`git log`: *"rip out everything i found not clean enough, will redo later"*) in favor of the simpler initrd approach below. The VFS core (`fs/vfs/`) and its syscalls were untouched by the rip-out and remain exactly as originally built.
 * **Key Tasks**:
   1. ✅ **Iterative VFS path resolution** (`vfs_lookup`) — `sys_open`'s old single-segment shortcut replaced with real `/`-delimited path tokenization.
   2. ✅ **Limine module parsing** — `module_request` registered in `boot.c`, `limine.conf` carries the module directive, `initrd.tar` built and staged by the Makefile.
-  3. ✅ **TAR filesystem driver** (`fs/tar/tar.c`) — `tar_mount()` parses the `ustar` archive into a real `vfs_node` tree (first-child/next-sibling representation), with `finddir`/`readdir`/`read` all implemented and working directly out of the in-memory archive, no disk I/O.
-  4. ✅ **Mount to VFS root `/`** — wired into `main.c`, verified end-to-end at boot (`ls /` lists the archive's real directory structure, `cat` reads actual file content back out of it).
-  5. **Write support** — not yet implemented. See `PHASE2_TAR_DRIVER.md` Part 4 for the copy-on-write-into-heap design (promote a node's data pointer from the read-only archive to a `kmalloc`'d buffer on first write).
+  3. ✅ **ramfs driver + TAR loader split** (`fs/ramfs/ramfs.c`, `fs/tar/tar.c`) — the archive format no longer *is* the filesystem. `ramfs` owns the storage (in-memory tree, first-child/next-sibling), and `tar_load()` is reduced to a parser that populates it purely through the public VFS path API — the same separation as Linux's `rootfs` + `unpack_to_rootfs()`. Originally `tar_mount()` did both jobs at once; making that writable would have made it a tmpfs wearing a tar costume, hence the split.
+  4. ✅ **Mount to VFS root `/`** — `ramfs_create_root()` mounted at `/` before anything else, then `tar_load()` fills it. Verified at boot: `/root` resolves through the mount table and `readdir` lists `hello.txt`.
+  5. 🚧 **File content storage** — `ramfs_ops_read`/`ramfs_ops_write` are still stubs, so `cat` produces nothing yet. Design in [`PHASE2_RAMFS.md`](PHASE2_RAMFS.md) Part 2: a sparse page list per node (`void **pages`, `NULL` entry = hole reading as zeros), which is what real `tmpfs` does and what `mmap` will need in Phase 5.
+  6. ✅ **Supporting work that fell out of the split** — `vfs_ops.create` plus `vfs_create()`/`vfs_mkdir_parents()` path helpers; `krealloc()` in `heap.c` (in-place growth via neighbour coalescing) for the page-array growth; heap payload alignment fixed (`HEAP_HEADER_SIZE`); `pmm_alloc()` now returns 0 instead of panicking, with every caller checking; a self-test suite under `core/test/` (18 checks) and a tagged `kprintf(tag, ...)`.
 
 ---
 

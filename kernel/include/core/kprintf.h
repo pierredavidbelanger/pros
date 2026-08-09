@@ -3,7 +3,11 @@
 
 #include <printf.h>
 
-#define kprintf printf
+#include "stdc.h"
+
+#define KPRINTF_TAG_WIDTH 5
+
+void kprintf(const char *tag, const char *format, ...);
 
 void kpanic(const char *msg);
 
