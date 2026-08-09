@@ -1,7 +1,6 @@
 #include "fs/vfs/vfs.h"
 
 #include "core/memory.h"
-#include "core/kprintf.h"
 #include "mm/heap.h"
 
 static struct vfs_mount *vfs_mount_list = NULL;
@@ -29,8 +28,6 @@ int vfs_mount(const char *path, struct vfs_node *root_node) {
     mount->root = root_node;
     mount->next = vfs_mount_list;
     vfs_mount_list = mount;
-
-    kprintf("[VFS  ] mounted %s at %s\n", root_node->name, path);
 
     return 0;
 }
@@ -62,8 +59,6 @@ struct vfs_node *vfs_get_mountpoint(const char **path) {
         return NULL;
     }
 
-    kprintf("[VFS  ] found mount point %s for %s\n", best_match->root->name, *path);
-
     // Update the path pointer to point *after* the mount point string.
     // E.g., if mount point is "/" and path is "/boot", *path will become "boot"
     *path = *path + best_match_len;
@@ -72,8 +67,6 @@ struct vfs_node *vfs_get_mountpoint(const char **path) {
     while (**path == '/') {
         (*path)++;
     }
-
-    kprintf("[VFS  ] path inside mount point %s is %s\n", best_match->root->name, *path);
 
     return best_match->root;
 }

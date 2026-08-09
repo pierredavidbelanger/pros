@@ -1,7 +1,9 @@
 #ifndef PROS_KPRINTF_H
 #define PROS_KPRINTF_H
 
-void kprintf(const char *fmt, ...);
+#include <printf.h>
+
+#define kprintf printf
 
 void kpanic(const char *msg);
 

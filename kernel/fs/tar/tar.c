@@ -4,8 +4,6 @@
 #include "core/memory.h"
 #include "mm/heap.h"
 
-#include <printf.h>
-
 // TAR Header Field Sizes
 #define TAR_NAME_SIZE     100
 #define TAR_MODE_SIZE       8
@@ -128,15 +126,11 @@ struct vfs_node *tar_mount(uint64_t tar_addr, size_t tar_size) {
 
             struct vfs_node *parent = root;
 
-            kprintf("[TAR  ] Parse %s\n", name_buf);
             char *token = strtokr(name_buf, "/", &saveptr);
             while (token != NULL) {
-                kprintf("[TAR  ]   Token: %s\n", token);
 
                 struct vfs_node *child = parent->ops->finddir(parent, token);
                 if (!child) {
-
-                    kprintf("[TAR  ]   Token: %s, child not found\n", token);
 
                     child = kcalloc(1, sizeof(struct vfs_node));
                     if (!child) break;
@@ -170,10 +164,6 @@ struct vfs_node *tar_mount(uint64_t tar_addr, size_t tar_size) {
                         }
                         sibling_data->next_sibling = child;
                     }
-                } else {
-
-                    kprintf("[TAR  ]   Token: %s, child found\n", token);
-
                 }
 
                 token = strtokr(NULL, "/", &saveptr);
@@ -183,8 +173,6 @@ struct vfs_node *tar_mount(uint64_t tar_addr, size_t tar_size) {
 
         addr += TAR_BLOCK_SIZE + (size + TAR_BLOCK_SIZE - 1) / TAR_BLOCK_SIZE * TAR_BLOCK_SIZE;
     }
-
-    kprintf("[TAR  ] Mounted TAR %s in memory\n", root->name);
 
     return root;
 }

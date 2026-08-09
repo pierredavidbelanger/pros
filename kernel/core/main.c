@@ -150,9 +150,9 @@ void test_vfs(void) {
         struct vfs_dirent entry;
         while (sys_readdir(fd, &entry) == 1) {
             if (entry.flags == VFS_DIRECTORY) {
-                kprintf("[DIR]  %s\n", entry.name);
+                kprintf("/%s/\n", entry.name);
             } else {
-                kprintf("[FILE] %s\n", entry.name);
+                kprintf("/%s\n", entry.name);
             }
         }
         kprintf("-------------------------------\n");
