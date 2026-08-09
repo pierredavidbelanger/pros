@@ -3,6 +3,7 @@
 #include "core/kprintf.h"
 #include "core/memory.h"
 #include "mm/heap.h"
+#include "fs/vfs/vfs.h"
 
 // TAR Header Field Sizes
 #define TAR_NAME_SIZE     100
@@ -64,23 +65,7 @@ struct ustar_header {
     char padding[TAR_PADDING_SIZE];   /* 500: Zero-padding to reach 512 bytes */
 };
 
-#define TAR_NAME_SIZE_NULL_TERMINATED (TAR_NAME_SIZE+1)
-
-struct tar_node_data {
-    struct vfs_node *next_sibling;
-    struct vfs_node *first_child;
-    void *data;
-};
-
-int64_t tar_ops_read(struct vfs_node *node, uint64_t offset, uint64_t size, void *buffer);
-struct vfs_node *tar_ops_finddir(struct vfs_node *node, const char *name);
-int tar_ops_readdir(struct vfs_node *node, uint32_t index, struct vfs_dirent *out);
-
-static struct vfs_ops tar_ops = {
-    .read = tar_ops_read,
-    .finddir = tar_ops_finddir,
-    .readdir = tar_ops_readdir,
-};
+#define TAR_PATH_BUF_SIZE (TAR_NAME_SIZE + 1)
 
 static uint64_t tar_parse_octal(const char *field, size_t field_len) {
     uint64_t value = 0;
@@ -90,142 +75,37 @@ static uint64_t tar_parse_octal(const char *field, size_t field_len) {
     return value;
 }
 
-struct vfs_node *tar_mount(uint64_t tar_addr, size_t tar_size) {
-    if (tar_size < TAR_BLOCK_SIZE) return NULL;
-
-    struct vfs_node *root = kcalloc(1, sizeof(struct vfs_node));
-    if (!root) return NULL;
-    snprintf(root->name, VFS_NAME_SIZE, "%s", "/");
-    root->flags = VFS_DIRECTORY;
-    root->size = 0;
-    root->ops = &tar_ops;
-    struct tar_node_data *root_data = kcalloc(1, sizeof(struct tar_node_data));
-    if (!root_data) {
-        kfree(root);
-        return NULL;
-    }
-    root->priv_data = root_data;
-
-    char name_buf[TAR_NAME_SIZE_NULL_TERMINATED];
-    char *saveptr;
+int tar_load(uint64_t tar_addr, size_t tar_size) {
+    if (tar_size < TAR_BLOCK_SIZE) return -1;
 
     uint64_t addr = tar_addr;
     while (addr < tar_addr + tar_size) {
         struct ustar_header *header = (struct ustar_header *) addr;
         if (header->name[0] == '\0') break;
-        if (memcmp(header->magic, TMAGIC, TAR_MAGIC_SIZE)) return NULL;
-        if (memcmp(header->version, TVERSION, TAR_VERSION_SIZE)) return NULL;
+        if (memcmp(header->magic, TMAGIC, TAR_MAGIC_SIZE)) return -1;
+        if (memcmp(header->version, TVERSION, TAR_VERSION_SIZE)) return -1;
 
         uint64_t size = tar_parse_octal(header->size, TAR_SIZE_SIZE);
 
         // just support file and directory
         if (header->typeflag == TAR_TYPE_REG || header->typeflag == TAR_TYPE_REG_ALT || header->typeflag == TAR_TYPE_DIR) {
 
-            memcpy(name_buf, header->name, TAR_NAME_SIZE);
-            name_buf[TAR_NAME_SIZE] = '\0';
+            char path[TAR_PATH_BUF_SIZE];
+            snprintf(path, TAR_PATH_BUF_SIZE, "/%.*s", TAR_NAME_SIZE, header->name);
 
-            struct vfs_node *parent = root;
+            if (!vfs_mkdir_parents(path)) return -1;
 
-            char *token = strtokr(name_buf, "/", &saveptr);
-            while (token != NULL) {
-
-                struct vfs_node *child = parent->ops->finddir(parent, token);
-                if (!child) {
-
-                    child = kcalloc(1, sizeof(struct vfs_node));
-                    if (!child) break;
-                    snprintf(child->name, VFS_NAME_SIZE, "%s", token);
-                    if (header->typeflag == TAR_TYPE_DIR) {
-                        child->flags = VFS_DIRECTORY;
-                    } else {
-                        child->flags = VFS_FILE;
-                    }
-                    child->size = size;
-                    child->ops = &tar_ops;
-                    struct tar_node_data *child_data = kcalloc(1, sizeof(struct tar_node_data));
-                    if (!child_data) {
-                        kfree(child);
-                        break;
-                    }
-                    if (child->flags == VFS_FILE) {
-                        child_data->data = (void *) addr + TAR_BLOCK_SIZE;
-                    }
-                    child->priv_data = child_data;
-
-                    struct tar_node_data *parent_data = parent->priv_data;
-                    if (parent_data->first_child == NULL) {
-                        parent_data->first_child = child;
-                    } else {
-                        struct vfs_node *sibling = parent_data->first_child;
-                        struct tar_node_data *sibling_data = sibling->priv_data;
-                        while (sibling_data->next_sibling != NULL) {
-                            sibling = sibling_data->next_sibling;
-                            sibling_data = sibling->priv_data;
-                        }
-                        sibling_data->next_sibling = child;
-                    }
-                }
-
-                token = strtokr(NULL, "/", &saveptr);
-                parent = child;
+            if (header->typeflag == TAR_TYPE_DIR) {
+                struct vfs_node *dir = vfs_create(path, VFS_DIRECTORY);
+                if (!dir) return -1;
+            } else {
+                struct vfs_node *file = vfs_create(path, VFS_FILE);
+                if (!file) return -1;
+                // TODO write data
             }
         }
 
         addr += TAR_BLOCK_SIZE + (size + TAR_BLOCK_SIZE - 1) / TAR_BLOCK_SIZE * TAR_BLOCK_SIZE;
-    }
-
-    return root;
-}
-
-int64_t tar_ops_read(struct vfs_node *node, uint64_t offset, uint64_t size, void *buffer) {
-    if (!node) return -1;
-
-    if (offset >= node->size) return 0;
-
-    size_t actual_size = size;
-    if (node->size < offset + size) {
-        actual_size = node->size - offset;
-    }
-
-    struct tar_node_data *node_data = node->priv_data;
-    memcpy(buffer, node_data->data + offset, actual_size);
-
-    return actual_size;
-}
-
-struct vfs_node *tar_ops_finddir(struct vfs_node *node, const char *name) {
-    if (!node) return NULL;
-
-    struct tar_node_data *node_data = node->priv_data;
-
-    struct vfs_node *child = node_data->first_child;
-    while (child != NULL) {
-        if (strncmp(child->name, name, VFS_NAME_SIZE) == 0) {
-            return child;
-        }
-        struct tar_node_data *child_data = child->priv_data;
-        child = child_data->next_sibling;
-    }
-
-    return NULL;
-}
-
-int tar_ops_readdir(struct vfs_node *node, uint32_t index, struct vfs_dirent *out) {
-    if (!node || out == NULL) return -1;
-
-    struct tar_node_data *node_data = node->priv_data;
-
-    struct vfs_node *child = node_data->first_child;
-    int i = 0;
-    while (child != NULL) {
-        if (i == index) {
-            strncpy(out->name, child->name, VFS_NAME_SIZE);
-            out->flags = child->flags;
-            return 1;
-        }
-        struct tar_node_data *child_data = child->priv_data;
-        child = child_data->next_sibling;
-        i++;
     }
 
     return 0;

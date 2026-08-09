@@ -10,6 +10,7 @@
 #include "mm/heap.h"
 #include "mm/vmm.h"
 #include "fs/vfs/vfs.h"
+#include "fs/ramfs/ramfs.h"
 #include "fs/tar/tar.h"
 
 void test_pmm(void);
@@ -54,14 +55,16 @@ void _start(void) {
         kprintf("[FB   ] Initialized the framebuffer, ready to kprintf also on the screen\n");
     }
 
-    if (module_request.response && module_request.response->modules && module_request.response->modules[0]) {
-        struct vfs_node *tar_root = tar_mount((uint64_t) module_request.response->modules[0]->address, module_request.response->modules[0]->size);
-        if (tar_root) {
-            if (vfs_mount("/", tar_root) == 0) {
-                if (tests_enabled) test_vfs();
+    struct vfs_node *ramfs = ramfs_create_root();
+    if (ramfs) {
+        if (vfs_mount("/", ramfs) == 0) {
+            if (module_request.response && module_request.response->modules && module_request.response->modules[0]) {
+                tar_load((uint64_t) module_request.response->modules[0]->address, module_request.response->modules[0]->size);
             }
         }
     }
+    // test_vfs even though ramfs may not have been correctly loaded or mounted
+    if (tests_enabled) test_vfs();
 
     kprintf("[K    ] All done here, shutting down.\n");
     arch_shutdown();
@@ -144,15 +147,16 @@ void test_vmm(void) {
 }
 
 void test_vfs(void) {
-    int fd = sys_open("/", 0);
+    int fd = sys_open("/root", 0);
     if (fd >= 0) {
-        kprintf("------------- ls / ------------\n");
+        kprintf("/root fd=%d\n", fd);
+        kprintf("----------- ls /root ----------\n");
         struct vfs_dirent entry;
         while (sys_readdir(fd, &entry) == 1) {
             if (entry.flags == VFS_DIRECTORY) {
-                kprintf("/%s/\n", entry.name);
+                kprintf("%s/\n", entry.name);
             } else {
-                kprintf("/%s\n", entry.name);
+                kprintf("%s\n", entry.name);
             }
         }
         kprintf("-------------------------------\n");
@@ -162,6 +166,7 @@ void test_vfs(void) {
     }
     fd = sys_open("/root/hello.txt", O_RDONLY);
     if (fd >= 0) {
+        kprintf("/root/hello.txt fd=%d\n", fd);
         char buffer[2000];
         int64_t bytes_read = sys_read(fd, buffer, 2000);
         if (bytes_read > 0) {

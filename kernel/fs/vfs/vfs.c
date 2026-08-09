@@ -1,5 +1,6 @@
 #include "fs/vfs/vfs.h"
 
+#include "core/kprintf.h"
 #include "core/memory.h"
 #include "mm/heap.h"
 
@@ -21,8 +22,7 @@ int vfs_mount(const char *path, struct vfs_node *root_node) {
     }
 
     // Copy the path string safely
-    strncpy(mount->path, path, sizeof(mount->path) - 1);
-    mount->path[sizeof(mount->path) - 1] = '\0';
+    snprintf(mount->path, VFS_NAME_SIZE, "%s", path);
 
     // Assign the root node and prepend to the global mount list
     mount->root = root_node;
@@ -71,34 +71,85 @@ struct vfs_node *vfs_get_mountpoint(const char **path) {
     return best_match->root;
 }
 
-struct vfs_node *vfs_lookup(const char *path) {
+static struct vfs_node *vfs_inner_find_and_create(const char *path, bool stop_at_parent, uint32_t flags) {
     if (!path) return NULL;
+    if (strlen(path) >= VFS_PATH_MAX) return NULL;
 
     struct vfs_node *target = vfs_get_mountpoint(&path);
     if (!target) return NULL;
 
-    char subpath[VFS_NAME_SIZE];
-    int subpath_index = 0;
-    int path_index = 0;
+    struct vfs_node *parent = target;
 
-    while (true) {
-        char c = path[path_index];
-        if ((c == '/' || c == '\0') && subpath_index > 0) {
-            subpath[subpath_index] = '\0';
-            if (!target->ops || !target->ops->finddir) return NULL;
-            target = target->ops->finddir(target, subpath);
-            if (!target) return NULL;
-            subpath_index = 0;
-            continue;
+    char path_buf[VFS_PATH_MAX];
+    snprintf(path_buf, VFS_PATH_MAX, "%s", path);
+
+    char *saveptr;
+    char *token = strtokr(path_buf, "/", &saveptr);
+    while (token != NULL) {
+
+        // no token after this one means this token is the last one
+        char *next_token = strtokr(NULL, "/", &saveptr);
+        bool is_last = next_token == NULL;
+
+        if (is_last && stop_at_parent) {
+            // this is the last token
+            // are we told to stop there
+            if ((target->flags & VFS_DIRECTORY) == 0) {
+                // but this token is not a "parent"
+                // caller dont expect we return a file here
+                return NULL;
+            }
+            // that will return target which still point to parent
+            break;
         }
-        if (c != '/' && c != '\0') {
-            subpath[subpath_index] = c;
-            subpath_index++;
-            if (subpath_index >= VFS_NAME_SIZE) return NULL;
+
+        // nothing to find below a file
+        if ((parent->flags & VFS_DIRECTORY) == 0) return NULL;
+        // no ops available on parent
+        if (!parent->ops) return NULL;
+        if (!parent->ops->finddir) return NULL;
+        // find the sub node of parent named token
+        target = parent->ops->finddir(parent, token);
+
+        if (target == NULL) {
+            // target does not exists in parent
+            // maybe we need to create something
+            if (is_last && (flags & VFS_FILE) != 0) {
+                // this is the last token
+                // are we told to create file
+                // we assume the caller knows what he is doing
+                if (!parent->ops->create) return NULL;
+                if (parent->ops->create(parent, token, VFS_FILE, &target) != 0) return NULL;
+            } else if ((flags & VFS_DIRECTORY) != 0) {
+                // this is the last token or not
+                // are we told to create dir anyways
+                // we assume the caller knows what he is doing
+                if (!parent->ops->create) return NULL;
+                if (parent->ops->create(parent, token, VFS_DIRECTORY, &target) != 0) return NULL;
+            }
+            if (target == NULL) {
+                // target still does not exists
+                // we were not told to create anything (or it failed)
+                // this ends here, we will return a NULL target
+                break;
+            }
         }
-        if (c == '\0') break;
-        path_index++;
+
+        token = next_token;
+        parent = target;
     }
 
     return target;
+}
+
+struct vfs_node *vfs_lookup(const char *path) {
+    return vfs_inner_find_and_create(path, false, 0);
+}
+
+struct vfs_node *vfs_create(const char *path, uint32_t flags) {
+    return vfs_inner_find_and_create(path, false, flags);
+}
+
+struct vfs_node *vfs_mkdir_parents(const char *path) {
+    return vfs_inner_find_and_create(path, true, VFS_DIRECTORY);
 }

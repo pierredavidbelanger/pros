@@ -4,6 +4,7 @@
 #include "stdc.h"
 
 #define VFS_NAME_SIZE 128
+#define VFS_PATH_MAX  256
 
 // Node flags to distinguish between file types
 #define VFS_FILE        0x01
@@ -15,8 +16,14 @@ struct vfs_node;
 struct vfs_dirent;
 
 struct vfs_ops {
+    // Creation
+    int (*create)(struct vfs_node *dir, const char *name, uint32_t flags, struct vfs_node **out);
+
+    // Callbacks
     int (*open)(struct vfs_node *node);
     int (*close)(struct vfs_node *node);
+
+    // IO
     int64_t (*read)(struct vfs_node *node, uint64_t offset, uint64_t size, void *buffer);
     int64_t (*write)(struct vfs_node *node, uint64_t offset, uint64_t size, const void *buffer);
     
@@ -50,5 +57,7 @@ void vfs_init(void);
 int vfs_mount(const char *path, struct vfs_node *root_node);
 struct vfs_node *vfs_get_mountpoint(const char **path);
 struct vfs_node *vfs_lookup(const char *path);
+struct vfs_node *vfs_create(const char *path, uint32_t flags);
+struct vfs_node *vfs_mkdir_parents(const char *path);
 
 #endif //PROS_VFS_H
