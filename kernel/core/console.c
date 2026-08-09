@@ -11,10 +11,10 @@ void console_init(void) {
     earlycon_init();
     earlycon_active = true;
     // clear the terminal so kernel output starts on a clean line instead of overlapping
-    const char *clear_seq = "\033[2J\033[H";
-    for (const char *p = clear_seq; *p; p++) {
-        console_putc(*p);
-    }
+    // const char *clear_seq = "\033[2J\033[H";
+    // for (const char *p = clear_seq; *p; p++) {
+        // console_putc(*p);
+    // }
 }
 
 void console_putc(char c) {

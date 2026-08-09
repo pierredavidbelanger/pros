@@ -34,9 +34,14 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
   - API: `heap_init()`, `kmalloc()`, `kfree()`, `kcalloc()`.
 - **Virtual File System (VFS)**:
   - Architecture-agnostic mount table with longest-prefix-match path resolution (`vfs_mount()`, `vfs_get_mountpoint()`).
-  - Generic `struct vfs_node` / `vfs_ops` vtable (`open`, `close`, `read`, `write`, `finddir`, `readdir`) so any backing filesystem can plug in without touching the VFS core.
+  - Generic `struct vfs_node` / `vfs_ops` vtable (`create`, `open`, `close`, `read`, `write`, `finddir`, `readdir`) so any backing filesystem can plug in without touching the VFS core.
+  - Path-walking helpers sharing a single tokenizing resolver: `vfs_lookup()` (find only), `vfs_create()` (find, or create the leaf), and `vfs_mkdir_parents()` (`mkdir -p` over a path's parent chain).
   - File descriptor table and Linux-style syscalls: `sys_open`, `sys_close`, `sys_read`, `sys_write`, `sys_readdir`, `sys_lseek`.
-  - No filesystem is currently mounted at `/` — the first-pass disk stack (VirtIO block driver, PCI/ACPI bus discovery, MBR partitioning, FAT16) was ripped out in favor of a Limine-module-loaded **tmpfs from an `initrd.tar`**, which is the next thing being built.
+- **RAM Filesystem (ramfs) & initrd** *(work in progress)*:
+  - `ramfs` is mounted at `/` before anything else and is currently the only filesystem — an in-memory tree with sibling-list directories, following Linux's `rootfs` pattern rather than the writable-tar-driver approach it replaced.
+  - `tar_load()` parses a Limine-module-loaded **ustar `initrd.tar`** and populates ramfs purely through the public VFS path API, so the archive format never touches filesystem internals — the same separation as Linux's `unpack_to_rootfs()`.
+  - **Current status**: the directory tree loads end to end — `/root/hello.txt` resolves through the mount table and `readdir` lists it. File *content* storage is the work in progress: nodes carry a sparse page list backed by the PMM (`void **pages`, a `NULL` entry being a hole that reads as zeros — the representation real `tmpfs` uses, picked so `mmap` can be layered on later), but the `read`/`write` implementations that fill it are still stubs.
+  - The first-pass disk stack (VirtIO block driver, PCI/ACPI bus discovery, MBR partitioning, FAT16) was ripped out in favor of this.
 - **Graphical Framebuffer & Terminal Engine**:
   - 32-bit ARGB/RGB direct pixel drawing and screen clearing (`fb_clear`).
   - Built-in 8x16 VGA bitmap font renderer supporting automatic text wrapping and full-screen vertical scrolling (`terminal_scroll`).
@@ -61,7 +66,7 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
     ├── Makefile           # Kernel compilation script
     ├── arch/              # Architecture-specific code (aarch64, x86_64), linker scripts, exceptions, interrupts
     ├── core/              # Core kernel subsystems (boot, fb, kprintf, main)
-    ├── fs/                # Virtual File System (VFS) — no backing filesystem mounted yet
+    ├── fs/                # Filesystems: vfs/ (core + fd table), ramfs/ (in-memory root), tar/ (initrd loader)
     ├── include/           # Kernel headers (arch, core, fs, mm)
     ├── libs/              # Downloaded third-party libraries (freestanding headers, printf, limine)
     └── mm/                # Memory Management (pmm, vmm, heap)
@@ -86,11 +91,20 @@ To build and run PrOS, ensure you have the following installed on your host:
 3. **QEMU System Emulator**:
    - `qemu-system-aarch64` (for AArch64 target)
    - `qemu-system-x86_64` (for x86_64 target)
-4. **Download Utilities**: `curl`, `tar`, `gunzip` (used by Makefile to automatically fetch Limine and OVMF firmware).
+4. **Utilities**: `curl`, `tar`, `gunzip`, `ansifilter` (used by Makefile).
 
 ---
 
 ## 🚀 Building & Running
+
+The quickest way in — builds both architectures and boots each one headless, back to back:
+
+```bash
+make
+```
+
+> [!NOTE]
+> The build is quiet by default (`MAKEFLAGS += -s` in the root `Makefile`), so recipes aren't echoed and make's recursion banners are suppressed. This only silences make's *own* output — compiler diagnostics and `*** [Makefile:20: ...] Error 1` failures still print normally.
 
 ### 1. Build and Run in QEMU
 
@@ -110,8 +124,8 @@ These commands will:
 1. Download EDK2 OVMF UEFI binaries (AArch64 / x86_64) and the Limine bootloader into `bin/` (if missing).
 2. Download freestanding headers, runtime, limine protocol, and `mpaland/printf` into `kernel/libs/` (if missing).
 3. Compile the kernel (`kernel/bin/kernel-aarch64` and `kernel/bin/kernel-x86_64`).
-4. Generate the bootable EFI System Partition structure in `root/` (Limine's EFI binary, `limine.conf`, and the compiled kernel).
-5. Launch QEMU with UEFI firmware, presenting `root/` as a `virtio-blk-pci` disk so OVMF can find and chainload it — this disk is currently only used for boot; the kernel itself mounts nothing at `/` yet.
+4. Build `initrd.tar` (a ustar archive of `initrd/`) and generate the bootable EFI System Partition structure in `root/` (Limine's EFI binary, `limine.conf`, the compiled kernel, and the initrd).
+5. Launch QEMU with UEFI firmware, presenting `root/` as a `virtio-blk-pci` disk so OVMF can find and chainload it. That disk is used only by the firmware to boot — the kernel's own `/` is the in-memory ramfs, populated from the `initrd.tar` that Limine hands over as a module.
 
 The kernel calls `arch_shutdown()` once boot finishes, so QEMU exits **on its own** — no need to close the window or kill the process manually.
 
@@ -122,13 +136,27 @@ For a fast, terminal-only run with no graphical window — useful over SSH or wh
 ```bash
 make qemu-x86_64-nographic
 make qemu-aarch64-nographic
+
+# Or both, one after the other — this is what a bare `make` runs
+make qemu-both-nographic
 ```
 
 Same boot as above, but with `-display none`, and the full serial output is also saved to `logs/qemu-<arch>.log` (gitignored) so you can inspect it afterward.
 
+All four QEMU targets pipe their serial output through `ansifilter` before `tee`, stripping the terminal control sequences OVMF emits during firmware init. Without it the logs are littered with escape codes like `\033[2J\033[H`, which makes them painful to read and effectively impossible to `grep`.
+
 ### 3. Toggling Kernel Self-Tests
 
-`test_pmm()`/`test_heap()`/`test_vmm()`/`test_vfs()` in `kernel/core/main.c` run at boot by default, controlled by the Limine command line rather than being commented in/out of the source. Each `/Kernel (...)` entry in `limine.conf` carries `cmdline: pros.tests`; remove that line (or edit its value) to boot without running the self-tests — no kernel rebuild required, `make` will re-stage `root/` from the edited config on the next run.
+`test_pmm()`/`test_heap()`/`test_vmm()`/`test_vfs()` in `kernel/core/main.c` are gated on the Limine command line rather than being commented in/out of the source. Each `/Kernel (...)` entry in `limine.conf` has a `cmdline: pros.tests` line, currently **commented out** (with `;`, Limine's comment marker) so a normal boot stays quiet:
+
+```ini
+/Kernel (ARM64)
+    protocol: limine
+    if_arch: aarch64
+;     cmdline: pros.tests
+```
+
+Uncomment it to run the self-tests. No kernel rebuild is required either way — `make` re-stages `root/` from the edited config on the next run.
 
 ### 4. Manual Kernel Build Steps
 

@@ -1,6 +1,8 @@
 
+MAKEFLAGS += -s
+
 .PHONY: default
-default: root
+default: qemu-both-nographic
 
 .PHONY: clean
 clean:
@@ -40,8 +42,11 @@ root: bin initrd.tar kernel
 	cp kernel/bin/kernel-* root/boot/
 	cp initrd.tar root/boot/
 
+logs:
+	mkdir -p logs
+
 .PHONY: qemu-aarch64
-qemu-aarch64: root
+qemu-aarch64: root | logs
 	qemu-system-aarch64 \
 		-m 2G \
 		-machine virt \
@@ -51,10 +56,11 @@ qemu-aarch64: root
 		-drive if=none,id=hd0,file=fat:rw:root,format=raw \
 		-device virtio-blk-pci,drive=hd0,disable-legacy=on \
 		-device ramfb \
+		| ansifilter \
 		| tee logs/qemu-aarch64.log
 
 .PHONY: qemu-x86_64
-qemu-x86_64: root
+qemu-x86_64: root | logs
 	qemu-system-x86_64 \
 		-m 2G \
 		-machine q35 \
@@ -62,10 +68,11 @@ qemu-x86_64: root
 		-drive if=pflash,unit=0,format=raw,file=bin/edk2-ovmf-bins/ovmf-code-x86_64.fd,readonly=on \
 		-drive if=none,id=hd0,file=fat:rw:root,format=raw \
 		-device virtio-blk-pci,drive=hd0,disable-legacy=on \
+		| ansifilter \
 		| tee logs/qemu-x86_64.log
 
 .PHONY: qemu-aarch64-nographic
-qemu-aarch64-nographic: root
+qemu-aarch64-nographic: root | logs
 	mkdir -p logs
 	qemu-system-aarch64 \
 		-m 2G \
@@ -77,10 +84,11 @@ qemu-aarch64-nographic: root
 		-drive if=none,id=hd0,file=fat:rw:root,format=raw \
 		-device virtio-blk-pci,drive=hd0,disable-legacy=on \
 		-device ramfb \
+		| ansifilter \
 		| tee logs/qemu-aarch64.log
 
 .PHONY: qemu-x86_64-nographic
-qemu-x86_64-nographic: root
+qemu-x86_64-nographic: root | logs
 	mkdir -p logs
 	qemu-system-x86_64 \
 		-m 2G \
@@ -90,5 +98,8 @@ qemu-x86_64-nographic: root
 		-drive if=pflash,unit=0,format=raw,file=bin/edk2-ovmf-bins/ovmf-code-x86_64.fd,readonly=on \
 		-drive if=none,id=hd0,file=fat:rw:root,format=raw \
 		-device virtio-blk-pci,drive=hd0,disable-legacy=on \
+		| ansifilter \
 		| tee logs/qemu-x86_64.log
 
+.PHONY: qemu-both-nographic
+qemu-both-nographic: qemu-aarch64-nographic qemu-x86_64-nographic
