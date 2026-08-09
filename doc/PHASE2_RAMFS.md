@@ -5,7 +5,8 @@
 > owns the tree, `tar_load()` is a pure parser, and `/root/hello.txt` resolves through the
 > mount table. What remains is the page storage in Part 2 — `ramfs_ops_read` and
 > `ramfs_ops_write` are still stubs, so file *content* is not stored yet and `cat` prints
-> nothing. See Part 5 for the per-step status.
+> nothing. See Part 5 for the per-step status, and **[Implementation brief](#-implementation-brief--ramfs_ops_read--ramfs_ops_write)**
+> for the actionable version of what is left, written against the code as it stands today.
 
 This working document supersedes [`PHASE2_TAR_DRIVER.md`](PHASE2_TAR_DRIVER.md) **Part 4**
 (copy-on-write promotion). Parts 1-3 of that document still stand — how the archive reaches
@@ -296,6 +297,163 @@ Each step boots green on its own — no long broken window.
 
 ---
 
+## 🔨 Implementation brief — `ramfs_ops_read` / `ramfs_ops_write`
+
+Part 2 above sketches the storage model. This section is the actionable version of step 2,
+written against the code as it actually stands today.
+
+> [!NOTE]
+> Mentor-mode reminder (`.rules.md`): a design reference to code from by hand, not code to
+> paste in.
+
+### What changed since Part 2 was written
+
+- **`krealloc()` now exists.** Part 2 says "allocate-copy-free with doubling, since `heap.c`
+  has no `krealloc`". Use `krealloc` instead. It does **not** zero the grown tail, so new
+  slots still need clearing before they can read as holes.
+- **`pmm_alloc()` returns 0 on exhaustion** instead of `kpanic`-ing, so the failure branches
+  in the write path are genuinely reachable now, not theoretical.
+- **`kmalloc`/`kcalloc` can return NULL**, since they propagate that 0.
+
+### Pin the invariant first
+
+Every bug in this kind of code is an invariant violation. Worth writing as a comment on
+`struct ramfs_node_data` before any code:
+
+- `pages == NULL` ⟺ `page_count == 0`
+- `page_count` is **capacity** — entries in the array, not a byte count, and not "pages
+  actually allocated"
+- every slot `< page_count` is either a valid virtual pointer **or** `NULL`, meaning a hole
+  that reads as zeros
+- `node->size` is the *only* source of truth for EOF, always `<= page_count * PAGE_SIZE`
+
+That last one is what lets `read` clamp without consulting the array at all.
+
+**Decide deliberately** whether `pages[]` holds virtual or physical addresses. The current
+comment says virtual, which is fine — but `pmm_free` takes a physical address, so
+`truncate`/`unlink` will need `pmm_virt_to_phys()` on the way back out. Mixing the two is
+the bug that only surfaces when something is finally freed.
+
+### Two helpers, and the asymmetry between them
+
+```c
+// read side: never allocates. Out of range or hole -> NULL.
+static void *ramfs_get_page(struct ramfs_node_data *node_data, uint64_t index);
+
+// write side: grows the array and allocates the page as needed.
+static void *ramfs_alloc_page(struct ramfs_node_data *node_data, uint64_t index);
+```
+
+`read` **must not** allocate. If it does, reading a sparse file materialises every hole — a
+read of a 1 GiB sparse file eats 1 GiB of RAM. Two separate functions hold that rule better
+than one function with a `bool allocate` parameter.
+
+**Growing the array**, inside `ramfs_alloc_page` — double from a floor, then zero only the
+newly added slots:
+
+```c
+uint64_t new_count = node_data->page_count ? node_data->page_count * 2 : 4;
+while (new_count <= index) new_count *= 2;
+
+void **new_pages = krealloc(node_data->pages, new_count * sizeof(void *));
+if (!new_pages) return NULL;
+memset(&new_pages[node_data->page_count], 0, (new_count - node_data->page_count) * sizeof(void *));
+```
+
+Doubling matters: growing by one turns a 1 MiB file into 256 reallocations instead of 8.
+
+**Allocating a page**: `pmm_alloc(1)` returns a **physical** address — `pmm_phys_to_virt()`
+before touching it — and returns **0** on exhaustion. Then `memset(page, 0, PAGE_SIZE)`: the
+PMM does not zero, and a fresh page holds whatever the last owner left in it.
+
+### The chunk loop
+
+Identical shape in both directions:
+
+```c
+uint64_t remaining = /* read: clamped size | write: size */;
+uint64_t off = offset;
+uint8_t *buf = buffer;
+
+while (remaining > 0) {
+    uint64_t index    = off / PAGE_SIZE;
+    uint64_t page_off = off % PAGE_SIZE;
+    uint64_t chunk    = PAGE_SIZE - page_off;
+    if (chunk > remaining) chunk = remaining;
+
+    // read:  page ? memcpy(buf, (uint8_t *) page + page_off, chunk)
+    //             : memset(buf, 0, chunk);
+    // write: memcpy((uint8_t *) page + page_off, buf, chunk);
+
+    off += chunk; buf += chunk; remaining -= chunk;
+}
+```
+
+Cast to `uint8_t *` for the byte arithmetic — `void *` arithmetic is a GCC extension, and the
+explicit cast matches the style used everywhere else in the tree.
+
+### `read`
+
+The skeleton is already right; uncomment and use `actual_size`:
+
+- `offset >= node->size` → return 0 (already there)
+- clamp `size` against `node->size - offset`
+- run the chunk loop, `pages[i] == NULL` → `memset(buf, 0, chunk)` rather than `memcpy`
+- return bytes copied
+
+### `write`
+
+Order of operations is the whole game:
+
+1. grow the array and allocate every page the write touches
+2. copy
+3. **only then** `if (offset + size > node->size) node->size = offset + size;`
+
+Bump `size` first and a failed `pmm_alloc` leaves a file claiming bytes with no backing —
+every later read of that range returns whatever junk the caller's buffer already held.
+
+On partial failure return the count actually written, not `-1`. POSIX allows a short write,
+and `sys_write` (`fs/vfs/file.c:137`) advances `f->offset` by exactly the return value, so
+short writes compose correctly for free.
+
+### Guards both functions need
+
+- `buffer` NULL check and `size == 0` early return
+- **reject `VFS_DIRECTORY` nodes.** Neither stub checks `flags`. A directory's `pages` is
+  meant to stay `NULL` forever, sitting right next to live `first_child`/`next_sibling`
+  pointers — so this is memory safety, not merely POSIX `EISDIR`
+- **overflow**: `offset + size` can wrap. `sys_lseek` (`fs/vfs/file.c:143`) puts `offset`
+  wherever a caller asks, with no upper bound
+- a sanity ceiling on `offset` is worth considering: a large `lseek` followed by a write
+  currently asks `pmm_alloc` for a preposterous page count and takes the kernel down
+
+### Closing the loop in `tar.c`
+
+`fs/tar/tar.c:104`, replacing `// TODO write data`. `vfs_create` already made the node, so
+this needs no `O_CREAT`:
+
+```c
+int fd = sys_open(path, O_WRONLY);
+sys_write(fd, (uint8_t *) addr + TAR_BLOCK_SIZE, size);
+sys_close(fd);
+```
+
+`sys_write` requires `O_WRONLY` or `O_RDWR` (`fs/vfs/file.c:127`) — `O_RDONLY` is 0 and gets
+rejected. Needs `#include "core/syscalls.h"` in `tar.c`.
+
+Staying on the public syscall API rather than reaching for `file->ops->write` is deliberate:
+it mirrors Linux's `init_open`/`init_write`, and it means the loader exercises the same path
+userland will.
+
+### Fix before `read` starts returning data
+
+`core/test/test_vfs.c:28-32` — `char buffer[2000]`, `sys_read(fd, buffer, 2000)`, then
+`buffer[bytes_read] = '\0'`. A file of exactly 2000 bytes writes `buffer[2000]`, one past the
+end of a stack array. Dormant while `read` returns 0; live the moment it works. Read 1999, or
+size the buffer 2001.
+
+---
+
 ## 🔭 Part 6: Known follow-ups, deliberately out of scope
 
 - **Reclaim the initrd blob.** `kernel/mm/pmm.c:40` only reclaims `LIMINE_MEMMAP_USABLE`, so
@@ -344,11 +502,21 @@ Each step boots green on its own — no long broken window.
 
 ## 🪜 Verification
 
-- `make` for both AArch64 and x86_64; boot with `cmdline: pros.tests` and read
-  `logs/qemu-<arch>.log`.
-- Step 2's `test_ramfs()` is the real unit test — it exercises the filesystem end to end with
-  no tar involved at all.
-- Step 4's acceptance criterion: `test_vfs()` **unchanged** still prints the same `ls /` listing
-  and the same `hello.txt` contents as today.
-- Worth adding once write works: open `/root/hello.txt` `O_RDWR`, write past its original size,
-  read it back, confirm the growth — the thing the old zero-copy design could never do.
+- `make` for both AArch64 and x86_64; boot with `cmdline: pros.tests` (currently enabled) and
+  read `logs/qemu-<arch>.log`. The 18 existing checks must still pass.
+- **Acceptance criterion**: `test_vfs()` prints the `cat` block with `HelloWorld` again. That
+  output has been missing since the split and is the single measure of whether step 2 is done.
+- **The more valuable test is the archive-free one.** Add `kernel/core/test/test_ramfs.c` —
+  the Makefile glob picks it up automatically; declare `void test_ramfs(void);` in
+  `include/core/test/test.h` and call it from `main.c` after `tar_load`. Using
+  `test_report("RAMFS", ...)`:
+  - create, write, read back — content matches
+  - `lseek` well past EOF, write, then read the gap — **must read as zeros**. This is the hole
+    path, and the tar loader will never exercise it because it only ever writes sequentially
+    from offset 0.
+  - write across a page boundary (say 8000 bytes at offset 100) — content matches, which is
+    what proves the chunk loop's `page_off` arithmetic
+  - read past EOF returns 0; read of a `VFS_DIRECTORY` node returns -1
+  - a read that runs into EOF returns the clamped count, not the requested one
+- Once `truncate` exists: truncate down then grow, and assert no stale bytes reappear in the
+  tail of the new last partial page.
