@@ -72,30 +72,105 @@ void _start(void) {
 
 void test_pmm(void) {
     uint64_t one_page = pmm_alloc(1);
+    if (!one_page) {
+        kprintf("[PMM  ] Did NOT got one page!\n");
+    }
     kprintf("[PMM  ] Got one page at %p\n", one_page);
     pmm_free(one_page, 1);
     uint64_t two_page = pmm_alloc(2);
+    if (!two_page) {
+        kprintf("[PMM  ] Did NOT got two pages!\n");
+    }
     kprintf("[PMM  ] Got two pages at %p\n", two_page);
     pmm_free(two_page, 2);
 }
 
+static bool test_heap_check_pattern(const uint8_t *buf, size_t size, uint8_t value) {
+    for (size_t i = 0; i < size; i++) {
+        if (buf[i] != value) return false;
+    }
+    return true;
+}
+
+static void test_heap_report(const char *name, bool ok) {
+    kprintf("[HEAP ] %-38s %s\n", name, ok ? "PASS" : "FAIL");
+}
+
 void test_heap(void) {
-    // Test small allocation
-    char *buf1 = kmalloc(32);
-    kprintf("[HEAP ] buf1 allocated 32B at %p\n", buf1);
-    // Test multi-page allocation
-    char *buf2 = kmalloc(8000);
-    kprintf("[HEAP ] buf2 allocated 8000B at %p\n", buf2);
-    // Test small allocation again
-    char *buf3 = kmalloc(32);
-    kprintf("[HEAP ] buf3 allocated at 32B %p\n", buf3);
-    // Test multi-page allocation again
-    char *buf4 = kmalloc(8000);
-    kprintf("[HEAP ] buf4 allocated at 8000B %p\n", buf4);
-    kfree(buf1);
-    kfree(buf2);
-    kfree(buf3);
-    kfree(buf4);
+    // a small block must be writable end to end
+    uint8_t *small = kmalloc(32);
+    bool ok = small != NULL;
+    if (ok) {
+        memset(small, 0xAA, 32);
+        ok = test_heap_check_pattern(small, 32, 0xAA);
+    }
+    test_heap_report("kmalloc small", ok);
+
+    // a block larger than a page forces a fresh multi-page pmm_alloc
+    uint8_t *big = kmalloc(8000);
+    ok = big != NULL;
+    if (ok) {
+        memset(big, 0xBB, 8000);
+        ok = test_heap_check_pattern(big, 8000, 0xBB);
+    }
+    test_heap_report("kmalloc multi-page", ok);
+
+    // the allocator promises HEAP_ALIGNMENT on the payload address, not just on the requested size
+    test_heap_report("kmalloc payload alignment", small != NULL && ((uintptr_t) small % HEAP_ALIGNMENT) == 0);
+
+    kfree(big);
+
+    // kcalloc must hand back zeroed memory
+    uint8_t *zeroed = kcalloc(16, 8);
+    test_heap_report("kcalloc zeroes", zeroed != NULL && test_heap_check_pattern(zeroed, 16 * 8, 0x00));
+    kfree(zeroed);
+
+    // num * size must be rejected before it can wrap
+    test_heap_report("kcalloc overflow rejected", kcalloc(SIZE_MAX, 2) == NULL);
+
+    // krealloc(NULL, n) behaves as kmalloc(n)
+    uint8_t *from_null = krealloc(NULL, 64);
+    test_heap_report("krealloc NULL allocates", from_null != NULL);
+
+    // krealloc(p, 0) behaves as kfree(p) and yields NULL
+    test_heap_report("krealloc zero frees", krealloc(from_null, 0) == NULL);
+
+    // shrinking always fits in place, so the pointer must not move and the data must survive
+    uint8_t *shrink = kmalloc(256);
+    memset(shrink, 0xCC, 256);
+    uint8_t *shrunk = krealloc(shrink, 64);
+    test_heap_report("krealloc shrink keeps pointer", shrunk == shrink && test_heap_check_pattern(shrunk, 64, 0xCC));
+    kfree(shrunk);
+
+    // kmalloc splits the block it carves from, so this block's own remainder is guaranteed to be the
+    // free, physically contiguous neighbour that krealloc absorbs when it grows a block in place
+    uint8_t *grow = kmalloc(64);
+    memset(grow, 0xDD, 64);
+    uint8_t *grown = krealloc(grow, 128);
+    test_heap_report("krealloc grow in place", grown == grow && test_heap_check_pattern(grown, 64, 0xDD));
+    kfree(grown);
+
+    // no contiguous free run is anywhere near 100000 B here, so the block cannot grow in place:
+    // krealloc must fall back to allocate-copy-free and carry the data across to a new address
+    uint8_t *pinned = kmalloc(64);
+    memset(pinned, 0xEE, 64);
+    uint8_t *moved = krealloc(pinned, 100000);
+    test_heap_report("krealloc grow by move", moved != NULL && moved != pinned && test_heap_check_pattern(moved, 64, 0xEE));
+    kfree(moved);
+
+    // freeing NULL is a no-op, not a fault
+    kfree(NULL);
+    test_heap_report("kfree NULL survives", true);
+
+    kfree(small);
+
+    // once blocks are freed and coalesced they must be reused, not answered with fresh PMM pages every cycle
+    kfree(kmalloc(2000));
+    size_t free_before = pmm_get_free_page_count();
+    for (int i = 0; i < 100; i++) {
+        kfree(kmalloc(2000));
+    }
+    test_heap_report("kfree reuses blocks", pmm_get_free_page_count() == free_before);
 }
 
 void test_vmm(void) {

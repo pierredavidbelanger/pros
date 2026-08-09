@@ -4,39 +4,41 @@
 #include "core/memory.h"
 #include "core/kprintf.h"
 
-#define HEAP_ALIGNMENT 16
 #define HEAP_ALIGN_UP(size, align) (((size) + (align) - 1) & ~((align) - 1))
 
 struct heap_block {
-    size_t size; // acutal usable size (so sizeof(struct heap_block) must be excluded)
+    size_t size; // actual usable size (so the header must be excluded)
     bool is_free;
     struct heap_block *next;
 };
+
+// Distance from a block's start to its payload, aligned up so payload addresses inherit HEAP_ALIGNMENT.
+#define HEAP_HEADER_SIZE HEAP_ALIGN_UP(sizeof(struct heap_block), HEAP_ALIGNMENT)
 
 struct heap_block *heap_block_list;
 
 static void heap_block_coalesce(struct heap_block *block) {
     // coalesce the next following blocks
     // if its next block exists at all, is free and is contiguous
-    void *block_end = (void *) block + sizeof(struct heap_block) + block->size;
+    void *block_end = (void *) block + HEAP_HEADER_SIZE + block->size;
     while (block->next && block->next->is_free && block_end == (void *) block->next) {
         // it is safe to coalesce
-        block->size += sizeof(struct heap_block) + block->next->size;
+        block->size += HEAP_HEADER_SIZE + block->next->size;
         block->next = block->next->next;
         // block has grow, recalculate its end
-        block_end = (void *) block + sizeof(struct heap_block) + block->size;
+        block_end = (void *) block + HEAP_HEADER_SIZE + block->size;
     }
 }
 
 static void heap_block_split(struct heap_block *block, size_t size) {
     // has NOT enough space (at least header + HEAP_ALIGNMENT) to be halved, dont do it
-    if (block->size < size + sizeof(struct heap_block) + HEAP_ALIGNMENT) return;
+    if (block->size < size + HEAP_HEADER_SIZE + HEAP_ALIGNMENT) return;
 
     // the remainder is right after the block header + the requested size
-    struct heap_block *remainder = (struct heap_block *) ((void *) block + sizeof(struct heap_block) + size);
+    struct heap_block *remainder = (struct heap_block *) ((void *) block + HEAP_HEADER_SIZE + size);
 
     // the remainder size if whats left after removing a header + the requested size
-    remainder->size = block->size - sizeof(struct heap_block) - size;
+    remainder->size = block->size - HEAP_HEADER_SIZE - size;
     remainder->is_free = true;
     // insert remainder between block and its next
     remainder->next = block->next;
@@ -57,17 +59,18 @@ void heap_init() {
         kpanic("Cant alloc the first PMM page");
     }
     heap_block_list = pmm_phys_to_virt(phys_addr);
-    heap_block_list->size = PAGE_SIZE - sizeof(struct heap_block);
+    heap_block_list->size = PAGE_SIZE - HEAP_HEADER_SIZE;
     heap_block_list->is_free = true;
     heap_block_list->next = NULL;
 }
 
 void *kmalloc(size_t size) {
     // will we cause an overflow, in the align up below or in the page count math further down
-    if (size > SIZE_MAX - sizeof(struct heap_block) - PAGE_SIZE - HEAP_ALIGNMENT) return NULL;
+    if (size > SIZE_MAX - HEAP_HEADER_SIZE - PAGE_SIZE - HEAP_ALIGNMENT) return NULL;
 
     // align up requested size to HEAP_ALIGNMENT
     size = HEAP_ALIGN_UP(size, HEAP_ALIGNMENT);
+    if (size == 0) size = HEAP_ALIGNMENT;
 
     // first search an existing free block that has enough space for the requested size
     struct heap_block *block = NULL;
@@ -81,11 +84,11 @@ void *kmalloc(size_t size) {
     // a free block does not exist, we create one, with the correct number of pages
     if (!block) {
         // ensure the integer division returns at least 1
-        size_t pages = (sizeof(struct heap_block) + size + PAGE_SIZE - 1) / PAGE_SIZE;
+        size_t pages = (HEAP_HEADER_SIZE + size + PAGE_SIZE - 1) / PAGE_SIZE;
         uint64_t phys_addr = pmm_alloc(pages);
         if (!phys_addr) return NULL;
         block = pmm_phys_to_virt(phys_addr);
-        block->size = pages * PAGE_SIZE - sizeof(struct heap_block);
+        block->size = pages * PAGE_SIZE - HEAP_HEADER_SIZE;
         block->is_free = true;
         block->next = heap_block_list;
         // is the new head
@@ -99,7 +102,7 @@ void *kmalloc(size_t size) {
     block->is_free = false;
 
     // return the address right after the header, that is effectively of the the requested size (or more)
-    return (struct heap_block *) ((void *) block + sizeof(struct heap_block));
+    return (struct heap_block *) ((void *) block + HEAP_HEADER_SIZE);
 }
 
 void *kcalloc(size_t num, size_t size) {
@@ -143,7 +146,7 @@ void *krealloc(void *virt_addr, size_t size) {
     // align up requested size to HEAP_ALIGNMENT
     size = HEAP_ALIGN_UP(size, HEAP_ALIGNMENT);
 
-    struct heap_block *block = virt_addr - sizeof(struct heap_block);
+    struct heap_block *block = virt_addr - HEAP_HEADER_SIZE;
 
     // case 3
     if (size <= block->size) {
@@ -171,7 +174,7 @@ void *krealloc(void *virt_addr, size_t size) {
 void kfree(void *virt_addr) {
     if (!virt_addr) return;
 
-    struct heap_block *block = virt_addr - sizeof(struct heap_block);
+    struct heap_block *block = virt_addr - HEAP_HEADER_SIZE;
     block->is_free = true;
 
     // Coalesce, otherwise memory get fragmented over time

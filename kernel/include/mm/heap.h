@@ -3,6 +3,9 @@
 
 #include "stdc.h"
 
+// Alignment guaranteed on every pointer returned by kmalloc/kcalloc/krealloc.
+#define HEAP_ALIGNMENT 16
+
 void heap_init();
 
 void *kmalloc(size_t size);
