@@ -14,6 +14,26 @@ struct heap_block {
 
 struct heap_block *heap_block_list;
 
+static void heap_block_split(struct heap_block *block, size_t size) {
+    // has NOT enough space (at least header + HEAP_ALIGNMENT) to be halved, dont do it
+    if (block->size < size + sizeof(struct heap_block) + HEAP_ALIGNMENT) return;
+    // the remainder is right after the block header + the requested size
+    struct heap_block *remainder = (struct heap_block *) ((void *) block + sizeof(struct heap_block) + size);
+    // the remainder size if whats left after removing a header + the requested size
+    remainder->size = block->size - sizeof(struct heap_block) - size;
+    remainder->is_free = true;
+    // remainder's next block is the the found (or new) block, effectively inserting itself between the two
+    remainder->next = block->next;
+    // the found (or new) block is then properly sized to the requested size
+    block->size = size;
+    // the remainder immediately follow the the found (or new) block
+    block->next = remainder;
+}
+
+static void heap_block_coalesce(struct heap_block *block) {
+    // TODO
+}
+
 void heap_init() {
     // create the head of the list
     uint64_t phys_addr = pmm_alloc(1);
@@ -46,20 +66,8 @@ void *kmalloc(size_t size) {
         // is the new head
         heap_block_list = block;
     }
-    // if the found (or new) block has enough space (at least header + HEAP_ALIGNMENT) to be halved, do it
-    if (block->size >= size + sizeof(struct heap_block) + HEAP_ALIGNMENT) {
-        // the remainder is right after the block header + the requested size
-        struct heap_block *remainder = (struct heap_block *) ((void *) block + sizeof(struct heap_block) + size);
-        // the remainder size if whats left after removing a header + the requested size
-        remainder->size = block->size - sizeof(struct heap_block) - size;
-        remainder->is_free = true;
-        // remainder's next block is the the found (or new) block, effectively inserting itself between the two
-        remainder->next = block->next;
-        // the found (or new) block is then properly sized to the requested size
-        block->size = size;
-        // the remainder immediately follow the the found (or new) block
-        block->next = remainder;
-    }
+    // split if possible
+    heap_block_split(block, size);
     block->is_free = false;
     // return the address right after the header, that is effectively of the the requested size (or more)
     return (struct heap_block *) ((void *) block + sizeof(struct heap_block));
@@ -70,6 +78,52 @@ void *kcalloc(size_t num, size_t size) {
     void *ptr = kmalloc(total_size);
     memset(ptr, 0, total_size);
     return ptr;
+}
+
+void *krealloc(void *virt_addr, size_t size) {
+
+    // simple case
+    // 1- krealloc(NULL, n) behaves as kmalloc(n)
+    // 2- krealloc(p, 0) behaves as kfree(p) and returns NULL
+    // then we have 3 cases
+    // 3- size already fits in our block, just change the size
+    // 4- size dont fit, but we can grow in place by absorbing the next block
+    // 5- size dont fit, we cannot grow in place, we fall back to alloc-copy-free
+
+    // case 1
+    if (!virt_addr) {
+        return kmalloc(size);
+    }
+
+    // case 2
+    if (!size) {
+        kfree(virt_addr);
+        return NULL;
+    }
+
+    // align up requested size to HEAP_ALIGNMENT
+    size = HEAP_ALIGN_UP(size, HEAP_ALIGNMENT);
+
+    struct heap_block *block = virt_addr - sizeof(struct heap_block);
+
+    // case 3
+    if (size < block->size) {
+        return virt_addr;
+    }
+
+    // case 4
+    heap_block_coalesce(block);
+    if (size <= block->size) {
+        heap_block_split(block, size);
+        return virt_addr;
+    }
+
+    // case 5
+    void *new_addr = kmalloc(size);
+    if (!new_addr) return NULL;
+    memcpy(new_addr, virt_addr, block->size);
+    kfree(virt_addr);
+    return new_addr;
 }
 
 void kfree(void *virt_addr) {
