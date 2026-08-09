@@ -116,6 +116,7 @@ uint64_t arch_vmm_ensure_user_root(void) {
     }
     // Limine leaves TTBR0_EL1 unset on AArch64 — install a fresh, blank root table.
     root_phys = pmm_alloc(1);
+    if (!root_phys) return 0;
     uint64_t *root_virt = pmm_phys_to_virt(root_phys);
     memset(root_virt, 0, PAGE_SIZE);
     arch_vmm_set_user_root(root_phys);

@@ -28,6 +28,9 @@ void vmm_init(void) {
     kprintf("[VMM  ] Paging mode: %lu (%d-level)\n", paging_mode_request.response->mode, VMM_LEVELS);
 
     vmm_kernel_context = kmalloc(sizeof(struct vmm_context));
+    if (!vmm_kernel_context) {
+        kpanic("Cant alloc the kernel context");
+    }
 
     // arch_vmm_ensure_user_root() hides a per-architecture difference:
     //
@@ -38,7 +41,9 @@ void vmm_init(void) {
     // but a near-empty placeholder on AArch64, and its real mapping live in TTBR1_EL1, reachable via arch_vmm_get_kernel_root().
 
     uint64_t user_root = arch_vmm_ensure_user_root();
-
+    if (!user_root) {
+        kpanic("Cant alloc the user root page table");
+    }
     vmm_kernel_context->root_phys = user_root;
     vmm_kernel_context->root_virt = pmm_phys_to_virt(user_root);
     vmm_kernel_context->demand_page_lo = 0;
@@ -53,6 +58,10 @@ struct vmm_context *vmm_create_context(void) {
     if (!root_phys) return NULL;
 
     struct vmm_context *ctx = kmalloc(sizeof(struct vmm_context));
+    if (!ctx) {
+        pmm_free(root_phys, 1);
+        return NULL;
+    }
     ctx->root_phys = root_phys;
     ctx->root_virt = pmm_phys_to_virt(root_phys);
     ctx->demand_page_lo = 0;

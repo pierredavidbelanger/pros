@@ -96,7 +96,7 @@ uint64_t pmm_alloc(size_t count) {
         start_node = start_node->next;
     }
     if (!found) {
-        kpanic("No enough memory available");
+        return 0;
     }
     struct pmm_node *end_node = start_node->next;
     for (size_t actual = 0; actual < count - 1; actual++) {
