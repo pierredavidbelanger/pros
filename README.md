@@ -31,7 +31,7 @@ Everything below is built and boots on **both** architectures. Sources are in `k
 | **Freestanding runtime** | Cross-compiled with `zig cc`, no libc, no host headers. Bundles the `mem*`/`str*` routines the kernel actually uses — `strcpy`/`strncpy` are deliberately absent, since neither guarantees a terminated result. |
 
 > [!NOTE]
-> There is no disk driver. An earlier VirtIO-block / PCI / FAT16 stack was built, judged not clean enough, and removed in favour of the RAM-backed initrd above. That history is kept in [`doc/PHASE2_VFS.md`](doc/PHASE2_VFS.md) rather than deleted.
+> There is no disk driver. An earlier VirtIO-block / PCI / FAT16 stack was built, judged not clean enough, and removed in favour of the RAM-backed initrd above. That history is kept in [`doc/archive/PHASE2_VFS.md`](doc/archive/PHASE2_VFS.md) rather than deleted.
 
 ---
 
@@ -42,7 +42,8 @@ Everything below is built and boots on **both** architectures. Sources are in `k
 ├── Makefile               # Root build script (EFI System Partition setup, OVMF/Limine binaries, QEMU launchers)
 ├── limine.conf            # Limine bootloader configuration
 ├── README.md              # Project documentation
-├── doc/                   # Roadmap & design working documents
+├── doc/                   # Roadmap & the working document for the phase being designed now
+│   └── archive/           # Finished & superseded working documents, kept for the reasoning trail
 └── kernel/                # Kernel source root
     ├── Makefile           # Kernel compilation script
     ├── arch/              # Architecture-specific code (aarch64, x86_64), linker scripts, exceptions, interrupts
@@ -57,7 +58,9 @@ Everything below is built and boots on **both** architectures. Sources are in `k
 
 ## 🗺️ Development Roadmap & Status
 
-Development happens in iterative phases, tracked entirely in [`doc/`](doc/ROADMAP.md) — `ROADMAP.md` holds the current phase breakdown and status, and each phase gets its own working document (currently `PHASE2_RAMFS.md`) while it's actively being designed or built. Superseded designs are kept and marked rather than deleted — `PHASE2_TAR_DRIVER.md` and `PHASE2_VFS.md` are both still there with banners explaining what replaced them and why. That's the source of truth for what's done and what's next, not this README.
+Development happens in iterative phases, tracked entirely in [`doc/`](doc/ROADMAP.md) — `ROADMAP.md` holds the phase breakdown and status, and each phase gets its own working document while it's actively being designed or built. Phases 1 and 2 are done; the live document now is [`PHASE3_USERLAND.md`](doc/PHASE3_USERLAND.md), covering preemption, privilege levels, the syscall ABI and `/bin/init`. That folder is the source of truth for what's done and what's next, not this README.
+
+Finished and superseded designs move to [`doc/archive/`](doc/archive/) rather than being deleted — *why* a design was abandoned tends to outlive the design itself. `PHASE2_VFS.md` (the disk-backed stack that got ripped out) and `PHASE2_TAR_DRIVER.md` (the writable-tar design that became ramfs) both carry banners explaining what replaced them. Splitting them out keeps `doc/` down to just what's live, so designing the next thing doesn't mean re-reading the last three.
 
 AI is used extensively to help manage that folder — keeping the roadmap organized, writing up designs before any code gets touched, and tracking what's actually done versus still open.
 

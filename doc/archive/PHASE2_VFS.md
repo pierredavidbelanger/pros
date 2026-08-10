@@ -3,7 +3,7 @@
 This working document breaks down **Phase 2: Disk Storage (`hd0`), VirtIO-Block, VFS & Filesystem Read/Write** into granular, step-by-step "baby steps" designed for incremental implementation and verification in **PrOS**.
 
 > [!WARNING]
-> **Pivot notice**: Steps 1-9 below describe the original disk-backed FAT/VirtIO-block/PCI/ACPI stack. It was fully implemented and working, then deliberately ripped out for being "not clean enough" — none of `drivers/`, `fs/fat/` exist in the tree anymore. Steps 1-9 are kept below as a historical record (they explain a lot about how VFS/block-device concepts fit together, even though this specific implementation is gone). **Steps 10 and 12 are dead** — they refer to files that no longer exist. **Steps 11 and 13 are still the real, current plan** — see `roadmap/ROADMAP.md`'s Phase 2 entry for the up-to-date summary.
+> **Pivot notice**: Steps 1-9 below describe the original disk-backed FAT/VirtIO-block/PCI/ACPI stack. It was fully implemented and working, then deliberately ripped out for being "not clean enough" — none of `drivers/`, `fs/fat/` exist in the tree anymore. Steps 1-9 are kept below as a historical record (they explain a lot about how VFS/block-device concepts fit together, even though this specific implementation is gone). **Steps 10 and 12 are dead** — they refer to files that no longer exist. **Steps 11 and 13 are still the real, current plan** — see [`../ROADMAP.md`](../ROADMAP.md)'s Phase 2 entry for the up-to-date summary.
 
 ---
 

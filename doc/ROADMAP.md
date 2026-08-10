@@ -12,6 +12,22 @@ Pairing the kernel's Linux ABI syscall dispatcher with a standard C library allo
 
 ---
 
+## 📂 How `doc/` is organized
+
+- **`doc/`** holds what is *live*: this roadmap, the working document for the phase currently
+  being designed or built, [`SYSCALL_DESIGN.md`](SYSCALL_DESIGN.md) as a standing reference,
+  and [`SIDEQUEST.md`](SIDEQUEST.md).
+- **[`doc/archive/`](archive/)** holds finished and superseded working documents. They are kept
+  for the reasoning trail — *why* a design was chosen or abandoned is worth more than the
+  design itself — but they describe code that has either shipped or never existed.
+
+> [!IMPORTANT]
+> When designing something new, read `doc/` and skip `doc/archive/`. Each phase's outcome is
+> summarized in its Status line below, so the archived documents shouldn't need consulting
+> unless the question is specifically "why was it done this way?". This applies to Claude too.
+
+---
+
 ## 📋 Detailed Milestone Breakdown
 
 ### Phase 1: Virtual Memory Management (VMM) & Demand Paging
@@ -22,9 +38,9 @@ Pairing the kernel's Linux ABI syscall dispatcher with a standard C library allo
 ---
 
 ### Phase 2: In-Memory Root Filesystem (Initramfs) & VFS
-* **Status**: **COMPLETE** ✅ — a read/write in-memory root filesystem, populated at boot from the initrd, verified end-to-end by 31 VFS self-tests (Detailed working doc: [`PHASE2_RAMFS.md`](PHASE2_RAMFS.md), which supersedes [`PHASE2_TAR_DRIVER.md`](PHASE2_TAR_DRIVER.md)). Deliberately left for later: `truncate`, `unlink`, and `O_CREAT`/`O_TRUNC` in `sys_open` — none are needed until something actually deletes or replaces a file.
+* **Status**: **COMPLETE** ✅ — a read/write in-memory root filesystem, populated at boot from the initrd, verified end-to-end by 31 VFS self-tests (Detailed working doc: [`archive/PHASE2_RAMFS.md`](archive/PHASE2_RAMFS.md), which supersedes [`archive/PHASE2_TAR_DRIVER.md`](archive/PHASE2_TAR_DRIVER.md)). Deliberately left for later: `truncate`, `unlink`, and `O_CREAT`/`O_TRUNC` in `sys_open` — none are needed until something actually deletes or replaces a file.
 * **Goal**: Mount a real root filesystem with no disk driver at all, by reading a `ustar` archive Limine already loads into RAM as a boot module.
-* **History**: The original plan targeted a disk-backed FAT filesystem over a hand-written VirtIO-block/PCI/ACPI stack (`PHASE2_VFS.md` Steps 1-9) — it worked, but wasn't clean enough to keep, and was fully removed (`git log`: *"rip out everything i found not clean enough, will redo later"*) in favor of the simpler initrd approach below. The VFS core (`fs/vfs/`) and its syscalls were untouched by the rip-out and remain exactly as originally built.
+* **History**: The original plan targeted a disk-backed FAT filesystem over a hand-written VirtIO-block/PCI/ACPI stack ([`archive/PHASE2_VFS.md`](archive/PHASE2_VFS.md) Steps 1-9) — it worked, but wasn't clean enough to keep, and was fully removed (`git log`: *"rip out everything i found not clean enough, will redo later"*) in favor of the simpler initrd approach below. The VFS core (`fs/vfs/`) and its syscalls were untouched by the rip-out and remain exactly as originally built.
 * **Key Tasks**:
   1. ✅ **Iterative VFS path resolution** (`vfs_lookup`) — `sys_open`'s old single-segment shortcut replaced with real `/`-delimited path tokenization.
   2. ✅ **Limine module parsing** — `module_request` registered in `boot.c`, `limine.conf` carries the module directive, `initrd.tar` built and staged by the Makefile.
@@ -36,29 +52,49 @@ Pairing the kernel's Linux ABI syscall dispatcher with a standard C library allo
 ---
 
 ### Phase 3: Kernel Preemption, Architecture Stacks, Syscalls & Init Process
+* **Status**: **NOT STARTED** ⬜ — designed but unwritten. Working doc:
+  [`PHASE3_USERLAND.md`](PHASE3_USERLAND.md), which carries the concept-by-concept
+  explanations, the per-architecture differences, the decisions taken, and the list of things
+  already in the tree that are latently wrong once a lower privilege level starts trapping.
 * **Goal**: Launch and run the first userland process (`/bin/init`).
-* **Key Tasks**:
-  1. **Task State Segment (TSS) & Kernel Stack Switch**:
-     - **x86_64**: Setup TSS with a valid `rsp0` for user-to-kernel stack switching on interrupts/syscalls (prevents Double Faults).
-     - **AArch64**: Manage switching between `SP_EL0` (user stack) and `SP_EL1` (kernel stack) in exception handlers.
-  2. **FPU / SIMD Context Switching**:
-     - Enable `CR4.OSFXSR` / `CR4.OSXSAVE` (x86_64) or `CPACR_EL1` FP instructions (AArch64).
-     - Save/restore vector register state (`fxsave`/`fxrstor` or `XSAVE`) in context switch routines to prevent corruption across tasks.
-  3. **Monotonic Clocks & Timers**:
-     - Configure APIC/PIT (x86_64) or Generic Timer (AArch64).
-     - Implement kernel millisecond tick counter to back time syscalls (`sys_clock_gettime`, `sys_nanosleep`).
-  4. **Process Control Block (PCB/TCB) & Preemptive Scheduler**:
-     - Track PID, process state, user/kernel stacks, open file descriptors, and CPU register state.
-     - Round-robin preemptive task scheduler (`switch_to`).
-  5. **Userland Context Switch**:
-     - Ring 0 $\rightarrow$ Ring 3 transition (`iretq` on x86_64).
-     - EL1 $\rightarrow$ EL0 transition (`eret` on AArch64).
-  6. **ELF Executable Loader**:
-     - Parse ELF64 binaries, map `PT_LOAD` segments into user page directory, setup initial user stack (`argc`, `argv`, `envp`, `auxv`).
-  7. **Linux Syscall Interface**:
-     - Implement `syscall`/`sysret` (x86_64) and `svc` (AArch64) handlers.
-     - Dispatch standard syscalls: `sys_read`, `sys_write`, `sys_open`, `sys_close`, `sys_execve`, `sys_fork`/`sys_clone`, `sys_exit`, `sys_brk`/`sys_mmap`, `sys_waitpid`.
-  8. **Boot `/bin/init`**: Execute `/bin/init` as PID 1 upon kernel initialization.
+* **Starting line**: further along than it looks. The full trap frame exists on both
+  architectures, a TSS is built and loaded, `vmm_create_context()`/`vmm_switch_context()`
+  already give a process its own address space, and `VMM_USER` is plumbed to hardware. What's
+  missing is a timer, per-task kernel stacks, the privilege drop, and the syscall entry path.
+* **Key Tasks**: ordered so that each step boots green on its own, and so "interruption" is
+  working (and debuggable, in ring 0) before "distrust" is introduced. Preemption is proven
+  with *kernel* threads before any userland exists, because a scheduler bug and a privilege
+  transition bug both present as a machine reset.
+  1. ⬜ **Timer & interrupts, no scheduler** — IDT gates above vector 31 + PIC remap + PIT
+     (x86_64); GIC + Generic Timer (AArch64, the larger half). A monotonic tick counter to
+     back `sys_clock_gettime`/`sys_nanosleep` later. Broken into baby steps in
+     [`PHASE3_STEP1_TIMER.md`](PHASE3_STEP1_TIMER.md).
+  2. ⬜ **`struct task`, per-task kernel stacks, trap-stub contract change** — the C handler
+     returns the frame to restore instead of `void`, which is what makes a context switch four
+     lines of assembly. Includes `tss.rsp0` (x86_64) / `SP_EL1` (AArch64) maintenance and the
+     `vectors.S` correctness fixes. Still one task, so nothing observable changes.
+  3. ⬜ **Two kernel threads, round-robin** — the milestone where preemption is real, entirely
+     in ring 0.
+  4. ⬜ **Ring 3 / EL0 transition** — `iretq` (x86_64) / `eret` (AArch64) into a hand-fabricated
+     user program, before the ELF loader exists. Needs user segments in the GDT, laid out to
+     `sysret`'s constraint even though step 5 is what enforces it.
+  5. ⬜ **Syscall entry path** — `svc` dispatch (AArch64, small: it lands in the existing vector
+     table); `syscall`/`sysret` + `swapgs` + the `STAR`/`LSTAR`/`FMASK` MSRs (x86_64, not
+     small). One syscall wired: `write`.
+  6. ⬜ **ELF64 loader & a real `/bin/init`** — `PT_LOAD` segments mapped into the new context,
+     `.bss` zeroed, initial user stack built (`argc`, `argv`, `envp`, `auxv`). A freestanding
+     `init.c` built with the existing `zig cc` toolchain, no libc needed yet. **Phase 3's
+     stated goal is met here.**
+  7. ⬜ **The real syscall surface** — per-process fd tables (they're kernel-global today),
+     `copy_from_user` validation, `-errno` returns replacing `-1`, and
+     `open`/`read`/`close`/`exit`/`getpid` reachable from ring 3.
+  8. ⬜ **`fork`, `execve`, `wait4` & voluntary switching** — the genuinely hard step, and where
+     a real `switch_to` becomes unavoidable (blocking in `wait4` is not a timer-driven
+     switch). Likely earns its own working document.
+  * ⬜ **FPU / SIMD context switching** slots in wherever a second *user* task first exists.
+    AArch64 is nearly free (`-mgeneral-regs-only` means the kernel emits no FP at all); the
+    x86_64 kernel currently *does* use SSE, so it needs `-mno-sse` to make lazy switching
+    correct rather than approximately correct.
 
 ---
 
