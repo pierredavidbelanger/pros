@@ -54,7 +54,9 @@ void _start(void) {
     if (ramfs) {
         if (vfs_mount("/", ramfs) == 0) {
             if (module_request.response && module_request.response->modules && module_request.response->modules[0]) {
-                tar_load((uint64_t) module_request.response->modules[0]->address, module_request.response->modules[0]->size);
+                if (tar_load((uint64_t) module_request.response->modules[0]->address, module_request.response->modules[0]->size) != 0) {
+                    kpanic("tar_load failed");
+                }
             }
         }
     }

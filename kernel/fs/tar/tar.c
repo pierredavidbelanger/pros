@@ -2,6 +2,7 @@
 
 #include "core/kprintf.h"
 #include "core/memory.h"
+#include "core/syscalls.h"
 #include "mm/heap.h"
 #include "fs/vfs/vfs.h"
 
@@ -96,12 +97,33 @@ int tar_load(uint64_t tar_addr, size_t tar_size) {
             if (!vfs_mkdir_parents(path)) return -1;
 
             if (header->typeflag == TAR_TYPE_DIR) {
+
+                // ask vfs to create this path as a dir
                 struct vfs_node *dir = vfs_create(path, VFS_DIRECTORY);
                 if (!dir) return -1;
+
             } else {
+
+                // ask vfs to create this path as a file
                 struct vfs_node *file = vfs_create(path, VFS_FILE);
                 if (!file) return -1;
-                // TODO write data
+
+                // get the start of the data
+                const void *data = (const void *) (addr + TAR_BLOCK_SIZE);
+
+                // open the newly created file
+                int fd = sys_open(path, O_WRONLY);
+                if (fd < 0) return -1;
+
+                // write the data into the file
+                int64_t count = sys_write(fd, data, size);
+
+                // close the file
+                if (sys_close(fd) < 0) return -1;
+
+                // do the data was all written
+                if (count < 0 || (uint64_t) count != size) return -1;
+
             }
         }
 
