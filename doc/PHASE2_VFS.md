@@ -123,9 +123,9 @@ kernel/
   [✅] Step 8: Mount FAT Volume to VFS Root "/"
   [✅] Step 9: Runtime Verification & Integration Unit Tests
   [⛔] Step 10: Refactor PCI Subsystem for Multi-Device Support (MOOT — pci.c removed)
-  [ ] Step 11: Implement Iterative VFS Path Resolution — still relevant, still open
+  [✅] Step 11: Implement Iterative VFS Path Resolution (vfs_lookup and friends)
   [⛔] Step 12: Implement FAT Subdirectory Support (MOOT — fat.c removed)
-  [ ] Step 13: Implement Initramfs (TAR Filesystem) — still relevant, the actual next step
+  [✅] Step 13: Implement Initramfs — built as ramfs + a tar loader, see PHASE2_RAMFS.md
 ```
 
 ---
@@ -282,7 +282,7 @@ kernel/
 ---
 
 ### Step 13: Implement Initramfs (TAR Filesystem)
-* **Status**: ✅ Structure complete, 🚧 file content open — and built differently from the sketch below. There is no "TAR VFS driver" with its own `vfs_ops`: storage lives in `fs/ramfs/` and `fs/tar/` is only a parser calling the public VFS API. Current design in [`PHASE2_RAMFS.md`](PHASE2_RAMFS.md); [`PHASE2_TAR_DRIVER.md`](PHASE2_TAR_DRIVER.md) Parts 3-4 are superseded.
+* **Status**: ✅ Completed — and built differently from the sketch below. There is no "TAR VFS driver" with its own `vfs_ops`: storage lives in `fs/ramfs/` (read *and* write, over a sparse page list) and `fs/tar/` is only a parser calling the public VFS API. The "Memory-Mapped Read" task below never happened — bytes are copied into ramfs-owned pages at load time rather than read in place, which is what makes the filesystem writable. Current design in [`PHASE2_RAMFS.md`](PHASE2_RAMFS.md); [`PHASE2_TAR_DRIVER.md`](PHASE2_TAR_DRIVER.md) Parts 3-4 are superseded.
 * **Target Files**: `kernel/fs/tar/tar.c`, `kernel/core/boot.c`
 * **Goal**: Mount an in-memory TAR archive provided by the Limine bootloader to serve as the initial RAM disk, bypassing disk I/O for early boot files.
 * **Tasks**:

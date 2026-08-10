@@ -1,12 +1,14 @@
-# Working Document: Phase 2 Step 14 — ramfs Core + TAR Loader Split [STATUS: SPLIT DONE ✅, PAGE STORAGE OPEN 🚧]
+# Working Document: Phase 2 Step 14 — ramfs Core + TAR Loader Split [STATUS: COMPLETE ✅]
 
 > [!NOTE]
-> **Where this stands.** The structural half is built and boots on both architectures: ramfs
-> owns the tree, `tar_load()` is a pure parser, and `/root/hello.txt` resolves through the
-> mount table. What remains is the page storage in Part 2 — `ramfs_ops_read` and
-> `ramfs_ops_write` are still stubs, so file *content* is not stored yet and `cat` prints
-> nothing. See Part 5 for the per-step status, and **[Implementation brief](#-implementation-brief--ramfs_ops_read--ramfs_ops_write)**
-> for the actionable version of what is left, written against the code as it stands today.
+> **Where this stands.** Done and boots on both architectures. ramfs owns the tree and the
+> page storage, `tar_load()` is a pure parser that fills it through the public VFS API, and
+> `/root/hello.txt` reads back the bytes that were in the archive. 31 VFS self-tests cover it,
+> including the sparse-hole and page-boundary paths the loader cannot reach on its own.
+>
+> Deliberately not built: `truncate`, `unlink`, and `O_CREAT`/`O_TRUNC` in `sys_open`. None are
+> needed until something deletes or replaces a file. `truncate` is the interesting one — it is
+> the only path by which pages would return to the PMM, so today ramfs never shrinks.
 
 This working document supersedes [`PHASE2_TAR_DRIVER.md`](PHASE2_TAR_DRIVER.md) **Part 4**
 (copy-on-write promotion). Parts 1-3 of that document still stand — how the archive reaches
@@ -278,22 +280,22 @@ never called.
 Each step boots green on its own — no long broken window.
 
 1. ✅ **ramfs tree only** — node struct, `ramfs_create_root`, `create`, `finddir`, `readdir`.
-2. 🚧 **ramfs page storage** — `read`, `write`, `truncate`. **This is the remaining work.**
-   `truncate` was deferred: it is only needed once `O_TRUNC` is wired, and it is the one path
-   by which pages return to the PMM (`unlink` will reuse it as `truncate(node, 0)`).
-   Add `test_ramfs.c` under `core/test/`: create a file, write, read back; `lseek` past EOF and
-   write, assert the hole reads as zeros; truncate down then grow, assert no stale bytes.
-   **This tests the filesystem with zero archive involvement** — the main payoff of the split,
-   and something that was literally impossible with the pre-split design.
+2. ✅ **ramfs page storage** — `read` and `write` done. `truncate` deliberately deferred: it is
+   only needed once `O_TRUNC` is wired, and it is the one path by which pages return to the PMM
+   (`unlink` will reuse it as `truncate(node, 0)`).
+   The storage tests went into `core/test/test_vfs.c` rather than a separate `test_ramfs.c` —
+   driving them through `sys_open`/`sys_write`/`sys_lseek` tests the whole stack rather than
+   ramfs in isolation, and needs no new entry point. **They still involve no archive at all**,
+   which was the point: they build their own files under `/test/scratch`.
 3. ✅ **VFS verbs** — `vfs_ops.create`, `vfs_create`/`vfs_mkdir_parents`, `VFS_PATH_MAX`.
    Two deviations from the plan: `vfs_lookup_parent` was not needed (`vfs_lookup`,
    `vfs_create` and `vfs_mkdir_parents` all share one resolver, `vfs_inner_find_and_create`,
    parameterised by *what it is permitted to create*), and `O_CREAT`/`O_TRUNC` in `sys_open`
    turned out not to be a prerequisite — the loader calls `vfs_create()` and then opens the
    existing node. `truncate` is not in the vtable yet.
-4. ✅ **Rewrite `tar.c` as loader**, swap `main.c`. The acceptance criterion was
-   "`test_vfs()` passes unmodified" — **partially met**: the `ls` half matches exactly, the
-   `cat` half cannot until step 2 lands. That gap is the honest measure of what is left.
+4. ✅ **Rewrite `tar.c` as loader**, swap `main.c`. Acceptance criterion met: `ls /root` and
+   `cat /root/hello.txt` both produce what they did before the split. `main.c` now also
+   `kpanic`s if `tar_load` returns non-zero, after a silent `-1` cost real debugging time.
 
 ---
 
@@ -334,22 +336,46 @@ comment says virtual, which is fine — but `pmm_free` takes a physical address,
 `truncate`/`unlink` will need `pmm_virt_to_phys()` on the way back out. Mixing the two is
 the bug that only surfaces when something is finally freed.
 
-### Two helpers, and the asymmetry between them
+### One page walker, parameterised by whether it may allocate
 
 ```c
-// read side: never allocates. Out of range or hole -> NULL.
-static void *ramfs_get_page(struct ramfs_node_data *node_data, uint64_t index);
-
-// write side: grows the array and allocates the page as needed.
-static void *ramfs_alloc_page(struct ramfs_node_data *node_data, uint64_t index);
+// Resolves `index` to a page. When `allocates` is false it never grows the array and never
+// materialises a page — a NULL return means "hole, read as zeros". When `allocates` is true
+// a NULL return can only mean allocation failure, because a hole would have been filled.
+static void *ramfs_walk_page(struct ramfs_node_data *node_data, uint64_t index, bool allocates);
 ```
 
-`read` **must not** allocate. If it does, reading a sparse file materialises every hole — a
-read of a 1 GiB sparse file eats 1 GiB of RAM. Two separate functions hold that rule better
-than one function with a `bool allocate` parameter.
+The hard rule this has to protect: **`read` must never allocate.** If it does, reading a
+sparse file materialises every hole, and reading a 1 GiB sparse file eats 1 GiB of RAM. Two
+guards carry that:
 
-**Growing the array**, inside `ramfs_alloc_page` — double from a floor, then zero only the
-newly added slots:
+```c
+static void *ramfs_walk_page(struct ramfs_node_data *node_data, uint64_t index, bool allocates) {
+    // grow the array, but only when we are allowed to
+    if (index >= node_data->page_count) {
+        if (!allocates) return NULL;
+        // ... grow, see below ...
+    }
+
+    // materialize the page, but only when we are allowed to
+    if (node_data->pages[index] == NULL && allocates) {
+        // ... allocate, see below ...
+    }
+
+    return node_data->pages[index];
+}
+```
+
+The early `return NULL` also stops the next line from indexing past the array. Both branches
+read as "do the thing, but only when permitted", which is what keeps the merged version
+honest. This is the shape Linux uses too — `pagecache_get_page()` takes an `FGP_CREAT` flag
+deciding whether a miss allocates, rather than splitting into two functions.
+
+The one thing the merged signature costs is that `NULL` is ambiguous in the abstract — hole
+or failure? It is never ambiguous at a call site, because `allocates == true` rules out the
+hole case. Worth stating in the comment above the function, as done here.
+
+**Growing the array** — double from a floor, then zero only the newly added slots:
 
 ```c
 uint64_t new_count = node_data->page_count ? node_data->page_count * 2 : 4;
@@ -368,29 +394,47 @@ PMM does not zero, and a fresh page holds whatever the last owner left in it.
 
 ### The chunk loop
 
-Identical shape in both directions:
+Identical shape in both directions, and this is where `ramfs_walk_page` gets called. The
+index math per iteration:
 
 ```c
-uint64_t remaining = /* read: clamped size | write: size */;
-uint64_t off = offset;
-uint8_t *buf = buffer;
+uint64_t index    = off / PAGE_SIZE;
+uint64_t page_off = off % PAGE_SIZE;
+uint64_t chunk    = PAGE_SIZE - page_off;
+if (chunk > remaining) chunk = remaining;
+```
 
+**Read** — `allocates` is false, and `NULL` means hole:
+
+```c
 while (remaining > 0) {
-    uint64_t index    = off / PAGE_SIZE;
-    uint64_t page_off = off % PAGE_SIZE;
-    uint64_t chunk    = PAGE_SIZE - page_off;
-    if (chunk > remaining) chunk = remaining;
-
-    // read:  page ? memcpy(buf, (uint8_t *) page + page_off, chunk)
-    //             : memset(buf, 0, chunk);
-    // write: memcpy((uint8_t *) page + page_off, buf, chunk);
-
+    // ... index math ...
+    void *page = ramfs_walk_page(node_data, index, false);
+    if (page) {
+        memcpy(buf, (uint8_t *) page + page_off, chunk);
+    } else {
+        memset(buf, 0, chunk);
+    }
     off += chunk; buf += chunk; remaining -= chunk;
 }
 ```
 
-Cast to `uint8_t *` for the byte arithmetic — `void *` arithmetic is a GCC extension, and the
-explicit cast matches the style used everywhere else in the tree.
+**Write** — `allocates` is true, and `NULL` can only mean out of memory:
+
+```c
+while (remaining > 0) {
+    // ... index math ...
+    void *page = ramfs_walk_page(node_data, index, true);
+    if (!page) break;   // short write, return what was actually copied
+    memcpy((uint8_t *) page + page_off, buf, chunk);
+    off += chunk; buf += chunk; remaining -= chunk;
+}
+```
+
+`buf` is `uint8_t *` for the byte arithmetic — `void *` arithmetic is a GCC extension, and
+the explicit cast matches the style used everywhere else in the tree. On the read side it is
+`uint8_t *buf = buffer;`, on the write side `const uint8_t *buf = buffer;`, since
+`ramfs_ops_write` takes a `const void *`.
 
 ### `read`
 
@@ -479,44 +523,43 @@ size the buffer 2001.
 
 ## 📁 Critical files
 
-- ✅ `kernel/fs/ramfs/ramfs.c` + `kernel/include/fs/ramfs/ramfs.h` — the whole storage layer.
-  Tree, `create`, `finddir`, `readdir` done; `ramfs_ops_read`/`ramfs_ops_write` still stubs.
+- ✅ `kernel/fs/ramfs/ramfs.c` + `kernel/include/fs/ramfs/ramfs.h` — the whole storage layer,
+  read and write included. `ramfs_walk_page(node_data, index, alloc)` is the single page
+  resolver; `alloc` is false on the read path so a read can never materialise a hole.
 - ✅ `kernel/include/fs/vfs/vfs.h` — `create` in `vfs_ops`, `VFS_PATH_MAX`. `truncate` not added.
 - ✅ `kernel/fs/vfs/vfs.c` — `vfs_create`, `vfs_mkdir_parents`, both over one shared resolver
 - ⬜ `kernel/fs/vfs/file.c` — `O_CREAT` / `O_TRUNC` in `sys_open` still unwired (not blocking)
 - ✅ `kernel/fs/tar/tar.c` + `kernel/include/fs/tar/tar.h` — reduced to `tar_load()`
-- ✅ `kernel/core/main.c` — ramfs root mounted, then `tar_load`. `vfs_init()`/`file_init()` are
-  still never called; harmless while both only zero already-zero statics, worth fixing.
-- ⬜ `kernel/core/test/test_ramfs.c` — the archive-free storage test, once step 2 lands
+- ✅ `kernel/core/main.c` — ramfs root mounted, then `tar_load`, whose failure now `kpanic`s.
+  `vfs_init()`/`file_init()` are still never called; harmless while both only zero
+  already-zero statics, worth fixing.
+- ✅ `kernel/core/test/test_vfs.c` — the archive-free storage tests landed here rather than in
+  a separate `test_ramfs.c`, so they exercise the syscall layer at the same time.
 
 ## 📝 Docs to update alongside the code
 
-- ✅ `ROADMAP.md` — Phase 2 tasks 3-6 rewritten around the split, pointing here.
+- ✅ `ROADMAP.md` — Phase 2 marked complete, tasks rewritten around the split.
 - ✅ `PHASE2_TAR_DRIVER.md` — Parts 3 and 4 marked superseded (Parts 1-2 still stand).
+- ✅ `PHASE2_VFS.md` — Steps 11 and 13 updated to what was actually built.
 - ✅ `README.md` — ramfs/initrd subsystem, `krealloc`, tagged `kprintf`, `core/test/` layout.
-- ⬜ Once page storage lands: flip this document's status banner and Part 5 step 2.
-- `README.md:39` and `README.md:64` are **already stale**: they claim no filesystem is mounted
-  at `/` and that the initrd tmpfs "is the next thing being built", but the tar read path has
-  been mounted and working since commit `13b8ced`. Fix as part of this work.
-- `README.md:37` enumerates the `vfs_ops` members — add the new verbs.
 
 ## 🪜 Verification
 
-- `make` for both AArch64 and x86_64; boot with `cmdline: pros.tests` (currently enabled) and
-  read `logs/qemu-<arch>.log`. The 18 existing checks must still pass.
-- **Acceptance criterion**: `test_vfs()` prints the `cat` block with `HelloWorld` again. That
-  output has been missing since the split and is the single measure of whether step 2 is done.
-- **The more valuable test is the archive-free one.** Add `kernel/core/test/test_ramfs.c` —
-  the Makefile glob picks it up automatically; declare `void test_ramfs(void);` in
-  `include/core/test/test.h` and call it from `main.c` after `tar_load`. Using
-  `test_report("RAMFS", ...)`:
-  - create, write, read back — content matches
-  - `lseek` well past EOF, write, then read the gap — **must read as zeros**. This is the hole
-    path, and the tar loader will never exercise it because it only ever writes sequentially
-    from offset 0.
-  - write across a page boundary (say 8000 bytes at offset 100) — content matches, which is
-    what proves the chunk loop's `page_off` arithmetic
-  - read past EOF returns 0; read of a `VFS_DIRECTORY` node returns -1
-  - a read that runs into EOF returns the clamped count, not the requested one
-- Once `truncate` exists: truncate down then grow, and assert no stale bytes reappear in the
-  tail of the new last partial page.
+Done. `make` builds both AArch64 and x86_64; booting with `cmdline: pros.tests` runs 64 checks,
+all passing on both, of which 31 are VFS.
+
+The tests that matter for this document, all in `core/test/test_vfs.c`:
+
+- initrd content compared with `memcmp` rather than eyeballed as printed text
+- create, write, read back through `sys_open`/`sys_write`/`sys_read`
+- an overwrite *inside* a file that must not extend it — the regression guard for the size
+  double-count that this work introduced and then fixed
+- 300 bytes written at offset 4000, straddling two pages, which is the only coverage of the
+  chunk loop's `page_offset` arithmetic
+- `lseek` to 8192, write, then assert **both skipped pages read back as zeros** and the data
+  after the hole survives. The tar loader only ever writes sequentially from offset 0, so
+  nothing else in the tree can reach the hole path.
+- read of a `VFS_DIRECTORY` node returns -1, write to one likewise
+
+Still uncovered, and honestly so: `truncate` (shrink then grow, asserting no stale bytes in the
+tail of the new last partial page) does not exist yet, so neither does its test.

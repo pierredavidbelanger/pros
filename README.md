@@ -4,7 +4,9 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
 
 > [!NOTE]
 > PrOS is a personal hobby project created to explore bare-metal programming, learn low-level system software development, and have fun building an OS from scratch! 
-> AI IS utilized, but strictly as a tutor, mentor, debugger, rubber duck and code reviewer, not to generate slop I don't care about.
+> AI IS utilized as a tutor, mentor, debugger, rubber duck, code reviewer and doc writer, not to generate slop I don't care about.
+> One deliberate exception: the self-test suites under `kernel/core/test/` are mostly AI-written. I love tests, just not enough to write them.
+> I try to keep the AI commit attributions, so modifications lands with co-author trailers so the git history says plainly who wrote what.
 
 ---
 
@@ -21,11 +23,11 @@ Everything below is built and boots on **both** architectures. Sources are in `k
 | **Kernel heap** | First-fit free-list allocator with block splitting, coalescing on free, and a `krealloc` that grows in place by absorbing a free adjacent block. Alignment is guaranteed on the returned pointer (not merely on the requested size), and every size calculation is overflow-checked. |
 | **Exceptions & interrupts** | IDT with assembly ISR stubs on x86_64, EL1 vector table on AArch64. Page faults route into the VMM's demand pager; anything genuinely unhandled dumps full register state before halting, so a crash is diagnosable from the boot log alone. |
 | **Virtual filesystem (VFS)** | Mount table with longest-prefix matching, a `vfs_ops` vtable any filesystem can implement, one shared path resolver behind `vfs_lookup`/`vfs_create`/`vfs_mkdir_parents`, and a file-descriptor table under Linux-shaped syscalls (`sys_open`, `sys_read`, `sys_lseek`, …). |
-| **ramfs + initrd loader** 🚧 | `ramfs` owns storage and is mounted at `/`; `tar_load()` is *only* a ustar parser that fills it through the public VFS API — the same separation as Linux's `rootfs` + `unpack_to_rootfs()`, so the archive format never touches filesystem internals. The directory tree loads today; file content storage is the work in progress. |
+| **ramfs + initrd loader** | `ramfs` owns storage and is mounted at `/`; `tar_load()` is *only* a ustar parser that fills it through the public VFS API — the same separation as Linux's `rootfs` + `unpack_to_rootfs()`, so the archive format never touches filesystem internals. Files are read/write, stored as a sparse page list where an unallocated page reads back as zeros, so seeking past the end and writing produces a real hole rather than megabytes of stored nothing. |
 | **Console** | Output fans out to the serial port (live from the very first line of boot) and to the framebuffer terminal once it exists, so the boot log reads identically on screen and over `-serial stdio`. |
 | **Framebuffer terminal** | Direct 32-bit pixel drawing plus an 8x16 bitmap font renderer with line wrapping and scrolling. UEFI leaves no hardware text mode behind, so the terminal is drawn by hand, pixel by pixel. |
 | **Logging** | `kprintf(tag, ...)` stamps every line with a padded `[SUBSYS]` prefix, keeping the boot log aligned in one column and greppable by subsystem. `kpanic` reports and halts. |
-| **Self-tests** | One file per subsystem under `core/test/`, gated behind a `pros.tests` kernel command line so a normal boot stays quiet. Each check prints a single `PASS`/`FAIL` line — 18 of them today, across PMM, heap, VMM and VFS. |
+| **Self-tests** | One file per subsystem under `core/test/`, gated behind a `pros.tests` kernel command line so a normal boot stays quiet. Each check prints a single `PASS`/`FAIL` line — 64 of them today, across PMM, heap, VMM and VFS, including the sparse-file and page-boundary paths the initrd loader can never reach on its own. |
 | **Freestanding runtime** | Cross-compiled with `zig cc`, no libc, no host headers. Bundles the `mem*`/`str*` routines the kernel actually uses — `strcpy`/`strncpy` are deliberately absent, since neither guarantees a terminated result. |
 
 > [!NOTE]
@@ -57,7 +59,7 @@ Everything below is built and boots on **both** architectures. Sources are in `k
 
 Development happens in iterative phases, tracked entirely in [`doc/`](doc/ROADMAP.md) — `ROADMAP.md` holds the current phase breakdown and status, and each phase gets its own working document (currently `PHASE2_RAMFS.md`) while it's actively being designed or built. Superseded designs are kept and marked rather than deleted — `PHASE2_TAR_DRIVER.md` and `PHASE2_VFS.md` are both still there with banners explaining what replaced them and why. That's the source of truth for what's done and what's next, not this README.
 
-AI is used extensively to help manage that folder — keeping the roadmap organized, writing up designs before any code gets touched, and tracking what's actually done versus still open. I write all the kernel code myself, that's the whole point of this project, but having a tutor around to explain the *why* behind a design, walk through how something actually works at the hardware level, and keep an honest paper trail of decisions (including the ones that got ripped out and redone) makes it a lot easier to stay oriented on a project this size, built a little at a time.
+AI is used extensively to help manage that folder — keeping the roadmap organized, writing up designs before any code gets touched, and tracking what's actually done versus still open.
 
 ---
 

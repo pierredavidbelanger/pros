@@ -130,4 +130,4 @@ This is the actual design question. Two approaches, worth understanding both so 
 
 ## 🪜 Verification
 
-🗄️ Historical — this section described the state before the split, when `cat` read directly out of the TAR blob. That path no longer exists. Today `test_vfs()` confirms the *structure* loads (`/root` resolves, `readdir` lists `hello.txt`, `/root/hello.txt` opens) but prints no content, because `ramfs_ops_read`/`ramfs_ops_write` are still stubs. Restoring `cat` is the acceptance criterion for [`PHASE2_RAMFS.md`](PHASE2_RAMFS.md) Part 5 step 2.
+🗄️ Historical — this section described the state before the split, when `cat` read directly out of the TAR blob. That path no longer exists: the bytes are copied into ramfs-owned pages at load time and the archive is never read again afterwards. The behaviour it described is back and verified rather differently — `core/test/test_vfs.c` compares the file content with `memcmp` instead of printing it for a human to check. See [`PHASE2_RAMFS.md`](PHASE2_RAMFS.md).
