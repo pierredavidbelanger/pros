@@ -1,7 +1,9 @@
 #ifndef PROS_PIC_H
 #define PROS_PIC_H
 
-// 8259A PIC pair. Even port is command, odd port is data;
+#include "stdc.h"
+
+// 8259A PIC pair. Even port is command, odd port is data
 #define PIC_MASTER_CMD   0x20 // ICW1, OCW2 (EOI), OCW3
 #define PIC_MASTER_DATA  0x21 // ICW2, ICW3, ICW4, then OCW1 (mask)
 #define PIC_SLAVE_CMD    0xA0
@@ -24,5 +26,7 @@
 // #define PIC_MASK_ALLOW_ALL 0x00 // means unmasked/allowed
 
 void pic_init(void);
+
+void pic_set_irq_mask(uint8_t irq, bool enabled);
 
 #endif //PROS_PIC_H

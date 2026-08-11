@@ -98,3 +98,33 @@ bool arch_vmm_fault_is_write(uint64_t fault_code) {
 void arch_vmm_invlpg(void *virt_addr) {
     asm volatile ("invlpg (%0)" :: "r"(virt_addr) : "memory");
 }
+
+// Timer & Interrupt
+
+#define PIT_CMD_PORT 0x43
+#define PIT_DATA_PORT  0x40
+// The input clock is 1,193,182 Hz, the PIT expect a divisor of this.
+#define PIT_INPUT_HZ 1193182
+
+void arch_timer_init(uint32_t hz) {
+    uint16_t divisor = PIT_INPUT_HZ / hz;
+    // bit  7 6 | 5 4 | 3 2 1 | 0
+    //      0 0 | 1 1 | 0 1 1 | 0     = 0x36
+    //      └─┬─┘ └─┬─┘ └──┬──┘ └─ BCD/binary: 0 = binary
+    //        │     │      └─ operating mode: 011 = mode 3 (square wave)
+    //        │     └─ access mode: 11 = lobyte then hibyte
+    //        └─ channel select: 00 = channel 0
+    outb(PIT_CMD_PORT, 0x36);
+    outb(PIT_DATA_PORT, divisor & 0xFF); // lowbyte
+    outb(PIT_DATA_PORT, divisor >> 8); // hibyte
+    // IRQ0 is wired to the PIT output
+    pic_set_irq_mask(0, true);
+}
+
+void arch_irq_enable(void) {
+    asm volatile ("sti" ::: "memory");
+}
+
+void arch_irq_disable(void) {
+    asm volatile ("cli" ::: "memory");
+}

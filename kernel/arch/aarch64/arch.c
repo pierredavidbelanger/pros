@@ -153,3 +153,11 @@ void arch_vmm_invlpg(void *virt_addr) {
     (void)virt_addr;
     asm volatile ("dsb ish\n\ttlbi vmalle1is\n\tdsb ish\n\tisb" ::: "memory");
 }
+
+// Timer & Interrupt
+
+void arch_timer_init(uint32_t hz) {}
+
+void arch_irq_enable(void) {}
+
+void arch_irq_disable(void) {}

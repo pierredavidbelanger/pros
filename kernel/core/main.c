@@ -5,6 +5,7 @@
 #include "core/console.h"
 #include "core/kprintf.h"
 #include "core/memory.h"
+#include "core/timer.h"
 #include "core/test/test.h"
 #include "mm/pmm.h"
 #include "mm/heap.h"
@@ -12,6 +13,10 @@
 #include "fs/vfs/vfs.h"
 #include "fs/ramfs/ramfs.h"
 #include "fs/tar/tar.h"
+
+// Tick frequency.
+// Fast enough for a responsive scheduler time slice later, slow enough that the handler's cost is irrelevant.
+#define TIMER_HZ 100
 
 void _start(void) {
     if (!LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision)) {
@@ -24,10 +29,6 @@ void _start(void) {
     kprintf("CON", "Initialized console, ready to kprintf on the serial console\n");
 
     kprintf("K", "Wellcome to PjErOS!\n");
-
-#ifdef __x86_64__
-        asm volatile ("int $32");
-#endif
 
     // Self-tests are enabled in the limine.conf, this serves two purpose:
     // 1- i learn how to actually use limine cmdline feature
@@ -67,6 +68,21 @@ void _start(void) {
     // test_vfs even though ramfs may not have been correctly loaded or mounted
     if (tests_enabled) test_vfs();
 
-    kprintf("K", "All done here, shutting down.\n");
-    arch_shutdown();
+    kprintf("TIMER", "Starting timer at %d Hz\n", TIMER_HZ);
+    arch_timer_init(TIMER_HZ);
+
+    kprintf("IRQ", "Enable IRQ\n");
+    arch_irq_enable();
+
+    //kprintf("K", "All done here, shutting down.\n");
+    //arch_shutdown();
+
+    uint64_t last_seconds = 0;
+    while (true) {
+        uint64_t seconds = timer_get_ticks() / TIMER_HZ;
+        if (seconds != last_seconds) {
+            kprintf("K", "Time fly %zu\n", seconds);
+            last_seconds = seconds;
+        }
+    }
 }
