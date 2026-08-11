@@ -1,6 +1,7 @@
 #include "arch/arch.h"
 
 #include "idt.h"
+#include "pic.h"
 #include "io.h"
 #include "mm/vmm.h"
 #include "mm/pmm.h"
@@ -8,6 +9,7 @@
 
 void arch_init(void) {
     idt_init();
+    pic_init();
 }
 
 void arch_halt(void) {
