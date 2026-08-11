@@ -1,6 +1,7 @@
 #include "arch/arch.h"
 
 #include "idt.h"
+#include "io.h"
 #include "mm/vmm.h"
 #include "mm/pmm.h"
 #include "core/memory.h"
@@ -15,15 +16,11 @@ void arch_halt(void) {
     }
 }
 
-static void arch_outw(uint16_t port, uint16_t val) {
-    asm volatile ("outw %0, %1" : : "a"(val), "Nd"(port));
-}
-
 void arch_shutdown(void) {
     // QEMU q35 fallback port
-    arch_outw(0x604, 0x2000);
+    outw(0x604, 0x2000);
     // Fallback: QEMU debug-exit port
-    arch_outw(0x501, 0x00);
+    outw(0x501, 0x00);
     // Fallback: halt if poweroff is not supported by hardware
     arch_halt();
 }

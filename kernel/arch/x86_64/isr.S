@@ -48,6 +48,22 @@ ISR_NOERRCODE 28
 ISR_NOERRCODE 29
 ISR_ERRCODE   30 /* Security Exception */
 ISR_NOERRCODE 31
+ISR_NOERRCODE 32
+ISR_NOERRCODE 33
+ISR_NOERRCODE 34
+ISR_NOERRCODE 35
+ISR_NOERRCODE 36
+ISR_NOERRCODE 37
+ISR_NOERRCODE 38
+ISR_NOERRCODE 39
+ISR_NOERRCODE 40
+ISR_NOERRCODE 41
+ISR_NOERRCODE 42
+ISR_NOERRCODE 43
+ISR_NOERRCODE 44
+ISR_NOERRCODE 45
+ISR_NOERRCODE 46
+ISR_NOERRCODE 47
 
 isr_common_stub:
     pushq %rax
@@ -98,3 +114,7 @@ isr_stub_table:
     .quad isr_stub_20, isr_stub_21, isr_stub_22, isr_stub_23
     .quad isr_stub_24, isr_stub_25, isr_stub_26, isr_stub_27
     .quad isr_stub_28, isr_stub_29, isr_stub_30, isr_stub_31
+    .quad isr_stub_32, isr_stub_33, isr_stub_34, isr_stub_35
+    .quad isr_stub_36, isr_stub_37, isr_stub_38, isr_stub_39
+    .quad isr_stub_40, isr_stub_41, isr_stub_42, isr_stub_43
+    .quad isr_stub_44, isr_stub_45, isr_stub_46, isr_stub_47

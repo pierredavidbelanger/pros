@@ -25,6 +25,10 @@ void _start(void) {
 
     kprintf("K", "Wellcome to PjErOS!\n");
 
+#ifdef __x86_64__
+        asm volatile ("int $32");
+#endif
+
     // Self-tests are enabled in the limine.conf, this serves two purpose:
     // 1- i learn how to actually use limine cmdline feature
     // 2- i can make the kernel less verbose when i want

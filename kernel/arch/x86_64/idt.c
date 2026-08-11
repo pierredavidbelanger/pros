@@ -1,9 +1,12 @@
 #include "idt.h"
 
+#include "io.h"
+#include "pic.h"
 #include "core/kprintf.h"
 #include "arch/arch.h"
 #include "mm/vmm.h"
 #include "core/memory.h"
+#include "core/timer.h"
 
 struct gdt_entry {
     uint16_t limit_low;
@@ -39,9 +42,17 @@ static uint8_t x86_64_exception_stack[16384] __attribute__((aligned(16)));
 static struct idt_entry idt_entries[256];
 static struct idt_ptr   idt_pointer;
 
-extern void *isr_stub_table[32];
+#define IDT_STUB_COUNT 48 // must match the stubs and table in isr.S
+_Static_assert(IDT_STUB_COUNT >= PIC_VECTOR_BASE + PIC_IRQ_COUNT, "isr.S has no stubs for the PIC's vector range");
 
-static const char *exception_names[32] = {
+#define IDT_EXCEPTION_COUNT 32
+
+#define IDT_INT_IS_IRQ(int_no) ((int_no) >= PIC_VECTOR_BASE && (int_no) < PIC_VECTOR_BASE + PIC_IRQ_COUNT)
+#define IDT_INT_TO_IRQ(int_no) ((int_no) - PIC_VECTOR_BASE)
+
+extern void *isr_stub_table[IDT_STUB_COUNT];
+
+static const char *exception_names[IDT_EXCEPTION_COUNT] = {
     "Divide-by-zero (#DE)", "Debug (#DB)",
     "Non-maskable Interrupt (#NMI)", "Breakpoint (#BP)",
     "Overflow (#OF)", "Bound Range Exceeded (#BR)",
@@ -117,8 +128,8 @@ void idt_init(void) {
     idt_pointer.limit = (sizeof(struct idt_entry) * 256) - 1;
     idt_pointer.base  = (uint64_t)&idt_entries;
 
-    // Populate CPU exception handlers 0..31
-    for (uint8_t i = 0; i < 32; i++) {
+    // Populate CPU interrupt handlers up to (excluding) IDT_STUB_COUNT
+    for (uint8_t i = 0; i < IDT_STUB_COUNT; i++) {
         // Use IST1 (ist = 1) for Double Fault (#DF = 8) and Page Fault (#PF = 14)
         uint8_t ist = (i == 8 || i == 14) ? 1 : 0;
         idt_set_gate(i, (uint64_t)isr_stub_table[i], 0x08, 0x8E, ist);
@@ -138,9 +149,23 @@ void x86_64_exception_handler(struct x86_64_registers *regs) {
         }
     }
 
+    if (IDT_INT_IS_IRQ(regs->int_no)) {
+        uint64_t irq_no = IDT_INT_TO_IRQ(regs->int_no);
+        if (irq_no == 0) {
+            timer_tick();
+            kprintf("X8664", "HANDLED %zu: tick\n", regs->int_no);
+        } else {
+            kprintf("X8664", "HANDLED %zu: nothing\n", regs->int_no);
+        }
+        // EOI - End Of Interrupt
+        if (irq_no >= PIC_IRQS_PER_CHIP) outb(PIC_SLAVE_CMD, PIC_EOI);  // slave, only when it came via the cascade
+        outb(PIC_MASTER_CMD, PIC_EOI);                                  // master, always
+        return;
+    }
+
     // Unrecoverable — dump register state
     kprintf("X8664", "============= [ UNHANDLED EXCEPTION ] =============\n");
-    const char *name = (regs->int_no < 32) ? exception_names[regs->int_no] : "Unknown";
+    const char *name = (regs->int_no < IDT_EXCEPTION_COUNT) ? exception_names[regs->int_no] : "Unknown";
     kprintf("X8664", " Exception %zu: %s\n", regs->int_no, name);
     kprintf("X8664", " Error Code: 0x%lx\n", regs->error_code);
     kprintf("X8664", " RIP: 0x%016lx  CS: 0x%04lx  RFLAGS: 0x%016lx\n", regs->rip, regs->cs, regs->rflags);

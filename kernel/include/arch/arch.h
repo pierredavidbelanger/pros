@@ -10,7 +10,7 @@ void arch_halt(void);
 // Cleanly power off the machine
 void arch_shutdown(void);
 
-// ─── VMM Architecture Primitives ─────────────────────────────
+// VMM
 
 // Build a hardware PTE from physical address + abstract VMM flags.
 // Set is_table=true for intermediate (non-leaf) table descriptors.
@@ -49,5 +49,12 @@ bool arch_vmm_fault_is_write(uint64_t fault_code);
 
 // Invalidate TLB entry for a specific virtual address
 void arch_vmm_invlpg(void *virt_addr);
+
+// Timer & Interrupt
+
+void arch_timer_init(uint32_t hz);
+
+void arch_irq_enable(void);
+void arch_irq_disable(void);
 
 #endif //PROS_ARCH_H
