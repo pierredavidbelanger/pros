@@ -6,6 +6,7 @@
 #include "mm/vmm.h"
 #include "mm/pmm.h"
 #include "core/memory.h"
+#include "core/kprintf.h"
 
 void arch_init(void) {
     idt_init();
@@ -105,9 +106,16 @@ void arch_vmm_invlpg(void *virt_addr) {
 #define PIT_DATA_PORT  0x40
 // The input clock is 1,193,182 Hz, the PIT expect a divisor of this.
 #define PIT_INPUT_HZ 1193182
+#define PIT_MAX_DIVISOR 0xFFFF
 
 void arch_timer_init(uint32_t hz) {
-    uint16_t divisor = PIT_INPUT_HZ / hz;
+    if (hz == 0) {
+        kpanic("arch_timer_init: hz must not be zero");
+    }
+    uint32_t divisor = PIT_INPUT_HZ / hz;
+    if (divisor == 0 || divisor > PIT_MAX_DIVISOR) {
+        kpanic("arch_timer_init: hz outside the PIT's usable range");
+    }
     // bit  7 6 | 5 4 | 3 2 1 | 0
     //      0 0 | 1 1 | 0 1 1 | 0     = 0x36
     //      └─┬─┘ └─┬─┘ └──┬──┘ └─ BCD/binary: 0 = binary
