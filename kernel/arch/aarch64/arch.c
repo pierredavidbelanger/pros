@@ -1,5 +1,7 @@
 #include "arch/arch.h"
 
+#include "gic.h"
+#include "timer.h"
 #include "mm/vmm.h"
 #include "mm/pmm.h"
 #include "core/memory.h"
@@ -47,7 +49,7 @@ void arch_shutdown(void) {
     arch_halt();
 }
 
-// ─── VMM Architecture Primitives ─────────────────────────────
+// VMM
 
 uint64_t arch_vmm_make_pte(uint64_t phys_addr, uint64_t vmm_flags, bool is_table) {
     uint64_t pte = phys_addr & 0x0000FFFFFFFFF000ULL;
@@ -156,8 +158,16 @@ void arch_vmm_invlpg(void *virt_addr) {
 
 // Timer & Interrupt
 
-void arch_timer_init(uint32_t hz) {}
+void arch_timer_init(uint32_t hz) {
+    // The controller first: the timer's output must have somewhere to go before it is unmasked.
+    gic_init();
+    arm_timer_init(hz);
+}
 
-void arch_irq_enable(void) {}
+void arch_irq_enable(void) {
+    asm volatile ("msr daifclr, #2" ::: "memory");
+}
 
-void arch_irq_disable(void) {}
+void arch_irq_disable(void) {
+    asm volatile ("msr daifset, #2" ::: "memory");
+}

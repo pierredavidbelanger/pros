@@ -1,5 +1,5 @@
-#ifndef PROS_PIC_H
-#define PROS_PIC_H
+#ifndef PROS_X86_64_PIC_H
+#define PROS_X86_64_PIC_H
 
 #include "stdc.h"
 
@@ -29,4 +29,4 @@ void pic_init(void);
 
 void pic_set_irq_mask(uint8_t irq, bool enabled);
 
-#endif //PROS_PIC_H
+#endif //PROS_X86_64_PIC_H

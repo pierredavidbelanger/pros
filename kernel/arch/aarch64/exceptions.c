@@ -1,7 +1,10 @@
 #include "exceptions.h"
 
+#include "gic.h"
+#include "timer.h"
 #include "core/earlycon.h"
 #include "core/kprintf.h"
+#include "core/timer.h"
 #include "arch/arch.h"
 #include "mm/vmm.h"
 
@@ -25,6 +28,33 @@ static const char *vector_names[16] = {
 };
 
 void aarch64_exception_handler(struct aarch64_registers *regs) {
+    // IRQ vector slots:
+    // 1 = current EL on SP_EL0,
+    // 5 = current EL on SP_EL1
+    // (and 9 = lower EL, once userland exists).
+    // Limine leaves SPSel = 0, so kernel IRQs arrive as 1 today.
+    if (regs->vector_type == 1 || regs->vector_type == 5) {
+        uint32_t intid = gic_acknowledge();
+
+        // Nothing left to take.
+        // Return without an EOI: ending an interrupt that was never acknowledged corrupts the controller state
+        if (intid == GIC_INTID_SPURIOUS) {
+            return;
+        }
+
+        if (intid == GIC_INTID_VIRT_TIMER) {
+            // Rearm before the EOI.
+            arm_timer_rearm();
+            timer_tick();
+        } else {
+            kprintf("ARM64", "HANDLED IRQ %u: nothing\n", intid);
+        }
+
+        // EOI, needs the be the one we ack, otherwise we will have a bad time
+        gic_eoi(intid);
+        return;
+    }
+
     uint32_t esr_ec = (regs->esr >> 26) & 0x3F;
 
     // EC=0x20: Instruction Abort from lower EL

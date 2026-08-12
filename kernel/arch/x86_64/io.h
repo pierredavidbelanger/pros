@@ -1,5 +1,5 @@
-#ifndef PROS_IO_H
-#define PROS_IO_H
+#ifndef PROS_X86_64_IO_H
+#define PROS_X86_64_IO_H
 
 #include "stdc.h"
 
@@ -23,4 +23,4 @@ static inline uint16_t inw(uint16_t port) {
     return ret;
 }
 
-#endif //PROS_IO_H
+#endif //PROS_X86_64_IO_H
