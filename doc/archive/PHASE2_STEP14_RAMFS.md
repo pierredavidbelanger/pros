@@ -10,8 +10,8 @@
 > needed until something deletes or replaces a file. `truncate` is the interesting one — it is
 > the only path by which pages would return to the PMM, so today ramfs never shrinks.
 
-This working document supersedes [`PHASE2_TAR_DRIVER.md`](PHASE2_TAR_DRIVER.md) **Part 4**
-(copy-on-write promotion). Parts 1-3 of that document still stand — how the archive reaches
+This working document supersedes [`PHASE2_STEP13_TAR_DRIVER.md`](PHASE2_STEP13_TAR_DRIVER.md) **Chapter 4**
+(copy-on-write promotion). Chapters 1-3 of that document still stand — how the archive reaches
 the kernel and the shape of the ustar bytes hasn't changed. What changes is *who owns the
 filesystem*.
 
@@ -27,7 +27,7 @@ filesystem*.
 (`struct tar_node_data`), the `vfs_ops` vtable, `finddir`/`readdir`/`read`, *and* the ustar
 parser — 232 lines, one file, four responsibilities.
 
-Bolting write support onto that (the CoW design in `PHASE2_TAR_DRIVER.md` Part 4) makes it
+Bolting write support onto that (the CoW design in `PHASE2_STEP13_TAR_DRIVER.md` Chapter 4) makes it
 worse rather than better, because **a writable tar-fs isn't a tar-fs at all**. It's a RAM
 filesystem that happens to have been kickstarted from an archive. Follow the CoW road and
 every node ends up carrying an "is this pointer heap-owned or blob-owned?" flag, `read()`
@@ -39,7 +39,7 @@ the data structure's type name.
 
 ---
 
-## 🏗️ Part 1: The pattern — Linux `rootfs` + initramfs unpacker
+## 🏗️ Chapter 1: The pattern — Linux `rootfs` + initramfs unpacker
 
 Linux does exactly this split, and it's worth knowing the real names.
 
@@ -76,7 +76,7 @@ that, and earn the `tmpfs` name later by adding a size limit.
 
 ---
 
-## 🏗️ Part 2: `kernel/fs/ramfs/` — the storage layer
+## 🏗️ Chapter 2: `kernel/fs/ramfs/` — the storage layer
 
 New files: `kernel/fs/ramfs/ramfs.c` and `kernel/include/fs/ramfs/ramfs.h`.
 `kernel/Makefile:30` globs `find core mm drivers fs -name '*.c'`, so no build change needed.
@@ -105,7 +105,7 @@ struct ramfs_node {
 
 Logical file length stays in `vfs_node->size` (the field already exists);
 `page_count * PAGE_SIZE` is the capacity. Keeping the tree links inside `ramfs_node` rather
-than promoting them into `vfs_node` is deliberate — see Part 6 on the dentry/inode split.
+than promoting them into `vfs_node` is deliberate — see Chapter 6 on the dentry/inode split.
 
 ### Data is always copied — no zero-copy blob pointers
 
@@ -114,7 +114,7 @@ content lands in ramfs-owned pages. The alternative (attach blob pointers, promo
 write) saves RAM but reintroduces the ownership flag, which is precisely the un-seamless
 thing this refactor exists to delete. Real tmpfs has no such flag.
 
-The RAM cost is recoverable and should be treated as a follow-up, not a blocker — see Part 6.
+The RAM cost is recoverable and should be treated as a follow-up, not a blocker — see Chapter 6.
 
 ### Storage: page list, not a flat buffer
 
@@ -175,7 +175,7 @@ surprise later.
 
 ---
 
-## 🏗️ Part 3: The VFS creation vocabulary
+## 🏗️ Chapter 3: The VFS creation vocabulary
 
 `struct vfs_ops` currently has **no way to create anything**. That's the missing vocabulary
 the loader needs, and it's needed for Phase 3's `mkdir`/`O_CREAT` regardless.
@@ -219,7 +219,7 @@ good sign the seam is in the right place.
 
 ---
 
-## 🏗️ Part 4: `tar.c` becomes a loader
+## 🏗️ Chapter 4: `tar.c` becomes a loader
 
 `kernel/include/fs/tar/tar.h` shrinks to:
 
@@ -275,7 +275,7 @@ never called.
 
 ---
 
-## 🪜 Part 5: Order of work
+## 🪜 Chapter 5: Order of work
 
 Each step boots green on its own — no long broken window.
 
@@ -301,16 +301,16 @@ Each step boots green on its own — no long broken window.
 
 ## 🔨 Implementation brief — `ramfs_ops_read` / `ramfs_ops_write`
 
-Part 2 above sketches the storage model. This section is the actionable version of step 2,
+Chapter 2 above sketches the storage model. This section is the actionable version of Chapter 2,
 written against the code as it actually stands today.
 
 > [!NOTE]
 > Mentor-mode reminder (`.rules.md`): a design reference to code from by hand, not code to
 > paste in.
 
-### What changed since Part 2 was written
+### What changed since Chapter 2 was written
 
-- **`krealloc()` now exists.** Part 2 says "allocate-copy-free with doubling, since `heap.c`
+- **`krealloc()` now exists.** Chapter 2 says "allocate-copy-free with doubling, since `heap.c`
   has no `krealloc`". Use `krealloc` instead. It does **not** zero the grown tail, so new
   slots still need clearing before they can read as holes.
 - **`pmm_alloc()` returns 0 on exhaustion** instead of `kpanic`-ing, so the failure branches
@@ -498,7 +498,7 @@ size the buffer 2001.
 
 ---
 
-## 🔭 Part 6: Known follow-ups, deliberately out of scope
+## 🔭 Chapter 6: Known follow-ups, deliberately out of scope
 
 - **Reclaim the initrd blob.** `kernel/mm/pmm.c:40` only reclaims `LIMINE_MEMMAP_USABLE`, so
   the `BOOTLOADER_RECLAIMABLE` region holding the archive is never handed to the PMM — it is
@@ -539,7 +539,7 @@ size the buffer 2001.
 ## 📝 Docs to update alongside the code
 
 - ✅ `ROADMAP.md` — Phase 2 marked complete, tasks rewritten around the split.
-- ✅ `PHASE2_TAR_DRIVER.md` — Parts 3 and 4 marked superseded (Parts 1-2 still stand).
+- ✅ `PHASE2_STEP13_TAR_DRIVER.md` — Chapters 3 and 4 marked superseded (Chapters 1-2 still stand).
 - ✅ `PHASE2_VFS.md` — Steps 11 and 13 updated to what was actually built.
 - ✅ `README.md` — ramfs/initrd subsystem, `krealloc`, tagged `kprintf`, `core/test/` layout.
 

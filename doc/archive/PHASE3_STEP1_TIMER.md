@@ -11,13 +11,13 @@
 > question never got forced), and gating the per-second print behind `pros.tests` (see C1).
 
 > [!NOTE]
-> This is the first bite of [`PHASE3_USERLAND.md`](PHASE3_USERLAND.md) — its Part 10, Step 1,
-> expanded into individually verifiable baby steps. Nothing here involves tasks, scheduling,
-> userland, or privilege levels. Read Part 4 of the phase doc for the *why* behind the
-> architecture choices; this document is the *how*, in order.
+> **Phase 3 Step 1**, from [`PHASE3_PREEMPTION.md`](../PHASE3_PREEMPTION.md) Chapter 10, expanded
+> into individually verifiable Parts. Nothing here involves tasks, scheduling, userland, or
+> privilege levels. Read Chapter 4 of the phase document for the *why* behind the architecture
+> choices; this document is the *how*, in order.
 
 > [!NOTE]
-> Mentor-mode reminder (see the note at the top of [`../README.md`](../README.md)): this is a
+> Mentor-mode reminder (see the note at the top of [`../README.md`](../../README.md)): this is a
 > design reference to code from by hand, not code to paste in. Register names, offsets,
 > magic values and ordering constraints are given — the code isn't. Where a value is stated,
 > it's worth confirming against the spec rather than trusting this file.
@@ -97,7 +97,7 @@ Do **one architecture completely**, then the other. Interleaving them means debu
 unfamiliar interrupt controllers at once with a shared, also-new C abstraction in the middle.
 
 Recommended: **x86_64 first.** Not because it's more elegant — the PIC is a 1981 part and it
-shows — but because the IDT infrastructure already exists, so the first two baby steps are
+shows — but because the IDT infrastructure already exists, so the first two Parts are
 nearly free and prove out the dispatch path before any hardware is involved.
 
 > One exception: **B1 and B2** (read the ARM timer frequency, poll the timer with no interrupt
@@ -413,7 +413,7 @@ and it belongs to this step and B4.
 
 **Goal:** ticks.
 
-This is the biggest single baby step in Step 1. Four independent things must all be right,
+This is the biggest single Part in Step 1. Four independent things must all be right,
 which is exactly why B1-B3 exist to have already eliminated the timer and the MMIO path.
 
 **1. Enable the controller.** Minimum viable GICv2 init:
@@ -458,7 +458,7 @@ entry 5, which an earlier draft of this document claimed and which cost a debugg
 > Branch on `regs->vector_type == 1 || regs->vector_type == 5` rather than either alone. Both are
 > "an IRQ from the current EL", the only difference is a stack pointer, and hardcoding today's
 > answer breaks the day something sets `SPSel`. (Slot **9** is the lower-EL case, which arrives
-> with userland in Step 3.)
+> with userland in Phase 4.)
 >
 > Fixing this the other way — `msr spsel, #1` in `arch_init()` to match the original text — is
 > **not** a Step 1 change. `SP_EL1` is currently unset, so it would have to be seeded with the
