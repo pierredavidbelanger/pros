@@ -1,4 +1,14 @@
-# Working Document: Phase 3 Step 1 — Timers & Interrupts (no scheduler yet) [STATUS: NOT STARTED ⬜]
+# Working Document: Phase 3 Step 1 — Timers & Interrupts (no scheduler yet) [STATUS: COMPLETE ✅]
+
+> [!IMPORTANT]
+> **Where this stands:** done on both architectures. Both boot, tick, print one line per second,
+> and reach `arch_shutdown()` on their own — QEMU exits 0 without a timeout. The count is 3
+> seconds rather than the 5 in the acceptance criterion below, which is a deliberate trim, not a
+> shortfall.
+>
+> Two things this step deliberately left open, both recorded where they belong: whether PPI 27 is
+> level- or edge-sensitive (see B4 — the working implementation is correct either way, so the
+> question never got forced), and gating the per-second print behind `pros.tests` (see C1).
 
 > [!NOTE]
 > This is the first bite of [`PHASE3_USERLAND.md`](PHASE3_USERLAND.md) — its Part 10, Step 1,
@@ -139,7 +149,7 @@ CPU changed it".)
 
 # 🅰️ Track A — x86_64: PIC + PIT
 
-## A1 — Make vector 32 reachable, with no hardware at all
+## A1 — Make vector 32 reachable, with no hardware at all ✅
 
 **Goal:** prove the IDT → stub → C handler path works for a vector above 31, by triggering it
 in software.
@@ -171,7 +181,7 @@ eliminated things, and this costs almost nothing.
 > cannot itself be interrupted — which is what you want for now, and something you'll
 > deliberately revisit much later.
 
-## A2 — Route IRQs away from the panic path
+## A2 — Route IRQs away from the panic path ✅
 
 **Goal:** vector 32 returns cleanly instead of dumping registers and halting.
 
@@ -198,7 +208,7 @@ Also note the software `int $32` in A1 does *not* set the PIC's in-service bit, 
 EOI for an interrupt the PIC never delivered is harmless — but it does mean A2's test can't
 validate your EOI. That's only verifiable in A4.
 
-## A3 — Remap the PIC
+## A3 — Remap the PIC ✅
 
 **Goal:** move the PIC's vectors off the CPU's exception range, then mask everything.
 
@@ -232,7 +242,7 @@ the first interrupt you ever receive is one you're expecting.
 > delay for genuinely ancient hardware that couldn't keep up with back-to-back port writes.
 > QEMU doesn't need it. Include it or not, but knowing *why* it's there beats cargo-culting it.
 
-## A4 — Program the PIT, unmask, and enable
+## A4 — Program the PIT, unmask, and enable ✅
 
 **Goal:** actual ticks.
 
@@ -265,6 +275,17 @@ before the tick do a `cli`)? Is the mask byte right (`0xFE`, not `0xFF`)? Did th
 written as two bytes to `0x40`? Is the IDT gate at 32 populated? A1 already proved the last one
 — which is exactly why A1 was worth doing.
 
+> [!WARNING]
+> **A third mask this document didn't warn about, found the hard way: the local APIC.** The two
+> masks in the mental model are the controller and `IF` — on modern x86 there is a *third* gate
+> between the 8259 and the CPU. The LAPIC's LINT0 pin carries the PIC's output, and its LVT entry
+> resets to masked, so a perfectly-programmed PIT and PIC deliver nothing at all. The fix is
+> "virtual wire mode": program `LVT0` (offset `0x350`) to delivery mode ExtINT (`0b111` in bits
+> 10:8) with the mask bit clear, which makes the LAPIC pass the 8259's interrupt through and take
+> the vector from the legacy acknowledge cycle rather than from the LVT's own vector field. See
+> `arch/x86_64/lapic.c`. Both the hardware enable (`IA32_APIC_BASE` bit 11) and the software
+> enable (`SPIV` bit 8) must also be on — panic on either rather than guessing later.
+
 ---
 
 # 🅱️ Track B — AArch64: Generic Timer + GICv2
@@ -273,7 +294,7 @@ The ARM side splits cleanly into "the timer" (in the CPU, easy, system registers
 interrupt controller" (a separate MMIO block, fiddly). Doing them in that order means the
 first half needs no interrupts at all.
 
-## B1 — Read `CNTFRQ_EL0` and print it
+## B1 — Read `CNTFRQ_EL0` and print it ✅
 
 **Goal:** confirm system-register access to the Generic Timer and learn its frequency.
 
@@ -285,7 +306,7 @@ depends on it, and because unlike the PIT's fixed 1.19 MHz, this value is *not* 
 — it's whatever the firmware programmed. Hard-coding it is a portability bug that would only
 surface on real hardware, long after you'd stopped thinking about timers.
 
-## B2 — Poll the timer, with no GIC and no interrupts
+## B2 — Poll the timer, with no GIC and no interrupts ✅
 
 **Goal:** make the timer fire and observe it, using nothing but system registers.
 
@@ -312,7 +333,31 @@ mysteriously traps, this is why, and it is *not* a bug in your code.
 **Why poll first:** identical reasoning to A1. This proves link 1 of the chain in isolation. If
 B4 produces no ticks, you already know the timer itself is fine and the GIC is at fault.
 
-## B3 — Touch the GIC and read one register back
+**Worth doing while you're here:** bracket the poll with reads of `CNTVCT_EL0` and print the
+measured delta against the interval you programmed. It costs three lines and it is the only
+check in this whole step that can catch a factor-of-ten error in the divisor arithmetic — "a
+timer fired" looks identical in a boot log at every frequency. Measured on QEMU: 627,029 ticks
+against an expected 625,000, i.e. 0.3% high. The overshoot can only be detection latency (the
+deadline is set *before* `start` is sampled), and since QEMU recomputes `ISTATUS` on every read
+there is no emulation granularity to blame — it is host scheduler jitter showing up as guest
+time, because without `icount` the virtual counter tracks host monotonic time.
+
+Two things in that loop that look like decoration and are not:
+
+- **`asm volatile` on the `mrs` inside the loop.** An asm block with outputs but no inputs is
+  loop-invariant to the compiler, so without `volatile` it gets hoisted and you spin forever on
+  the first value read. Exactly the `volatile` tick-counter bug from C0, one layer down. Same
+  reason the two `CNTVCT_EL0` reads need it, or they're common subexpressions and the delta is 0.
+- **`isb` before reading `CNTVCT_EL0`, and after writing `CNTV_CTL_EL0`.** The counter read isn't
+  ordered against surrounding instructions and can issue speculatively; system register writes
+  aren't guaranteed visible to following instructions without context synchronisation. Same
+  reasoning as the `isb` already following `msr cpacr_el1` and `msr vbar_el1` in `arch_init()`.
+
+> **Naming:** on x86 `divisor` is literal — the 8254 divides its 1.193182 MHz input by it. Here
+> nothing divides anything: the value is a *count of timer ticks* added to the current counter to
+> form a deadline. Calling it `interval` keeps the one-shot mental model honest for B4.
+
+## B3 — Touch the GIC and read one register back ✅
 
 **Goal:** prove MMIO access to the GIC works before configuring anything through it.
 
@@ -337,9 +382,34 @@ Two things to get right:
   reads have side effects (`GICC_IAR` *acknowledges* an interrupt just by being read), and the
   compiler must not merge, reorder, cache or widen them.
 
-**Verify:** a plausible number (`GICD_TYPER & 0x1F` of 4 → 160 lines).
+**Verify:** a plausible number — a multiple of 32 between 32 and 1024. Print the raw word as well
+as the decoded count: `0x00000000` means you read zeroed RAM rather than a device, `0xFFFFFFFF`
+is the classic unbacked-MMIO read, and neither is a real `GICD_TYPER`.
 
-## B4 — Configure the GIC, dispatch the IRQ, re-arm
+**Observed on QEMU 10.x `virt`: `0x00000008`.** Which decodes across all three fields:
+
+| Field | Bits | Value | Meaning |
+|---|---|---|---|
+| `ITLinesNumber` | [4:0] | 8 | `32 * (8 + 1)` = **288 lines** — 32 SGI/PPI plus 256 SPIs |
+| `CPUNumber` | [7:5] | 0 | one CPU interface, matching single-core QEMU |
+| `SecurityExtn` | [10] | 0 | the Security Extensions are not implemented |
+
+The line count comes from the machine model's `NUM_IRQS`, so it's a QEMU version detail, not
+anything architectural — an earlier draft of this document guessed 160.
+
+`SecurityExtn = 0` is the field that matters for B4. With the Security Extensions implemented,
+`GICD_CTLR` splits into `EnableGrp0`/`EnableGrp1`, interrupt group assignment starts to matter,
+and Group 0 interrupts can be delivered as **FIQ** — which arrives at a *different* vector table
+entry than the one B4 branches on. With it clear, both `GICD_CTLR` and `GICC_CTLR` have a single
+`Enable` at bit 0, everything is Group 0, and it arrives as an IRQ.
+
+`arch/aarch64/gic.{c,h}` already exist as scaffolding: the two base addresses, the register
+offsets, the interrupt IDs, and `gic_reg()`/`gic_read()`/`gic_write()` accessors that go through
+`pmm_phys_to_virt()` and carry the `volatile`. `gic_acknowledge()` and `gic_eoi()` are one-liners
+over those. `gic_init()` is deliberately empty — it is the part with the actual decisions in it,
+and it belongs to this step and B4.
+
+## B4 — Configure the GIC, dispatch the IRQ, re-arm ✅
 
 **Goal:** ticks.
 
@@ -371,20 +441,66 @@ value is 0, and 0 masks everything.
 `arch_halt()` (`arch/aarch64/arch.c:35-38`) does `msr daifset, #2` before `wfi` — it
 deliberately masks interrupts, so it can't be used as an idle loop that waits for ticks.
 
-**4. Dispatch it.** An IRQ from EL1 with SP_EL1 enters the vector table at **`VECTOR_ENTRY 5`**
-(`vectors.S:51`), which today falls straight into the unhandled-exception panic
-(`exceptions.c:41-53`). In `aarch64_exception_handler`, branch on `regs->vector_type == 5`
-before the panic path, and:
+**4. Dispatch it.** An IRQ taken at EL1 enters the vector table at **`VECTOR_ENTRY 1`** — *not*
+entry 5, which an earlier draft of this document claimed and which cost a debugging session.
+
+> [!IMPORTANT]
+> AArch64 splits the vector table by **which stack pointer the interrupted context was using**,
+> not just by exception kind. `SPSel = 0` (EL1**t**, on `SP_EL0`) vectors to the "Current EL with
+> SP_EL0" group at offsets `0x000`-`0x180`, i.e. slots 0-3. `SPSel = 1` (EL1**h**, on `SP_EL1`)
+> vectors to slots 4-7. **Limine hands the kernel `SPSel = 0` and nothing since has changed it**,
+> so this kernel runs EL1t and every current-EL exception lands in the *first* group.
+>
+> The evidence was already in the tree before B4 was written: the demand-pager's data aborts
+> enter at `vector_table + 0x000` — slot 0, `"Current EL SP_EL0 Synchronous"`. It never mattered
+> because `vmm_handle_page_fault()` dispatches on `ESR_EL1`, not on the slot number.
+>
+> Branch on `regs->vector_type == 1 || regs->vector_type == 5` rather than either alone. Both are
+> "an IRQ from the current EL", the only difference is a stack pointer, and hardcoding today's
+> answer breaks the day something sets `SPSel`. (Slot **9** is the lower-EL case, which arrives
+> with userland in Step 3.)
+>
+> Fixing this the other way — `msr spsel, #1` in `arch_init()` to match the original text — is
+> **not** a Step 1 change. `SP_EL1` is currently unset, so it would have to be seeded with the
+> live stack pointer first, and `vectors.S` already switches to `exception_stack_top` on entry,
+> so there is no safety argument for doing it now. It belongs to Step 2's rewrite of the
+> exception stack contract, if anywhere.
+
+Today that entry falls straight into the unhandled-exception panic, so in
+`aarch64_exception_handler`, branch before the panic path and:
 
 - read **`GICC_IAR`** (GICC + `0x00C`) to acknowledge — this both tells you *which* interrupt
   fired and moves it to "active" state,
 - if the ID is **1023**, it's the spurious ID: return immediately, and do **not** EOI it,
 - handle it (`timer_tick()`),
 - **re-arm the timer** — write `CNTV_TVAL_EL0` again. The ARM timer is a **one-shot**: it fires
-  and stays fired. Unlike the PIT's mode 3, nothing reloads it for you. **Symptom of
-  forgetting: exactly one tick** — the same symptom as a missing EOI on x86, from a completely
-  different cause.
-- write the ID from `IAR` back to **`GICC_EOIR`** (GICC + `0x010`).
+  and stays fired. Unlike the PIT's mode 3, nothing reloads it for you.
+- **then** write the ID from `IAR` back to **`GICC_EOIR`** (GICC + `0x010`).
+
+**That order matters, and it's the one thing here worth reasoning about rather than copying.**
+The timer's output is a *level*, not a pulse: `ISTATUS` goes high when the deadline passes and
+the only thing that lowers it is moving the deadline, i.e. re-arming. Nothing you can write to
+the GIC clears it, because the GIC isn't the thing asserting it. So if you EOI while the line is
+still high, the interrupt is immediately eligible again.
+
+What that *looks* like depends on how the GIC is configured to sample PPI 27:
+
+- **level-sensitive** (what the Generic Timer expects, since its output is a level): the interrupt
+  goes pending again the instant you EOI, and you get an **interrupt storm** — ticks at the speed
+  of your handler, no forward progress in `_start`.
+- **edge-triggered**: the already-high line never produces another edge, and you get **exactly one
+  tick, then silence**.
+
+Re-arming before the EOI makes both cases correct, which is why it's the rule rather than
+"whichever order compiles".
+
+**Still open, and deliberately so:** which trigger mode PPI 27 actually gets here was never
+forced. Re-arming before the EOI is correct under both, so the working implementation never had
+to find out. The storm that *did* happen during B4 proves nothing about it either — that one
+never read `GICC_IAR` at all, so the interrupt simply stayed pending, which storms under either
+mode. Settling it means deliberately moving the re-arm after the `gic_eoi()` and seeing which
+symptom appears: a storm means level-sensitive, exactly one tick means edge. Worth five minutes
+some day, not worth breaking a working timer for right now.
 
 Write the value you got from `IAR`, not the constant 27. They're the same here, but EOI-ing an
 ID you didn't acknowledge corrupts the controller's state in a way that's miserable to debug
@@ -398,7 +514,7 @@ path, so it is one of those five.
 
 ---
 
-## 🧩 C1 — Wire it up and prove both
+## 🧩 C1 — Wire it up and prove both ✅
 
 **Goal:** the acceptance criterion at the top of this document.
 
@@ -450,14 +566,35 @@ Grouped by symptom, since that's how you'll meet them.
 
 **Exactly one interrupt, then silence.**
 - x86: missing or misdirected EOI (and remember IRQ ≥ 8 needs both PICs).
-- ARM: forgot to re-arm `CNTV_TVAL_EL0`. The timer is one-shot.
-- Two different causes, one identical symptom, one per architecture. Almost poetic.
+- ARM: forgot to re-arm `CNTV_TVAL_EL0`, *if* PPI 27 is being sampled edge-triggered. The timer
+  is a one-shot and nothing reloads it.
+
+**Ticks arriving as fast as the handler can run, kernel makes no progress.**
+- ARM: forgot to re-arm, with PPI 27 level-sensitive — the timer's output is still asserted when
+  you EOI, so it goes pending again immediately. Same omission as above, opposite symptom,
+  decided by the trigger mode. See B4.
 
 **Total silence.**
 - One of the two masks: controller-level (`GICC_PMR`/`GICD_ISENABLER`, or the PIC's OCW1) or
   CPU-level (`IF` / `DAIF.I`).
 - Wrong interrupt number (PPI 30 instead of 27; unmasked the wrong PIC bit).
 - Vector never populated — which A1 exists to rule out in advance.
+
+**Total silence, but `-d int` shows the CPU taking interrupts nonstop.** *(This one actually
+happened, and it is the reason `-d int` is worth reaching for early rather than late — it splits
+"the interrupt never arrives" from "the interrupt arrives and my handler is wrong", which are
+completely different searches.)*
+- The handler is not recognising the vector slot, so nothing ever reads `GICC_IAR`, so the
+  interrupt stays pending and re-enters the instant the handler returns. 915,230 IRQs in 13
+  seconds, and not one line of output.
+- On ARM, check the slot the CPU actually vectored to before anything else: compare `-d int`'s
+  `to EL1 PC` against `nm`'s `vector_table` address. `+0x080` is slot 1, `+0x280` is slot 5. See
+  the `SPSel` note in B4.
+- What makes it *silent* rather than a panic is the second half of the bug: an unrecognised IRQ
+  falls through to the `ESR_EL1` decode, `ESR_EL1` is only written for **synchronous**
+  exceptions, so it still holds the last data abort's syndrome — and `vmm_handle_page_fault()`
+  cheerfully returns `true` for an address that is already mapped. A handler that panicked on
+  the unknown slot would have said so immediately.
 
 **Register dump reporting a weird exception number.**
 - On x86, if you see `#DF` or `#GP` at boot where you expected a tick, the PIC remap didn't
@@ -479,17 +616,35 @@ Grouped by symptom, since that's how you'll meet them.
 
 ## 📁 Files touched
 
-- ⬜ `kernel/include/arch/arch.h` — the three new primitives
-- ⬜ `kernel/core/timer.c` (new) — `volatile` tick counter, `timer_tick()`, `timer_get_ticks()`
-- ⬜ `kernel/include/core/timer.h` (new)
-- ⬜ `kernel/arch/x86_64/isr.S` — stubs 32-47, longer `isr_stub_table`
-- ⬜ `kernel/arch/x86_64/idt.c` — table length, population loop, IRQ branch + EOI in the handler
-- ⬜ `kernel/arch/x86_64/pic.c` + `pit.c` (new, or one `timer.c`) — remap, divisor, masks,
-  `outb`/`inb`
-- ⬜ `kernel/arch/aarch64/gic.c` (new) — GICv2 init, `gic_acknowledge()`, `gic_eoi()`
-- ⬜ `kernel/arch/aarch64/timer.c` (new) — `CNTFRQ`/`CNTV_TVAL`/`CNTV_CTL`, arm and re-arm
-- ⬜ `kernel/arch/aarch64/exceptions.c` — IRQ branch on `vector_type == 5`
-- ⬜ `kernel/core/main.c` — init, enable, wait, then the existing shutdown
+Ticked against what is actually in the tree, which diverges from the plan in two places — noted
+inline rather than pretended away.
+
+- ✅ `kernel/include/arch/arch.h` — the three new primitives
+- ✅ `kernel/core/timer.c` (new) — `volatile` tick counter, `timer_tick()`, `timer_get_ticks()`
+- ✅ `kernel/include/core/timer.h` (new)
+- ✅ `kernel/arch/x86_64/isr.S` — stubs 32-47, longer `isr_stub_table`
+- ✅ `kernel/arch/x86_64/idt.c` — `IDT_STUB_COUNT` (48) used in all three places, plus a
+  `_Static_assert` that it covers the PIC's vector range; IRQ branch and EOI in the handler
+- ✅ `kernel/arch/x86_64/pic.c` + `pic.h` (new) — remap, per-line mask with the cascade handled
+- ✅ `kernel/arch/x86_64/io.h` (new) — `outb`/`inb`
+- ✅ `kernel/arch/x86_64/lapic.c` + `lapic.h` (new) — **not in the original plan**, see the warning
+  in A4: virtual wire mode, without which the PIC's output never reaches the CPU
+- ✅ `kernel/arch/x86_64/arch.c` — the PIT lives here rather than in its own `pit.c`; it's ~10
+  lines and it is the only user of the PIT
+- 🚧 `kernel/arch/aarch64/gic.c` + `gic.h` (new) — bases, offsets, IDs, accessors,
+  `gic_acknowledge()`, `gic_eoi()`, and `gic_init()` reporting `GICD_TYPER` (B3). The four
+  enable/mask registers are B4
+- ✅ `kernel/arch/aarch64/timer.c` + `timer.h` (new) — `CNTFRQ`/`CNTV_TVAL`/`CNTV_CTL`, arm and
+  re-arm. Lived in `arch.c` through B2, mirroring the PIT on x86; split out at B4 because the
+  handler has to reach `arm_timer_rearm()` and the PIT — auto-reloading — never needed that
+- ✅ `kernel/arch/aarch64/arch.c` — `arch_timer_init()` now just orders `gic_init()` before
+  `arm_timer_init()`; `arch_irq_enable()`/`arch_irq_disable()` are `daifclr`/`daifset #2`
+- ✅ `kernel/arch/aarch64/exceptions.c` — IRQ branch on `vector_type == 1 || vector_type == 5`
+  (this kernel runs EL1t, see B4), placed **before** the `ESR_EL1` decode (that register is only
+  written for synchronous exceptions, so on an IRQ it still holds the previous syndrome —
+  decoding it sends every tick into the page fault path with a stale `FAR_EL1`)
+- ✅ `kernel/core/main.c` — init, enable, wait, then the existing shutdown. Counts to 3 rather
+  than 5; the "gate the per-second print behind `pros.tests`" idea in C1 is still open
 
 Deliberately **not** touched: `vectors.S`'s stack handling, `tss_init()`, `fs/`, anything in
 `mm/`. If a change wants to reach into those, it belongs to Step 2 or later.

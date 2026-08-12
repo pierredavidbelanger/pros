@@ -65,9 +65,10 @@ Pairing the kernel's Linux ABI syscall dispatcher with a standard C library allo
   working (and debuggable, in ring 0) before "distrust" is introduced. Preemption is proven
   with *kernel* threads before any userland exists, because a scheduler bug and a privilege
   transition bug both present as a machine reset.
-  1. ⬜ **Timer & interrupts, no scheduler** — IDT gates above vector 31 + PIC remap + PIT
-     (x86_64); GIC + Generic Timer (AArch64, the larger half). A monotonic tick counter to
-     back `sys_clock_gettime`/`sys_nanosleep` later. Broken into baby steps in
+  1. ✅ **Timer & interrupts, no scheduler** — IDT gates above vector 31 + PIC remap + PIT + the
+     LAPIC in virtual wire mode (x86_64); GICv2 + Generic Timer (AArch64). A monotonic tick
+     counter to back `sys_clock_gettime`/`sys_nanosleep` later. Both architectures tick at
+     100 Hz and shut down on their own. Broken into baby steps in
      [`PHASE3_STEP1_TIMER.md`](PHASE3_STEP1_TIMER.md).
   2. ⬜ **`struct task`, per-task kernel stacks, trap-stub contract change** — the C handler
      returns the frame to restore instead of `void`, which is what makes a context switch four
