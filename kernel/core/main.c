@@ -74,15 +74,19 @@ void _start(void) {
     kprintf("IRQ", "Enable IRQ\n");
     arch_irq_enable();
 
-    //kprintf("K", "All done here, shutting down.\n");
-    //arch_shutdown();
-
+    kprintf("K", "Count to 3:\n");
     uint64_t last_seconds = 0;
     while (true) {
         uint64_t seconds = timer_get_ticks() / TIMER_HZ;
         if (seconds != last_seconds) {
-            kprintf("K", "Time fly %zu\n", seconds);
+            kprintf("TIMER", "%zu\n", seconds);
             last_seconds = seconds;
+            if (seconds >= 3) {
+                break;
+            }
         }
     }
+
+    kprintf("K", "All done here, shutting down.\n");
+    arch_shutdown();
 }

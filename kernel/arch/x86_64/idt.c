@@ -153,7 +153,6 @@ void x86_64_exception_handler(struct x86_64_registers *regs) {
         uint64_t irq_no = IDT_INT_TO_IRQ(regs->int_no);
         if (irq_no == 0) {
             timer_tick();
-            kprintf("X8664", "HANDLED %zu: tick\n", regs->int_no);
         } else {
             kprintf("X8664", "HANDLED %zu: nothing\n", regs->int_no);
         }

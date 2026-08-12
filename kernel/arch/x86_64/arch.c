@@ -2,6 +2,7 @@
 
 #include "idt.h"
 #include "pic.h"
+#include "lapic.h"
 #include "io.h"
 #include "mm/vmm.h"
 #include "mm/pmm.h"
@@ -127,6 +128,8 @@ void arch_timer_init(uint32_t hz) {
     outb(PIT_DATA_PORT, divisor >> 8); // hibyte
     // IRQ0 is wired to the PIT output
     pic_set_irq_mask(0, true);
+    // we also need the local apic to be unmasked
+    lapic_init();
 }
 
 void arch_irq_enable(void) {
