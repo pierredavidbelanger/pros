@@ -1,42 +1,27 @@
 #include "trap_frame.h"
 
-.section .bss
-.balign 16
-exception_stack_bottom:
-    .skip 16384
-exception_stack_top:
-
 .section .text
 
+/*
+ * The frame is built on the stack the trap arrived on.
+ * The only thing that differs between vector groups is where the interrupted SP has to be read from.
+ */
 .macro VECTOR_ENTRY num
 .balign 128
-    /* 1. Save original x0 and x1 in hardware scratch registers */
-    msr tpidr_el1, x0
-    msr tpidrro_el0, x1
-
-    /* 2. Read FAR_EL1 and ESR_EL1 into x0 and x1 IMMEDIATELY at cycle 0 */
-    mrs x0, far_el1
-    mrs x1, esr_el1
-
-    /* 3. Switch to dedicated exception stack in .bss */
-    ldr x2, =exception_stack_top
-    mov x3, sp          /* x3 = original SP before trap */
-    mov sp, x2          /* sp = dedicated exception stack */
-    sub sp, sp, #TRAP_FRAME_SIZE
-
-    /* 4. Store far_el1 (x0) and esr_el1 (x1) into frame */
-    str x0, [sp, #TRAP_FRAME_OFF_FAR]
-    str x1, [sp, #TRAP_FRAME_OFF_ESR]
-    str x3, [sp, #TRAP_FRAME_OFF_SP]
-
-    /* 5. Restore original x0 and x1 from scratch registers */
-    mrs x0, tpidr_el1
-    mrs x1, tpidrro_el0
-
-    /* 6. Save original x0, x1 into frame */
-    stp x0, x1, [sp, #TRAP_FRAME_OFF_X(0)]
-
+    stp x0, x1, [sp, #-TRAP_FRAME_SIZE]!   /* frame is TRAP_FRAME_SIZE bytes; sp now points at it */
+    /* x0 and x1 are now free to use, x0 will have the slot number, and x1 the sp */
     mov x0, #\num
+.if (\num >= 4) && (\num <= 7)
+    /* Current EL, EL1h: the trap arrived on this same stack, so the interrupted sp is just where this frame starts plus how big it is. */
+    add x1, sp, #TRAP_FRAME_SIZE
+.elseif (\num >= 8) && (\num <= 11)
+    /* Lower EL: the kernel's sp is SP_EL1 and was never disturbed. The interrupted one belongs to userland and lives in SP_EL0. */
+    mrs x1, sp_el0
+.else
+    /* Slots 0-3 are Current EL on SP_EL0, unreachable since arch_init() selected SP_EL1,
+       and 12-15 are AArch32, which this kernel never enters. */
+    mov x1, xzr
+.endif
     b vector_common_stub
 .endm
 
@@ -81,12 +66,18 @@ vector_common_stub:
     stp x28, x29, [sp, #TRAP_FRAME_OFF_X(28)]
     str x30,      [sp, #TRAP_FRAME_OFF_X(30)]
 
+    /* Interrupted sp, captured by VECTOR_ENTRY that knows which group it belongs to */
+    str x1, [sp, #TRAP_FRAME_OFF_SP]
+
     /* Save system registers */
     mrs x2, elr_el1
     mrs x3, spsr_el1
-
     str x2, [sp, #TRAP_FRAME_OFF_ELR]
     str x3, [sp, #TRAP_FRAME_OFF_SPSR]
+    mrs x2, esr_el1
+    mrs x3, far_el1
+    str x2, [sp, #TRAP_FRAME_OFF_ESR]
+    str x3, [sp, #TRAP_FRAME_OFF_FAR]
     str x0, [sp, #TRAP_FRAME_OFF_VECTOR_TYPE]
 
     /* Pointer to struct trap_frame is SP */
@@ -101,13 +92,19 @@ vector_common_stub:
     msr spsr_el1, x3
     msr elr_el1, x2
 
-    /* Save original x0 and x1 into scratch registers for final restore */
-    ldr x0, [sp, #TRAP_FRAME_OFF_X(0)]
-    ldr x1, [sp, #TRAP_FRAME_OFF_X(1)]
-    msr tpidr_el1, x0
-    msr tpidrro_el0, x1
+    ldr x2, [sp, #TRAP_FRAME_OFF_VECTOR_TYPE]
+    /* Which stack pointer ->sp goes back to is a property of the frame being returned to, not of the trap that got us here.
+       after a context switch those are two different tasks, possibly from different exception levels.
+       VECTOR_ENTRY can decide this with .if because it is generated per slot; here it has to be read out of the frame. */
+    cmp x2, #8
+    /* < 8 : Current EL: nothing to do, the post-indexed ldp below already leaves sp (SP_EL1) at the top of this frame's stack */
+    b.lo .Lrestore_gprs
+    /* >= 8 : Lower EL: sp is userland stack pointer and belongs in SP_EL0 and must never reach SP_EL1 */
+    ldr x2, [sp, #TRAP_FRAME_OFF_SP]
+    msr sp_el0, x2
 
-    /* Restore x2..x30 from exception frame */
+.Lrestore_gprs:
+    /* Restore x2..x30 from trap_frame */
     ldp x2,  x3,  [sp, #TRAP_FRAME_OFF_X(2)]
     ldp x4,  x5,  [sp, #TRAP_FRAME_OFF_X(4)]
     ldp x6,  x7,  [sp, #TRAP_FRAME_OFF_X(6)]
@@ -124,11 +121,5 @@ vector_common_stub:
     ldp x28, x29, [sp, #TRAP_FRAME_OFF_X(28)]
     ldr x30,      [sp, #TRAP_FRAME_OFF_X(30)]
 
-    /* Restore original SP */
-    ldr x1, [sp, #TRAP_FRAME_OFF_SP]
-    mov sp, x1
-
-    /* Restore original x0 and x1 */
-    mrs x0, tpidr_el1
-    mrs x1, tpidrro_el0
+    ldp x0, x1, [sp], #TRAP_FRAME_SIZE   /* restore x0/x1 and release the frame in one go */
     eret

@@ -29,6 +29,18 @@ void arch_init(void) {
     tcr |= (1ULL << 8);  // IRGN0 = 0b01 (Write-Back Cacheable)
     asm volatile ("msr tcr_el1, %0\n\tisb" :: "r"(tcr) : "memory");
 
+    // Move the kernel off SP_EL0 and onto SP_EL1, where it belongs.
+    uint64_t stack_ptr;
+    asm volatile (
+        "mov %0, sp\n\t"    // the live stack pointer, still SP_EL0 at this point
+        "msr spsel, #1\n\t" // sp now names SP_EL1
+        "mov sp, %0"        // same value back in: nothing on the stack moved
+        : "=&r"(stack_ptr) :: "memory");
+
+    // Poison SP_EL0
+    // Nothing should ever run at EL1t again, and a path that does will fault on its first push
+    asm volatile ("msr sp_el0, xzr");
+
     // Install exception vector table
     extern char vector_table[];
     asm volatile ("msr vbar_el1, %0\n\tisb" :: "r"(vector_table) : "memory");

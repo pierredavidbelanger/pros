@@ -27,13 +27,38 @@ static const char *vector_names[16] = {
     "Lower EL AArch32 SError"
 };
 
+// Dump and die. Never returns.
+static void panic_unhandled(struct trap_frame *frame, const char *what) {
+    uint32_t esr_ec = (frame->esr >> 26) & 0x3F;
+    kprintf("ARM64", "============= [ %s ] =============\n", what);
+    const char *vec_name = (frame->vector_type < 16) ? vector_names[frame->vector_type] : "Unknown";
+    kprintf("ARM64", " Vector %zu: %s\n", frame->vector_type, vec_name);
+    kprintf("ARM64", " ESR_EL1: 0x%016lx (EC=0x%02x)\n", frame->esr, esr_ec);
+    kprintf("ARM64", " FAR_EL1: 0x%016lx\n", frame->far);
+    kprintf("ARM64", " ELR_EL1: 0x%016lx\n", frame->elr);
+    kprintf("ARM64", " SPSR_EL1: 0x%016lx  SP: 0x%016lx\n", frame->spsr, frame->sp);
+    for (int i = 0; i < 30; i += 3) {
+        kprintf("ARM64", " X%02d: 0x%016lx  X%02d: 0x%016lx  X%02d: 0x%016lx\n", i, frame->x[i], i+1, frame->x[i+1], i+2, frame->x[i+2]);
+    }
+    kprintf("ARM64", " X30 (LR): 0x%016lx\n", frame->x[30]);
+    kprintf("ARM64", "===================================================\n");
+    kpanic("");
+}
+
 struct trap_frame *aarch64_exception_handler(struct trap_frame *frame) {
+    // Slots 0-3 are Current EL on SP_EL0 (EL1t)
+    // unreachable since arch_init() selected SP_EL1,
+    // 12-15 are AArch32, which this kernel never enters.
+    // Arriving in either means the vector table or SPSel is not what this code believes
+    if (frame->vector_type < 4 || frame->vector_type > 11) {
+        panic_unhandled(frame, "UNEXPECTED VECTOR SLOT");
+    }
+
     // IRQ vector slots:
-    // 1 = current EL on SP_EL0,
     // 5 = current EL on SP_EL1
     // (and 9 = lower EL, once userland exists).
-    // Limine leaves SPSel = 0, so kernel IRQs arrive as 1 today.
-    if (frame->vector_type == 1 || frame->vector_type == 5) {
+    // arch_init() selects SP_EL1, so kernel IRQs arrive as 5.
+    if (frame->vector_type == 5) {
         uint32_t intid = gic_acknowledge();
 
         // Nothing left to take.
@@ -68,19 +93,7 @@ struct trap_frame *aarch64_exception_handler(struct trap_frame *frame) {
     }
 
     // Unrecoverable — dump register state
-    kprintf("ARM64", "============= [ UNHANDLED EXCEPTION ] =============\n");
-    const char *vec_name = (frame->vector_type < 16) ? vector_names[frame->vector_type] : "Unknown";
-    kprintf("ARM64", " Vector %zu: %s\n", frame->vector_type, vec_name);
-    kprintf("ARM64", " ESR_EL1: 0x%016lx (EC=0x%02x)\n", frame->esr, esr_ec);
-    kprintf("ARM64", " FAR_EL1: 0x%016lx\n", frame->far);
-    kprintf("ARM64", " ELR_EL1: 0x%016lx\n", frame->elr);
-    kprintf("ARM64", " SPSR_EL1: 0x%016lx  SP: 0x%016lx\n", frame->spsr, frame->sp);
-    for (int i = 0; i < 30; i += 3) {
-        kprintf("ARM64", " X%02d: 0x%016lx  X%02d: 0x%016lx  X%02d: 0x%016lx\n", i, frame->x[i], i+1, frame->x[i+1], i+2, frame->x[i+2]);
-    }
-    kprintf("ARM64", " X30 (LR): 0x%016lx\n", frame->x[30]);
-    kprintf("ARM64", "===================================================\n");
-    kpanic("");
+    panic_unhandled(frame, "UNHANDLED EXCEPTION");
 
     // will never get there
     return frame;
