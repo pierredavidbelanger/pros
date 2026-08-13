@@ -183,3 +183,18 @@ void arch_irq_enable(void) {
 void arch_irq_disable(void) {
     asm volatile ("msr daifset, #2" ::: "memory");
 }
+
+// Stack
+
+void arch_set_kernel_stack(void *stack_top) {
+    (void) stack_top;
+    // SP_EL1 is the kernel stack pointer,
+    // and the return-from-trap path already leaves it at the top of whichever task stack the restored frame came from.
+    // There is no separate place for the CPU to look it up, so there is nothing to write here.
+}
+
+void *arch_get_stack_pointer(void) {
+    uint64_t sp;
+    asm volatile ("mov %0, sp" : "=r"(sp));
+    return (void *)sp;
+}

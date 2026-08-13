@@ -39,4 +39,6 @@ struct trap_frame {
 
 void idt_init(void);
 
+void idt_tss_set_rsp0(void *rsp0);
+
 #endif //PROS_X86_64_IDT_H

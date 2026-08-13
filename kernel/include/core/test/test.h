@@ -9,5 +9,6 @@ void test_pmm(void);
 void test_heap(void);
 void test_vmm(void);
 void test_vfs(void);
+void test_kstack(void);
 
 #endif //PROS_TEST_H

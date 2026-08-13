@@ -68,6 +68,8 @@ void _start(void) {
     // test_vfs even though ramfs may not have been correctly loaded or mounted
     if (tests_enabled) test_vfs();
 
+    if (tests_enabled) test_kstack();
+
     kprintf("TIMER", "Starting timer at %d Hz\n", TIMER_HZ);
     arch_timer_init(TIMER_HZ);
 

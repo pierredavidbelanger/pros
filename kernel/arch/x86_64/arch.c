@@ -139,3 +139,15 @@ void arch_irq_enable(void) {
 void arch_irq_disable(void) {
     asm volatile ("cli" ::: "memory");
 }
+
+// Stack
+
+void arch_set_kernel_stack(void *stack_top) {
+    idt_tss_set_rsp0(stack_top);
+}
+
+void *arch_get_stack_pointer(void) {
+    uint64_t rsp;
+    asm volatile ("mov %%rsp, %0" : "=r"(rsp));
+    return (void *)rsp;
+}

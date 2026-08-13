@@ -138,6 +138,10 @@ void idt_init(void) {
     asm volatile ("lidt %0" :: "m"(idt_pointer));
 }
 
+void idt_tss_set_rsp0(void *rsp0) {
+    sys_tss.rsp0 = (uint64_t) rsp0;
+}
+
 struct trap_frame *x86_64_exception_handler(struct trap_frame *frame) {
     uint64_t cr2;
     asm volatile ("mov %%cr2, %0" : "=r"(cr2));

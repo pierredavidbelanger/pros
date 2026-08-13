@@ -27,7 +27,7 @@ bin/kernel-$(ARCH): libs
 		libs/printf/printf.c \
 		$(wildcard arch/$(ARCH)/*.S) \
 		$(wildcard arch/$(ARCH)/*.c) \
-		$(shell find core mm drivers fs -name '*.c' 2>/dev/null) \
+		$(shell find core mm drivers fs proc -name '*.c' 2>/dev/null) \
 		-Wl,-T,arch/$(ARCH)/linker.lds \
 		$(LDFLAGS) \
 		-o bin/kernel-$(ARCH)

@@ -60,4 +60,13 @@ void arch_timer_init(uint32_t hz);
 void arch_irq_enable(void);
 void arch_irq_disable(void);
 
+// Stack
+
+// Tell the CPU where the kernel stack for the next trap from a lower privilege level is.
+// Called on every context switch, before returning to a different task frame.
+void arch_set_kernel_stack(void *stack_top);
+
+// Where the stack pointer is right now.
+void *arch_get_stack_pointer(void);
+
 #endif //PROS_ARCH_H
