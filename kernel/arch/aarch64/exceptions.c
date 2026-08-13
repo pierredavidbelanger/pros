@@ -7,6 +7,7 @@
 #include "core/timer.h"
 #include "arch/arch.h"
 #include "mm/vmm.h"
+#include "proc/sched.h"
 
 static const char *vector_names[16] = {
     "Current EL SP_EL0 Synchronous",
@@ -45,7 +46,7 @@ static void panic_unhandled(struct trap_frame *frame, const char *what) {
     kpanic("");
 }
 
-struct trap_frame *aarch64_exception_handler(struct trap_frame *frame) {
+static void aarch64_dispatch(struct trap_frame *frame) {
     // Slots 0-3 are Current EL on SP_EL0 (EL1t)
     // unreachable since arch_init() selected SP_EL1,
     // 12-15 are AArch32, which this kernel never enters.
@@ -64,7 +65,7 @@ struct trap_frame *aarch64_exception_handler(struct trap_frame *frame) {
         // Nothing left to take.
         // Return without an EOI: ending an interrupt that was never acknowledged corrupts the controller state
         if (intid == GIC_INTID_SPURIOUS) {
-            return frame;
+            return;
         }
 
         if (intid == GIC_INTID_VIRT_TIMER) {
@@ -77,7 +78,7 @@ struct trap_frame *aarch64_exception_handler(struct trap_frame *frame) {
 
         // EOI, needs the be the one we ack, otherwise we will have a bad time
         gic_eoi(intid);
-        return frame;
+        return;
     }
 
     uint32_t esr_ec = (frame->esr >> 26) & 0x3F;
@@ -88,13 +89,15 @@ struct trap_frame *aarch64_exception_handler(struct trap_frame *frame) {
     // EC=0x25: Data Abort from current EL
     if (esr_ec == 0x20 || esr_ec == 0x21 || esr_ec == 0x24 || esr_ec == 0x25) {
         if (vmm_handle_page_fault(frame->far, frame->esr)) {
-            return frame;  // Resolved — CPU will eret back and re-execute
+            return; // Resolved — CPU will eret back and re-execute
         }
     }
 
     // Unrecoverable — dump register state
     panic_unhandled(frame, "UNHANDLED EXCEPTION");
+}
 
-    // will never get there
-    return frame;
+struct trap_frame *aarch64_exception_handler(struct trap_frame *frame) {
+    aarch64_dispatch(frame);
+    return sched_on_trap_exit(frame);
 }

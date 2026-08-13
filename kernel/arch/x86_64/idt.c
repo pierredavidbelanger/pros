@@ -7,6 +7,7 @@
 #include "mm/vmm.h"
 #include "core/memory.h"
 #include "core/timer.h"
+#include "proc/sched.h"
 
 struct gdt_entry {
     uint16_t limit_low;
@@ -142,14 +143,14 @@ void idt_tss_set_rsp0(void *rsp0) {
     sys_tss.rsp0 = (uint64_t) rsp0;
 }
 
-struct trap_frame *x86_64_exception_handler(struct trap_frame *frame) {
+static void x86_64_dispatch(struct trap_frame *frame) {
     uint64_t cr2;
     asm volatile ("mov %%cr2, %0" : "=r"(cr2));
 
     if (frame->int_no == 14) {
         // Page Fault — try demand paging
         if (vmm_handle_page_fault(cr2, frame->error_code)) {
-            return frame;  // Resolved — CPU will re-execute the faulting instruction
+            return;  // Resolved — CPU will re-execute the faulting instruction
         }
     }
 
@@ -163,7 +164,7 @@ struct trap_frame *x86_64_exception_handler(struct trap_frame *frame) {
         // EOI - End Of Interrupt
         if (irq_no >= PIC_IRQS_PER_CHIP) outb(PIC_SLAVE_CMD, PIC_EOI);  // slave, only when it came via the cascade
         outb(PIC_MASTER_CMD, PIC_EOI);                                  // master, always
-        return frame;
+        return;
     }
 
     // Unrecoverable — dump register state
@@ -183,7 +184,9 @@ struct trap_frame *x86_64_exception_handler(struct trap_frame *frame) {
     }
     kprintf("X8664", "===================================================\n");
     kpanic("");
+}
 
-    // will never get there
-    return frame;
+struct trap_frame *x86_64_exception_handler(struct trap_frame *frame) {
+    x86_64_dispatch(frame);
+    return sched_on_trap_exit(frame);
 }

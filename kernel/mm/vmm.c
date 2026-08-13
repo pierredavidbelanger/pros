@@ -221,6 +221,10 @@ static bool try_handle_hhdm_mmio_fault(uint64_t fault_addr) {
 // Lower-Half User-Space Demand Paging,
 // within the faulting context's configured demand-pageable range (struct vmm_context.demand_page_lo/hi, a 0 means "disabled").
 static bool try_handle_demand_page_fault(uint64_t fault_addr, uint64_t error_code) {
+    // Faults are possible before the VMM exists.
+    // Decline them rather than dereferencing nothing.
+    if (!vmm_current_context) return false;
+
     if (fault_addr < vmm_current_context->demand_page_lo || fault_addr >= vmm_current_context->demand_page_hi) {
         return false;
     }

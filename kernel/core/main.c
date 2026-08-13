@@ -13,6 +13,8 @@
 #include "fs/vfs/vfs.h"
 #include "fs/ramfs/ramfs.h"
 #include "fs/tar/tar.h"
+#include "proc/sched.h"
+#include "proc/task.h"
 
 // Tick frequency.
 // Fast enough for a responsive scheduler time slice later, slow enough that the handler's cost is irrelevant.
@@ -48,6 +50,10 @@ void _start(void) {
 
     vmm_init();
     kprintf("VMM", "Initialized VMM, default context root at phys:%p virt:%p (kernel table root at phys:%p)\n", (void *)vmm_kernel_context->root_phys, vmm_kernel_context->root_virt, (void *)arch_vmm_get_kernel_root());
+
+    sched_init();
+    task_dump(sched_get_current_task());
+
     if (tests_enabled) test_vmm();
 
     if (framebuffer_request.response) {
