@@ -50,10 +50,6 @@ void _start(void) {
 
     vmm_init();
     kprintf("VMM", "Initialized VMM, default context root at phys:%p virt:%p (kernel table root at phys:%p)\n", (void *)vmm_kernel_context->root_phys, vmm_kernel_context->root_virt, (void *)arch_vmm_get_kernel_root());
-
-    sched_init();
-    task_dump(sched_get_current_task());
-
     if (tests_enabled) test_vmm();
 
     if (framebuffer_request.response) {
@@ -75,6 +71,10 @@ void _start(void) {
     if (tests_enabled) test_vfs();
 
     if (tests_enabled) test_kstack();
+
+    sched_init();
+    kprintf("SCHED", "Initialized scheduler, ready to switch context when timer will be up\n");
+    task_dump(sched_get_current_task());
 
     kprintf("TIMER", "Starting timer at %d Hz\n", TIMER_HZ);
     arch_timer_init(TIMER_HZ);
