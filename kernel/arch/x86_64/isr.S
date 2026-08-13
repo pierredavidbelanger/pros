@@ -84,6 +84,7 @@ isr_common_stub:
 
     movq %rsp, %rdi
     call x86_64_exception_handler
+    movq %rax, %rsp /* restore from whatever frame the handler returned */
 
     popq %r15
     popq %r14

@@ -130,53 +130,56 @@ void idt_init(void) {
 
     // Populate CPU interrupt handlers up to (excluding) IDT_STUB_COUNT
     for (uint8_t i = 0; i < IDT_STUB_COUNT; i++) {
-        // Use IST1 (ist = 1) for Double Fault (#DF = 8) and Page Fault (#PF = 14)
-        uint8_t ist = (i == 8 || i == 14) ? 1 : 0;
+        // Use IST1 (ist = 1) for Double Fault (#DF = 8)
+        uint8_t ist = i == 8 ? 1 : 0;
         idt_set_gate(i, (uint64_t)isr_stub_table[i], 0x08, 0x8E, ist);
     }
 
     asm volatile ("lidt %0" :: "m"(idt_pointer));
 }
 
-void x86_64_exception_handler(struct x86_64_registers *regs) {
+struct trap_frame *x86_64_exception_handler(struct trap_frame *frame) {
     uint64_t cr2;
     asm volatile ("mov %%cr2, %0" : "=r"(cr2));
 
-    if (regs->int_no == 14) {
+    if (frame->int_no == 14) {
         // Page Fault — try demand paging
-        if (vmm_handle_page_fault(cr2, regs->error_code)) {
-            return;  // Resolved — CPU will re-execute the faulting instruction
+        if (vmm_handle_page_fault(cr2, frame->error_code)) {
+            return frame;  // Resolved — CPU will re-execute the faulting instruction
         }
     }
 
-    if (IDT_INT_IS_IRQ(regs->int_no)) {
-        uint64_t irq_no = IDT_INT_TO_IRQ(regs->int_no);
+    if (IDT_INT_IS_IRQ(frame->int_no)) {
+        uint64_t irq_no = IDT_INT_TO_IRQ(frame->int_no);
         if (irq_no == 0) {
             timer_tick();
         } else {
-            kprintf("X8664", "HANDLED %zu: nothing\n", regs->int_no);
+            kprintf("X8664", "HANDLED %zu: nothing\n", frame->int_no);
         }
         // EOI - End Of Interrupt
         if (irq_no >= PIC_IRQS_PER_CHIP) outb(PIC_SLAVE_CMD, PIC_EOI);  // slave, only when it came via the cascade
         outb(PIC_MASTER_CMD, PIC_EOI);                                  // master, always
-        return;
+        return frame;
     }
 
     // Unrecoverable — dump register state
     kprintf("X8664", "============= [ UNHANDLED EXCEPTION ] =============\n");
-    const char *name = (regs->int_no < IDT_EXCEPTION_COUNT) ? exception_names[regs->int_no] : "Unknown";
-    kprintf("X8664", " Exception %zu: %s\n", regs->int_no, name);
-    kprintf("X8664", " Error Code: 0x%lx\n", regs->error_code);
-    kprintf("X8664", " RIP: 0x%016lx  CS: 0x%04lx  RFLAGS: 0x%016lx\n", regs->rip, regs->cs, regs->rflags);
-    kprintf("X8664", " RSP: 0x%016lx  SS: 0x%04lx\n", regs->rsp, regs->ss);
-    kprintf("X8664", " RAX: 0x%016lx  RBX: 0x%016lx  RCX: 0x%016lx\n", regs->rax, regs->rbx, regs->rcx);
-    kprintf("X8664", " RDX: 0x%016lx  RSI: 0x%016lx  RDI: 0x%016lx\n", regs->rdx, regs->rsi, regs->rdi);
-    kprintf("X8664", " RBP: 0x%016lx   R8: 0x%016lx   R9: 0x%016lx\n", regs->rbp, regs->r8, regs->r9);
-    kprintf("X8664", " R10: 0x%016lx  R11: 0x%016lx  R12: 0x%016lx\n", regs->r10, regs->r11, regs->r12);
-    kprintf("X8664", " R13: 0x%016lx  R14: 0x%016lx  R15: 0x%016lx\n", regs->r13, regs->r14, regs->r15);
-    if (regs->int_no == 14) {
+    const char *name = (frame->int_no < IDT_EXCEPTION_COUNT) ? exception_names[frame->int_no] : "Unknown";
+    kprintf("X8664", " Exception %zu: %s\n", frame->int_no, name);
+    kprintf("X8664", " Error Code: 0x%lx\n", frame->error_code);
+    kprintf("X8664", " RIP: 0x%016lx  CS: 0x%04lx  RFLAGS: 0x%016lx\n", frame->rip, frame->cs, frame->rflags);
+    kprintf("X8664", " RSP: 0x%016lx  SS: 0x%04lx\n", frame->rsp, frame->ss);
+    kprintf("X8664", " RAX: 0x%016lx  RBX: 0x%016lx  RCX: 0x%016lx\n", frame->rax, frame->rbx, frame->rcx);
+    kprintf("X8664", " RDX: 0x%016lx  RSI: 0x%016lx  RDI: 0x%016lx\n", frame->rdx, frame->rsi, frame->rdi);
+    kprintf("X8664", " RBP: 0x%016lx   R8: 0x%016lx   R9: 0x%016lx\n", frame->rbp, frame->r8, frame->r9);
+    kprintf("X8664", " R10: 0x%016lx  R11: 0x%016lx  R12: 0x%016lx\n", frame->r10, frame->r11, frame->r12);
+    kprintf("X8664", " R13: 0x%016lx  R14: 0x%016lx  R15: 0x%016lx\n", frame->r13, frame->r14, frame->r15);
+    if (frame->int_no == 14) {
         kprintf("X8664", " CR2: 0x%016lx\n", cr2);
     }
     kprintf("X8664", "===================================================\n");
     kpanic("");
+
+    // will never get there
+    return frame;
 }

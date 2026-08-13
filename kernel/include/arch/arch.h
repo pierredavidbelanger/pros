@@ -3,6 +3,9 @@
 
 #include "stdc.h"
 
+// the layout is architecture-specific and not visible here
+struct trap_frame;
+
 void arch_init(void);
 
 void arch_halt(void);
