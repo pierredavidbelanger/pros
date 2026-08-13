@@ -11,11 +11,11 @@
 
 struct task {
     uint64_t pid;
-    int state;                 // TASK_RUNNING / TASK_READY for now; the rest earn their way in
+    int state;
     void *kernel_stack;        // base, for freeing and for the guard check
     void *kernel_stack_top;    // what arch_set_kernel_stack() gets
     struct trap_frame *frame;  // valid only while suspended
-    struct vmm_context *ctx;   // already exists — vmm_create_context()
+    struct vmm_context *ctx;
     struct task *next;
 };
 
