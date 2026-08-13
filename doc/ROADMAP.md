@@ -137,8 +137,8 @@ Two consequences worth stating, because each prevents a specific mistake:
 ---
 
 ### Phase 3: Preemption — Timers, Tasks & the Scheduler
-* **Status**: **IN PROGRESS** 🚧 — Step 1 of 3 is built. Working doc:
-  [`PHASE3_PREEMPTION.md`](PHASE3_PREEMPTION.md).
+* **Status**: **IN PROGRESS** 🚧 — Steps 1 and 2 of 3 are built; the remaining Step is the
+  payoff itself. Working doc: [`PHASE3_PREEMPTION.md`](PHASE3_PREEMPTION.md).
 * **Payoff**: two kernel threads interleaving their output. Preemptive multitasking, real and
   visible, **entirely in ring 0** — where a mistake prints a register dump instead of resetting
   the machine.
@@ -151,15 +151,21 @@ Two consequences worth stating, because each prevents a specific mistake:
     tick counter to back `sys_clock_gettime`/`sys_nanosleep` later. Both architectures tick at
     100 Hz and shut down on their own. Broken into individually verifiable Parts in
     [`PHASE3_STEP1_TIMER.md`](archive/PHASE3_STEP1_TIMER.md).
-  - ⬜ **Step 2 — `struct task`, per-task kernel stacks, trap-stub contract change** — the C
+  - ✅ **Step 2 — `struct task`, per-task kernel stacks, trap-stub contract change** — the C
     handler returns the frame to restore instead of `void`, which is what makes a context
     switch four lines of assembly. Includes `tss.rsp0` (x86_64) maintenance, moving the kernel
     to EL1h so SP_EL0 can belong to userland (AArch64), and the `vectors.S` rewrite that
-    follows from it. Still one task, so nothing observable changes. Broken into individually
-    verifiable Parts in [`PHASE3_STEP2_KERNEL_STACKS.md`](PHASE3_STEP2_KERNEL_STACKS.md).
+    follows from it. Still one task, so nothing observable changed — the acceptance criterion
+    was an absence, verified by deliberately nesting a data abort inside the timer IRQ handler
+    and watching both frames survive on the same stack. Broken into eight individually
+    verifiable Parts in
+    [`PHASE3_STEP2_KERNEL_STACKS.md`](archive/PHASE3_STEP2_KERNEL_STACKS.md).
   - ⬜ **Step 3 — Two kernel threads, round-robin** — a second task with a fabricated frame
     whose `rip` points at a kernel function, both printing. **The milestone where preemption is
-    real.**
+    real.** Step 2 left this narrower than it reads: `sched_on_trap_exit()` already runs on
+    every trap and already swaps frames when told to, so what's missing is a run queue, a
+    `task_create()`, and a `sched_pick_next()` that advances. Broken into individually
+    verifiable Parts in [`PHASE3_STEP3_ROUND_ROBIN.md`](PHASE3_STEP3_ROUND_ROBIN.md).
 
 ---
 

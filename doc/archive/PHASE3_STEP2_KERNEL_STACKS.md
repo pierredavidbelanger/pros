@@ -1,7 +1,7 @@
-# Working Document: Phase 3 Step 2 — `struct task`, Per-Task Kernel Stacks & the Trap-Stub Contract [STATUS: NOT STARTED ⬜]
+# Working Document: Phase 3 Step 2 — `struct task`, Per-Task Kernel Stacks & the Trap-Stub Contract [STATUS: COMPLETE ✅]
 
 > [!NOTE]
-> **Phase 3 Step 2**, from [`PHASE3_PREEMPTION.md`](PHASE3_PREEMPTION.md) Chapter 10, expanded into
+> **Phase 3 Step 2**, from [`PHASE3_PREEMPTION.md`](../PHASE3_PREEMPTION.md) Chapter 10, expanded into
 > individually verifiable Parts. It draws on Chapter 1 (the trap frame *is* the process),
 > Chapter 2 (kernel stacks) and Chapter 5 (the surgical context switch). Read those for the
 > *why*; this document is the *how*, in order.
@@ -10,11 +10,62 @@
 > privilege levels. The whole step is plumbing — deliberately.
 
 > [!NOTE]
-> Mentor-mode reminder (see the note at the top of [`../README.md`](../README.md)): this is a
+> Mentor-mode reminder (see the note at the top of [`../README.md`](../../README.md)): this is a
 > design reference to code from by hand, not code to paste in. The snippets below are shapes —
 > the interesting lines are usually the ones left out. Where a value or a register behaviour is
 > stated, it's worth confirming against the manual rather than trusting this file. Step 1's
 > document has a whole paragraph of corrections that exist because a draft was trusted.
+
+---
+
+## ✅ What actually got built
+
+All eight Parts are done. Both architectures boot green, all self-tests pass, and the boot log
+is what it was before Step 2 plus one task-dump line — which is the acceptance criterion.
+
+Four places where the build diverged from the design above. They're recorded rather than
+edited away, because the divergences are the interesting part.
+
+**C0 — the offsets are shared, not asserted.** The design called for `_Static_assert`s pinning
+`struct trap_frame`'s layout against the byte offsets `vectors.S` hard-codes. What got built is
+a shared `arch/aarch64/trap_frame.h` defining `TRAP_FRAME_SIZE` / `TRAP_FRAME_OFF_*` once, which
+both the C header and `vectors.S` include. Strictly better: an assert *detects* divergence,
+a single definition makes it unrepresentable. The `304` vs `sizeof == 296` alignment gap the
+design warned about is now expressed rather than commented.
+
+**B2 — the exit path needs the vector group too, and can't use `.if` to get it.** The design
+covers capturing the interrupted `sp` per entry group with `.if \num >= 8`, and stops there.
+The return path has the same problem and cannot solve it the same way: `vector_common_stub` is
+one shared block, not generated per slot, so there is no assembly-time constant to branch on.
+The vector type is read back out of the frame and compared against 8 at run time.
+
+That is not a workaround, it's the correct model, and it's worth stating plainly because
+Step 3 depends on it: **which stack pointer a frame returns to is a property of the frame, not
+of the trap that arrived.** After a context switch those are two different tasks, potentially
+at two different exception levels. An entry-time `.if` would have been reading the wrong task's
+answer the moment a real switch happened.
+
+**C2 — kernel stacks got their own translation unit.** `kstack.c`/`kstack.h` rather than living
+inside `task.c`, which made the guard-value and alloc/free self-tests trivial to write. Those
+five tests are the only part of this step `core/test/` can reach, and they pass.
+
+**C4 — the suggested probe address was wrong, and would have hung the machine.** See that Part
+for the full correction; the short version is that reserved space inside the GIC distributor's
+address window is not backed by a device model, so reading it raises an external abort rather
+than a translation fault, and `try_handle_hhdm_mmio_fault()` "resolves" it forever.
+
+### One honest gap, carried forward
+
+`task_init_boot()` sets task 0's `kernel_stack_top` to the *current* `sp` — a point in the
+middle of Limine's live boot stack — and `sched_init()` hands that to `arch_set_kernel_stack()`.
+So on x86_64, `tss.rsp0` currently points into a stack that is actively in use.
+
+Harmless today: nothing traps from ring 3, so the CPU never consults `rsp0`. It stops being
+harmless at [`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md) Step 1, where the first trap back from
+userland would build its frame on top of task 0's live locals. C2 deliberately left task 0 on
+Limine's stack — you can't move a stack you're standing on — so the fix belongs to whichever
+Step first has a task that both owns a real kernel stack and returns from EL0. Recorded in
+Phase 4's trap list so it isn't rediscovered by symptom.
 
 ---
 
@@ -50,7 +101,7 @@ purely so the step has something to *observe*. They are worth the effort:
 - ❌ No `switch_to` in assembly. The whole argument of Chapter 5 is that the frame-swap makes it
   unnecessary until Phase 7.
 - ❌ No FPU/SIMD save/restore. Nothing to corrupt with one task.
-- ❌ No fd tables moving into `struct task` — that's [`PHASE5_LOADING.md`](PHASE5_LOADING.md) Step 2, and moving them now means writing
+- ❌ No fd tables moving into `struct task` — that's [`PHASE5_LOADING.md`](../PHASE5_LOADING.md) Step 2, and moving them now means writing
   `fork`'s hardest field before `fork` exists.
 
 ---
@@ -123,7 +174,7 @@ this kernel never sets.
 The alternative — stay EL1t and seed SP_EL1 with a per-task kernel stack — technically works,
 but leaves SP_EL0 meaning "kernel stack" for kernel threads and "user stack" for user tasks,
 which is exactly the kind of two-meanings-one-register that produces unexplainable bugs in
-[`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) Step 1.
+[`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md) Step 1.
 
 ### 2. Where do kernel stacks come from?
 
@@ -184,7 +235,7 @@ a patch, and it should not be started while anything else is half-finished.
 
 ---
 
-## 🧩 C0 — One name for the frame struct ⬜
+## 🧩 C0 — One name for the frame struct ✅
 
 **Goal:** generic code can hold a pointer to a trap frame without knowing what's in it.
 
@@ -236,7 +287,7 @@ restore `spsr` from `esr` — is genuinely miserable. (`offsetof` comes in via `
 
 ---
 
-## 🧩 C1 — The stub contract change ⬜
+## 🧩 C1 — The stub contract change ✅
 
 **Goal:** the handler returns the frame to restore. This is the context switch, arriving four
 steps before there's anything to switch to.
@@ -294,7 +345,7 @@ in; do run it once.
 
 ---
 
-## 🅰️ A1 — x86_64: take `#PF` off IST1 ⬜
+## 🅰️ A1 — x86_64: take `#PF` off IST1 ✅
 
 **Goal:** page faults run on the stack of whoever faulted, like every other trap.
 
@@ -318,7 +369,7 @@ identical every time. After: an address on the interrupted stack, and it *varies
 
 ---
 
-## 🅱️ B1 — AArch64: move the kernel to EL1h ⬜
+## 🅱️ B1 — AArch64: move the kernel to EL1h ✅
 
 **Goal:** the kernel's stack pointer becomes SP_EL1, leaving SP_EL0 free to mean what the
 architecture intends it to mean.
@@ -377,7 +428,7 @@ aborts move from slot 0 to slot 4.
 
 ---
 
-## 🅱️ B2 — AArch64: build the frame on the stack the trap arrived on ⬜
+## 🅱️ B2 — AArch64: build the frame on the stack the trap arrived on ✅
 
 **Goal:** delete `exception_stack_top`, delete the scratch-register trick, and capture the
 interrupted stack pointer correctly. This is the biggest single change in Step 2.
@@ -438,7 +489,7 @@ something.
 > **Never write a lower-EL entry's saved `sp` into SP_EL1.** On a lower-EL return that value is
 > the *user's* stack pointer; putting it in SP_EL1 hands userland the kernel's stack pointer for
 > the next trap, which is a privilege escalation wearing a typo's clothing. It's not reachable
-> until [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) Step 1, and it is exactly the sort of thing that gets written now and found much later.
+> until [`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md) Step 1, and it is exactly the sort of thing that gets written now and found much later.
 
 ### The exit path
 
@@ -461,7 +512,7 @@ read out of the frame must be read before the `sp` moves past it.
 
 ---
 
-## 🧩 C2 — Kernel stacks and `arch_set_kernel_stack()` ⬜
+## 🧩 C2 — Kernel stacks and `arch_set_kernel_stack()` ✅
 
 **Goal:** a task owns its kernel stack, and the CPU can be told about it.
 
@@ -509,7 +560,7 @@ stack's extent isn't known; that's an honest gap, not something to fake.
 
 ---
 
-## 🧩 C3 — `struct task` and a scheduler that doesn't schedule ⬜
+## 🧩 C3 — `struct task` and a scheduler that doesn't schedule ✅
 
 **Goal:** the plumbing exists and runs on every trap, with exactly one task in it.
 
@@ -577,7 +628,7 @@ having a known range.
 
 ---
 
-## 🧩 C4 — Prove the per-task stack actually matters ⬜
+## 🧩 C4 — Prove the per-task stack actually matters ✅
 
 **Goal:** demonstrate the bug that this step fixed, rather than trusting that it did.
 
@@ -586,9 +637,7 @@ place to leave a step, and the demonstration is cheap.
 
 **On AArch64, this is decisive.** Deliberately take a page fault *inside* the timer IRQ handler:
 on one specific tick, read from an HHDM address that hasn't been touched yet and sits below
-`pmm_get_max_phys_addr()` — anything in the device region works, and
-`try_handle_hhdm_mmio_fault()` (`mm/vmm.c:206-219`) will resolve it. The GIC's own MMIO window
-past the registers already in use is a convenient choice.
+`pmm_get_max_phys_addr()`, so `try_handle_hhdm_mmio_fault()` (`mm/vmm.c:206-219`) resolves it.
 
 - **Before B2**, the nested data abort resets `sp` to `exception_stack_top` and builds its frame
   right on top of the outer IRQ's. The outer frame is destroyed. What that looks like when it
@@ -598,6 +647,62 @@ past the registers already in use is a convenient choice.
 
 Note the fault only happens on the *first* touch — the demand-pager maps the page and the next
 read is a plain load. One shot is enough; pick a different address if you want to repeat it.
+
+Use a **synchronous data abort**, not a second interrupt. Exception entry to EL1 sets
+`PSTATE.DAIF` to all-masked, so no IRQ can arrive while the handler runs; a synchronous abort
+isn't maskable at all (`PSTATE.A` masks SError, not this), so it fires regardless. That's what
+makes the nesting reachable in the first place.
+
+> [!WARNING]
+> **The address matters more than this document originally said.** The first draft suggested
+> "the GIC's own MMIO window past the registers already in use" — i.e. `0x08001000`, reserved
+> space in the GICv2 distributor map. That hangs the machine.
+>
+> *Reserved in the architecture* and *backed by a device model* are different things. QEMU
+> registers the distributor's MMIO region as 0x1000 bytes while `virt` reserves 0x10000 of
+> address space for it, so `0x08001000` is unassigned physical memory, and an unassigned access
+> on ARM raises a **synchronous external abort** — not a translation fault.
+>
+> The loop that follows is nasty: `esr_ec` is still `0x25`, so `aarch64_dispatch` calls
+> `vmm_handle_page_fault`, and `try_handle_hhdm_mmio_fault()` checks only the *address range*,
+> never the fault reason. It maps the page, returns true, the CPU `eret`s and re-executes the
+> load — which aborts again, because the page was never the problem. Forever, with IRQs masked.
+>
+> Use an address a real device model answers. **virtio-mmio slot 0 at `0x0A000000`** is the
+> clean choice on `virt`: all 32 slots exist even when unpopulated, offset 0 is the magic
+> register, the read has no side effects, and it returns the recognizable constant `0x74726976`
+> (`"virt"`) — so the printed value itself proves the load reached a device rather than a zero
+> that could mean anything.
+>
+> And **count the aborts taken while probing, panicking on the second.** A deliberate-fault
+> experiment must not be able to spin. That one counter is the difference between a legible
+> failure and a silently wedged machine — which is exactly the failure mode Step 1's worst
+> debugging session was made of.
+
+### Observed
+
+```
+[C4] outer IRQ frame at   FFFF0000BA91EE50, elr 0xffffffff800184b8
+[C4] nested abort frame at FFFF0000BA91ECB0, far 0xffff00000a000000, ec 0x25
+[C4] probe read 0x74726976 (expected magic), resumed inside the IRQ handler
+[C4] outer elr now        0xffffffff800184b8 -> UNCHANGED, outer frame survived
+[TIMER] 1 / 2 / 3, clean shutdown
+```
+
+The two frames are **416 bytes apart, nested below outer** — 304 of `TRAP_FRAME_SIZE` plus 112
+of C frames for `aarch64_exception_handler` → `aarch64_dispatch`. Nothing unexplained in the
+gap. Both sit on task 0's boot stack, whose dump reported `sp was 0xffff0000ba91ef40`, 240
+bytes above the outer frame.
+
+**Two distinct addresses is the whole proof.** Under the pre-B2 stub both lines would have
+printed `exception_stack_top - 304` — the same address twice, because every trap reset `sp` to
+the one global stack. The outer `elr` surviving unchanged is the second half: distinct
+addresses show the frames didn't collide, the unchanged `elr` shows the outer trap's *contents*
+came through and it resumed correctly.
+
+This also means the "before" case never had to be rebuilt. The old bug's signature is an
+equality between two numbers the new run prints, so the post-fix run alone is sufficient
+evidence — worth remembering the next time a step's acceptance criterion is an absence.
 
 **On x86_64 there is no equally clean demo**, and it's better to say so than to invent one. The
 equivalent failure is a `#PF` nested inside a `#PF`, both on IST1, and staging that deliberately
@@ -674,27 +779,29 @@ Grouped by symptom.
 
 ## 📁 Files touched
 
-- ⬜ `kernel/include/arch/arch.h` — `struct trap_frame;` incomplete declaration,
+- ✅ `kernel/include/arch/arch.h` — `struct trap_frame;` incomplete declaration,
   `arch_set_kernel_stack()`
-- ⬜ `kernel/arch/x86_64/idt.h` — `struct x86_64_registers` → `struct trap_frame`
-- ⬜ `kernel/arch/x86_64/idt.c` — handler returns a frame, `#PF` off IST1,
+- ✅ `kernel/arch/x86_64/idt.h` — `struct x86_64_registers` → `struct trap_frame`
+- ✅ `kernel/arch/x86_64/idt.c` — handler returns a frame, `#PF` off IST1,
   `arch_set_kernel_stack()` writing `sys_tss.rsp0`, dispatch split from the exit point
-- ⬜ `kernel/arch/x86_64/isr.S` — `movq %rax, %rsp` after the call
-- ⬜ `kernel/arch/aarch64/exceptions.h` — rename, plus `_Static_assert`s pinning the offsets
-  `vectors.S` hard-codes
-- ⬜ `kernel/arch/aarch64/exceptions.c` — handler returns a frame, dispatch split from the exit
+- ✅ `kernel/arch/x86_64/isr.S` — `movq %rax, %rsp` after the call
+- ✅ `kernel/arch/aarch64/exceptions.h` — rename. The offsets `vectors.S` hard-codes were
+  going to be pinned here with `_Static_assert`s; instead they moved to a shared
+  `kernel/arch/aarch64/trap_frame.h` that both this header and `vectors.S` include, so there
+  is nothing left to assert against
+- ✅ `kernel/arch/aarch64/exceptions.c` — handler returns a frame, dispatch split from the exit
   point, IRQ branch narrowed to the EL1h slot
-- ⬜ `kernel/arch/aarch64/vectors.S` — **rewritten**: no global stack, no scratch-register
+- ✅ `kernel/arch/aarch64/vectors.S` — **rewritten**: no global stack, no scratch-register
   trick, correct `sp` capture per entry group, `mov sp, x0` after the call, loud panic for
   unreachable slots
-- ⬜ `kernel/arch/aarch64/arch.c` — seed SP_EL1 and `msr spsel, #1` in `arch_init()`, poison
+- ✅ `kernel/arch/aarch64/arch.c` — seed SP_EL1 and `msr spsel, #1` in `arch_init()`, poison
   SP_EL0, empty `arch_set_kernel_stack()` with the invariant written down
-- ⬜ `kernel/proc/task.c` + `kernel/include/proc/task.h` (new) — `struct task`, kernel stack
+- ✅ `kernel/proc/task.c` + `kernel/include/proc/task.h` (new) — `struct task`, kernel stack
   allocation, guard value, task dump
-- ⬜ `kernel/proc/sched.c` (new) — `sched_init()`, `sched_on_trap_exit()`, `need_resched`
-- ⬜ `kernel/Makefile` — add `proc` to the `find` on line 30, *if* the new directory route is
+- ✅ `kernel/proc/sched.c` (new) — `sched_init()`, `sched_on_trap_exit()`, `need_resched`
+- ✅ `kernel/Makefile` — add `proc` to the `find` on line 30, *if* the new directory route is
   taken
-- ⬜ `kernel/core/main.c` — `sched_init()` before `arch_irq_enable()`, one task dump
+- ✅ `kernel/core/main.c` — `sched_init()` before `arch_irq_enable()`, one task dump
 
 Deliberately **not** touched: `fs/`, `mm/`, the GDT, `syscalls.h`. If a change wants to reach
 into those, it belongs to Phase 4 or later.
@@ -711,19 +818,43 @@ callable from a self-test. Two exceptions worth adding, since they're pure funct
   `pmm_get_free_page_count()` returns to where it started. The existing PMM tests already
   establish that pattern.
 
-Everything else is the boot log, and this step's boot log is supposed to be boring. The
-stated expected outputs are:
+Both got written, as `core/test/test_kstack.c` — five assertions under the `[KSTK]` tag,
+covering alloc, page alignment, guard-intact, guard-stomped, and free-returns-every-page. They
+are the only permanent test coverage this step produced, and they pass on both architectures.
 
-| Check | Expected |
-|---|---|
-| Both arches, normal boot | identical to today, plus one task-dump line |
-| C1's throwaway frame copy | ticks continue |
-| A1 frame address (x86, `#PF`) | outside `x86_64_exception_stack[]`, and varies |
-| B1 narrowed IRQ branch | ticks continue with `vector_type == 5` alone |
-| B2 frame address (ARM, IRQ) | varies between ticks |
-| B2 forced fault | `Current EL SP_EL1 Synchronous`, plausible `SP:` |
-| C4 nested fault (ARM) | outer trap resumes, next tick normal |
+Everything else is the boot log, and this step's boot log is supposed to be boring:
+
+| Check | Expected | Result |
+|---|---|---|
+| Both arches, normal boot | identical to before, plus one task-dump line | ✅ tests pass, 3 ticks, clean shutdown |
+| `[KSTK]` self-tests | 5 × PASS | ✅ both arches |
+| C1's throwaway frame copy | ticks continue | ✅ stub honours the returned pointer |
+| A1 frame address (x86, `#PF`) | outside `x86_64_exception_stack[]`, and varies | ✅ |
+| B1 narrowed IRQ branch | ticks continue with `vector_type == 5` alone | ✅ — it is now permanently narrowed to 5 |
+| B2 frame address (ARM, IRQ) | varies between ticks | ✅ |
+| B2 forced fault | `Current EL SP_EL1 Synchronous`, plausible `SP:` | ✅ |
+| C4 nested fault (ARM) | outer trap resumes, next tick normal | ✅ frames 416 bytes apart, outer `elr` unchanged |
+
+All throwaway instrumentation (C1's frame copy, A1/B2's address prints, C4's probe) was deleted
+after being observed. Nothing from it is in the tree.
 
 One thing worth carrying forward rather than doing here: once Step 3 has two tasks, the
 frame-inside-my-own-kernel-stack assertion from C3 becomes a real invariant with a real chance
 of firing. Write it now, believe it then.
+
+---
+
+## ➡️ What Step 3 inherits
+
+Three things this step established that Step 3 leans on directly, worth naming so they aren't
+rediscovered:
+
+- **`sched_on_trap_exit()` is the only place a switch may happen**, and `need_resched` is
+  already set by the timer path. Step 3's work is to make `sched_pick_next()` return something
+  other than `current` — the mechanism around it is done and running on every trap today.
+- **The exit path reads the vector group out of the frame** (see B2 above), so a frame
+  belonging to a *different* task returns to the right stack pointer. That was the one place
+  the design's entry-time `.if` would have quietly done the wrong thing.
+- **Task 0 has no stack guard and no known extent**, because it runs on Limine's stack. Task 1
+  will be the first task with a real `kstack_alloc()` stack, which is also the first time the
+  guard check in `sched_on_trap_exit()` has anything real to check.

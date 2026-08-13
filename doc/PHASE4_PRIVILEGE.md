@@ -237,15 +237,30 @@ Each has a symptom that points somewhere other than the cause.
 
 - **`tss.rsp0` unset** → triple fault on the first user→kernel trap. No output at all. Phase 3
   Step 2 sets it; this is the phase where forgetting it becomes fatal.
+- **⚠️ `tss.rsp0` set, but pointing into a stack that is already in use** → *not* a triple
+  fault, which is what makes it worse. Phase 3 Step 2 left task 0 running on the stack Limine
+  handed it — you cannot move a stack you are standing on — so `task_init_boot()` records the
+  live `sp` as its `kernel_stack_top`, and that is what `arch_set_kernel_stack()` writes. The
+  CPU never reads `rsp0` while nothing traps from ring 3, so it is dormant until **this phase's
+  Step 1**, where the first trap back from EL0 builds its frame on top of task 0's live locals
+  and corrupts whatever C frame was mid-flight. Symptom: plausible-looking garbage in kernel
+  variables after the first syscall, pointing nowhere near the cause. **Fix before entering
+  ring 3:** whichever task returns from EL0 must own a real `kstack_alloc()` stack, not the
+  boot stack.
 - **GDT/STAR misalignment** → `#GP` on `sysret`, with a fault address inside valid user code.
 - **`IF` not set in the fabricated `rflags`** → the first user process runs but is never
   preempted, and looks like a scheduler bug.
 - **`IA32_FMASK` not clearing `IF`** → interrupts stay enabled during syscall entry, before a
   kernel stack is established. Rare, catastrophic, non-deterministic.
-- **AArch64 `vectors.S` saving the wrong `sp`** → the saved `regs->sp` is the kernel stack, not
-  the user's. Phase 3 Step 2 fixes this; if it was skipped, this is where it bites.
-- **`tpidrro_el0` clobbered by the AArch64 stub** → TLS corruption that only appears once a
-  libc exists in Phase 9, long after the stub was last touched.
+- ~~**AArch64 `vectors.S` saving the wrong `sp`**~~ **Fixed in Phase 3 Step 2 Part B2.** Lower-EL
+  entries now read the interrupted `sp` from `SP_EL0`, and the exit path decides where to put it
+  back by reading the vector type *out of the frame* rather than from the trap that arrived —
+  because after a context switch those are two different tasks. The related hazard is still
+  live and worth re-reading before Step 1: **never write a lower-EL entry's saved `sp` into
+  SP_EL1**, which hands userland the kernel's stack pointer for the next trap.
+- ~~**`tpidrro_el0` clobbered by the AArch64 stub**~~ **Fixed in Phase 3 Step 2 Part B2** — the
+  scratch-register trick disappeared along with the global exception stack that forced it, so
+  the AArch64 TLS register is untouched by the trap path.
 
 ---
 
