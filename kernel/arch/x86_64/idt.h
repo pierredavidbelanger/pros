@@ -37,6 +37,11 @@ struct trap_frame {
     uint64_t rip, cs, rflags, rsp, ss;
 };
 
+#define X86_64_SELECTOR_KERNEL_CODE 0x08         // gdt.kernel_code, from tss_init()
+#define X86_64_SELECTOR_KERNEL_DATA 0x10         // gdt.kernel_data
+#define X86_64_RFLAGS_RESERVED_BIT1 (1ULL << 1)  // always 1
+#define X86_64_RFLAGS_IF            (1ULL << 9)  // interrupts enabled
+
 void idt_init(void);
 
 void idt_tss_set_rsp0(void *rsp0);

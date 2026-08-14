@@ -8,6 +8,7 @@
 #include "mm/pmm.h"
 #include "core/memory.h"
 #include "core/kprintf.h"
+#include "proc/task.h"
 
 void arch_init(void) {
     idt_init();
@@ -155,5 +156,21 @@ void *arch_get_stack_pointer(void) {
 // Task
 
 struct trap_frame *arch_task_init_frame(void *stack_top, void (*entry)(void)) {
-    return NULL;
+
+    // A stray ret pops this and gose to task_exit_guard
+    uint64_t *guard_slot = (uint64_t *) ((uint8_t *) stack_top - 8);
+    *guard_slot = (uint64_t) task_exit_guard;
+
+    // rsp must be 16-aligned at function entry
+    struct trap_frame *frame = (struct trap_frame *) (((uint64_t) guard_slot - sizeof(struct trap_frame)) & ~0xFULL);
+
+    memset(frame, 0, sizeof(struct trap_frame));
+    frame->rip = (uint64_t) entry;
+    frame->cs = X86_64_SELECTOR_KERNEL_CODE;
+    frame->ss = X86_64_SELECTOR_KERNEL_DATA;
+    frame->rflags = X86_64_RFLAGS_RESERVED_BIT1 | X86_64_RFLAGS_IF;
+    frame->rsp = (uint64_t) guard_slot;
+    frame->int_no = 0xFF; // just to be able to "see" this in a dump
+
+    return frame;
 }
