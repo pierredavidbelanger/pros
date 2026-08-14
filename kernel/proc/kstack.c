@@ -38,7 +38,7 @@ void kstack_get_usage(void *kstack, uint64_t *free, uint64_t *total) {
     if (!kstack || !free || !total) return;
     *free = 0;
     *total = KSTACK_SIZE;
-    uint64_t i = 0;
+    uint64_t i = sizeof(uint64_t);
     while (i < KSTACK_SIZE && *((uint8_t *) kstack + i) == 0) {
         (*free)++;
         i++;

@@ -90,6 +90,7 @@ void _start(void) {
     if (tests_enabled) test_vfs();
 
     if (tests_enabled) test_kstack();
+    if (tests_enabled) test_task();
 
     sched_init();
     kprintf("SCHED", "Initialized scheduler, ready to switch context when timer will be up\n");
