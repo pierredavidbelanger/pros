@@ -6,6 +6,8 @@
 
 void sched_init(void);
 
+void sched_add_task(struct task *task);
+
 struct task *sched_get_current_task(void);
 
 struct trap_frame *sched_on_trap_exit(struct trap_frame *frame);

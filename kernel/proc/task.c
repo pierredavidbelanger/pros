@@ -13,6 +13,7 @@ struct task *task_init_boot(void) {
     if (task0 == NULL) return NULL;
     task0->pid = 0;
     task0->state = TASK_RUNNING;
+    snprintf(task0->name, TASK_NAME_SIZE, "task0");
     task0->kernel_stack_top = arch_get_stack_pointer(); // a point inside Limine stack, not its top
     return task0;
 }
@@ -24,9 +25,21 @@ void task_dump(struct task *task) {
 
     // Task 0 runs on the stack handed by Limine: no base, no extent, no guard.
     if (!task->kernel_stack) {
-        kprintf("TASK", "pid %zu  %s  boot stack, sp was 0x%016lx, extent unknown, guard n/a\n", task->pid, state, (uint64_t)task->kernel_stack_top);
+        kprintf("TASK", "pid %zu  %s  %s  switch_count %zu  boot stack, sp was 0x%016lx, extent unknown, guard n/a\n",
+            task->pid, task->name, state, task->switch_count,
+            (uint64_t)task->kernel_stack_top);
         return;
     }
 
-    kprintf("TASK", "pid %zu  %s  kstack 0x%016lx-0x%016lx  guard %s\n", task->pid, state, (uint64_t)task->kernel_stack, (uint64_t)task->kernel_stack_top, kstack_guard_intact(task->kernel_stack_top) ? "ok" : "GONE");
+    kprintf("TASK", "pid %zu  %s  %s  switch_count %zu  kstack 0x%016lx-0x%016lx  guard %s\n",
+        task->pid, task->name, state, task->switch_count,
+        (uint64_t)task->kernel_stack, (uint64_t)task->kernel_stack_top,
+        kstack_guard_intact(task->kernel_stack_top) ? "ok" : "GONE");
+}
+
+bool task_stack_intact(const struct task *task) {
+    if (!task) return false;
+    if (!task->kernel_stack) return true;
+    if (!kstack_guard_intact(task->kernel_stack_top)) return false;
+    return true;
 }
