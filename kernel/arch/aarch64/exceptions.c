@@ -8,6 +8,7 @@
 #include "arch/arch.h"
 #include "mm/vmm.h"
 #include "proc/sched.h"
+#include "proc/task.h"
 
 static const char *vector_names[16] = {
     "Current EL SP_EL0 Synchronous",
@@ -42,6 +43,8 @@ static void panic_unhandled(struct trap_frame *frame, const char *what) {
         kprintf("ARM64", " X%02d: 0x%016lx  X%02d: 0x%016lx  X%02d: 0x%016lx\n", i, frame->x[i], i+1, frame->x[i+1], i+2, frame->x[i+2]);
     }
     kprintf("ARM64", " X30 (LR): 0x%016lx\n", frame->x[30]);
+    kprintf("ARM64", "==================== [ TASKS ] ====================\n");
+    task_dump_all();
     kprintf("ARM64", "===================================================\n");
     kpanic("");
 }

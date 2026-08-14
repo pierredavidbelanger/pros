@@ -8,6 +8,7 @@
 #include "core/memory.h"
 #include "core/timer.h"
 #include "proc/sched.h"
+#include "proc/task.h"
 
 struct gdt_entry {
     uint16_t limit_low;
@@ -182,6 +183,8 @@ static void x86_64_dispatch(struct trap_frame *frame) {
     if (frame->int_no == 14) {
         kprintf("X8664", " CR2: 0x%016lx\n", cr2);
     }
+    kprintf("X8664", "==================== [ TASKS ] ====================\n");
+    task_dump_all();
     kprintf("X8664", "===================================================\n");
     kpanic("");
 }
