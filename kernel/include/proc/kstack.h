@@ -14,13 +14,19 @@
 // An overflow reaches it before it reaches anything else, we guess it will panic instead
 #define KSTACK_GUARD 0x5041474544414544ULL
 
-// Returns the stack top: the highest address, one past the end of the allocation.
-// Stacks grow down, so that is where a stack pointer starts.
+// Returns the base of an allocated space for a stack
 void *kstack_alloc(void);
 
-// Free the stack (from the stack top, as we reverse what kstack_alloc did).
-void kstack_free(void *stack_top);
+// Free the stack
+void kstack_free(void *kstack);
 
-bool kstack_guard_intact(void *stack_top);
+// Get the top of this stack
+// Stacks grow down, so that is where a stack pointer starts
+void *kstack_get_top(void *kstack);
+
+bool kstack_guard_intact(void *kstack);
+
+// true if ptr is within the stack at kstack
+bool kstack_contains(void *kstack, void *ptr);
 
 #endif //PROS_KSTACK_H

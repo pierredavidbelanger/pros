@@ -56,7 +56,6 @@ qemu-aarch64: root | logs
 		-drive if=none,id=hd0,file=fat:rw:root,format=raw \
 		-device virtio-blk-pci,drive=hd0,disable-legacy=on \
 		-device ramfb \
-		| ansifilter \
 		| tee logs/qemu-aarch64.log
 
 .PHONY: qemu-x86_64
@@ -68,7 +67,6 @@ qemu-x86_64: root | logs
 		-drive if=pflash,unit=0,format=raw,file=bin/edk2-ovmf-bins/ovmf-code-x86_64.fd,readonly=on \
 		-drive if=none,id=hd0,file=fat:rw:root,format=raw \
 		-device virtio-blk-pci,drive=hd0,disable-legacy=on \
-		| ansifilter \
 		| tee logs/qemu-x86_64.log
 
 .PHONY: qemu-aarch64-nographic
@@ -84,7 +82,6 @@ qemu-aarch64-nographic: root | logs
 		-drive if=none,id=hd0,file=fat:rw:root,format=raw \
 		-device virtio-blk-pci,drive=hd0,disable-legacy=on \
 		-device ramfb \
-		| ansifilter \
 		| tee logs/qemu-aarch64.log
 
 .PHONY: qemu-x86_64-nographic
@@ -98,7 +95,6 @@ qemu-x86_64-nographic: root | logs
 		-drive if=pflash,unit=0,format=raw,file=bin/edk2-ovmf-bins/ovmf-code-x86_64.fd,readonly=on \
 		-drive if=none,id=hd0,file=fat:rw:root,format=raw \
 		-device virtio-blk-pci,drive=hd0,disable-legacy=on \
-		| ansifilter \
 		| tee logs/qemu-x86_64.log
 
 .PHONY: qemu-both-nographic

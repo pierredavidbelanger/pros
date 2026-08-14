@@ -20,6 +20,25 @@
 // Fast enough for a responsive scheduler time slice later, slow enough that the handler's cost is irrelevant.
 #define TIMER_HZ 100
 
+void task_entry(const char *name) {
+    uint64_t last_ticks = 0;
+    while (true) {
+        uint64_t ticks = timer_get_ticks() / 50;
+        if (ticks != last_ticks) {
+            kprintf(name, "%zu\n", timer_get_ticks());
+            last_ticks = ticks;
+        }
+    }
+}
+
+void task1_entry(void) {
+    task_entry("T1");
+}
+
+void task2_entry(void) {
+    task_entry("T2");
+}
+
 void _start(void) {
     if (!LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision)) {
         arch_halt();
@@ -74,7 +93,11 @@ void _start(void) {
 
     sched_init();
     kprintf("SCHED", "Initialized scheduler, ready to switch context when timer will be up\n");
-    task_dump(sched_get_current_task());
+
+    struct task *task1 = task_create("T1", task1_entry);
+    struct task *task2 = task_create("T2", task2_entry);
+    sched_add_task(task1);
+    sched_add_task(task2);
 
     kprintf("TIMER", "Starting timer at %d Hz\n", TIMER_HZ);
     arch_timer_init(TIMER_HZ);
@@ -88,6 +111,7 @@ void _start(void) {
         uint64_t seconds = timer_get_ticks() / TIMER_HZ;
         if (seconds != last_seconds) {
             kprintf("TIMER", "%zu\n", seconds);
+            task_dump_all();
             last_seconds = seconds;
             if (seconds >= 3) {
                 break;

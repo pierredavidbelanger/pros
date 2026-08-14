@@ -80,7 +80,7 @@ To build and run PrOS, ensure you have the following installed on your host:
 3. **QEMU System Emulator**:
    - `qemu-system-aarch64` (for AArch64 target)
    - `qemu-system-x86_64` (for x86_64 target)
-4. **Utilities**: `curl`, `tar`, `gunzip`, `ansifilter` (used by Makefile).
+4. **Utilities**: `curl`, `tar`, `gunzip` (used by Makefile).
 
 ---
 

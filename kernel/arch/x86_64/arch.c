@@ -151,3 +151,9 @@ void *arch_get_stack_pointer(void) {
     asm volatile ("mov %%rsp, %0" : "=r"(rsp));
     return (void *)rsp;
 }
+
+// Task
+
+struct trap_frame *arch_task_init_frame(void *stack_top, void (*entry)(void)) {
+    return NULL;
+}

@@ -2,9 +2,12 @@
 
 #include "gic.h"
 #include "timer.h"
+#include "trap_frame.h"
+#include "exceptions.h"
 #include "mm/vmm.h"
 #include "mm/pmm.h"
 #include "core/memory.h"
+#include "proc/task.h"
 
 void arch_init(void) {
     // Enable FPU & SIMD access at EL1 (and EL0, once user space exists).
@@ -197,4 +200,17 @@ void *arch_get_stack_pointer(void) {
     uint64_t sp;
     asm volatile ("mov %0, sp" : "=r"(sp));
     return (void *)sp;
+}
+
+// Task
+
+struct trap_frame *arch_task_init_frame(void *stack_top, void (*entry)(void)) {
+    struct trap_frame *frame = (struct trap_frame *) ((uint8_t *) stack_top - TRAP_FRAME_SIZE);
+    memset(frame, 0, sizeof(struct trap_frame));
+    frame->x[30] = (uint64_t) task_exit_guard; // a stray return will go there
+    frame->sp = (uint64_t) stack_top; // the top of the stack we are building
+    frame->elr = (uint64_t) entry; // where we eret
+    frame->spsr = 0x5; // TODO: AARCH64_SPSR_M_EL1H
+    frame->vector_type = 5; // TODO: AARCH64_VECTOR_CURRENT_EL_IRQ
+    return frame;
 }

@@ -69,4 +69,8 @@ void arch_set_kernel_stack(void *stack_top);
 // Where the stack pointer is right now.
 void *arch_get_stack_pointer(void);
 
+// Task
+
+struct trap_frame *arch_task_init_frame(void *stack_top, void (*entry)(void));
+
 #endif //PROS_ARCH_H

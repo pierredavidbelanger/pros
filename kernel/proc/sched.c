@@ -15,12 +15,12 @@ static struct task *sched_pick_next(void) {
 
 void sched_init(void) {
     run_queue_head = NULL;
-    struct task *task0 = task_init_boot();
-    if (!task0) kpanic("cant create boot task");
-    run_queue_head = task0;
-    task0->next = task0;
-    arch_set_kernel_stack(task0->kernel_stack_top);
-    current = task0;
+    struct task *task = task_init_boot();
+    if (!task) kpanic("cant create boot task");
+    run_queue_head = task;
+    task->next = task;
+    arch_set_kernel_stack(task->kernel_stack_top);
+    current = task;
 }
 
 void sched_add_task(struct task *task) {
@@ -37,6 +37,10 @@ struct trap_frame *sched_on_trap_exit(struct trap_frame *frame) {
     // Nothing to switch to, give the same frame back
     if (!current) return frame;
 
+    if (!task_owns_frame(current, frame)) {
+        task_dump_all();
+        kpanic("current task does not owns the current frame");
+    }
     current->frame = frame;
 
     if (!need_resched) return frame;

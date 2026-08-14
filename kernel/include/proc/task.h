@@ -15,7 +15,7 @@ struct task {
     uint64_t pid;
     int state;
     char name[TASK_NAME_SIZE]; // for the dump essentially
-    void *kernel_stack;        // base, for freeing and for the guard check
+    void *kernel_stack_base;   // base, for freeing and for the guard check
     void *kernel_stack_top;    // what arch_set_kernel_stack() gets
     struct trap_frame *frame;  // valid only while suspended
     struct vmm_context *ctx;
@@ -25,8 +25,18 @@ struct task {
 
 struct task *task_init_boot(void);
 
-void task_dump(struct task *task);
+struct task *task_create(const char *name, void (*entry)(void));
+
+void task_destroy(struct task *task);
+
+bool task_owns_frame(const struct task *task, const struct trap_frame *frame);
+
+void task_exit_guard(void);
 
 bool task_stack_intact(const struct task *task);
+
+void task_dump(struct task *task);
+
+void task_dump_all(void);
 
 #endif //PROS_TASK_H
