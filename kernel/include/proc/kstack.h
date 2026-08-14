@@ -29,4 +29,6 @@ bool kstack_guard_intact(void *kstack);
 // true if ptr is within the stack at kstack
 bool kstack_contains(void *kstack, void *ptr);
 
+void kstack_get_usage(void *kstack, uint64_t *free, uint64_t *total);
+
 #endif //PROS_KSTACK_H

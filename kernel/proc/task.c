@@ -84,9 +84,13 @@ void task_dump(struct task *task) {
         return;
     }
 
-    kprintf("TASK", "pid %zu  %s  %s  switch_count %zu  kstack 0x%016lx-0x%016lx  guard %s\n",
+    uint64_t free = 0;
+    uint64_t total = 0;
+    kstack_get_usage(task->kernel_stack_base, &free, &total);
+    kprintf("TASK", "pid %zu  %s  %s  switch_count %zu  kstack 0x%016lx-0x%016lx  free %zu/%zu  guard %s\n",
         task->pid, task->name, state, task->switch_count,
         (uint64_t)task->kernel_stack_base, (uint64_t)task->kernel_stack_top,
+        free, total,
         kstack_guard_intact(task->kernel_stack_base) ? "ok" : "GONE");
 }
 
