@@ -210,7 +210,7 @@ struct trap_frame *arch_task_init_frame(void *stack_top, void (*entry)(void)) {
     frame->x[30] = (uint64_t) task_exit_guard; // a stray return will go there
     frame->sp = (uint64_t) stack_top; // the top of the stack we are building
     frame->elr = (uint64_t) entry; // where we eret
-    frame->spsr = 0x5; // TODO: AARCH64_SPSR_M_EL1H
-    frame->vector_type = 5; // TODO: AARCH64_VECTOR_CURRENT_EL_IRQ
+    frame->spsr = AARCH64_SPSR_M_EL1H;
+    frame->vector_type = AARCH64_VECTOR_CURRENT_EL_IRQ; // below 8, so the exit path leaves SP_EL1 alone
     return frame;
 }

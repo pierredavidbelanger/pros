@@ -29,6 +29,20 @@ _Static_assert(offsetof(struct trap_frame, vector_type) == TRAP_FRAME_OFF_VECTOR
 // The stub reserves TRAP_FRAME_SIZE, which must be sizeof rounded up to the 16 bytes
 _Static_assert(TRAP_FRAME_SIZE == (sizeof(struct trap_frame) + 15) / 16 * 16, "trap_frame.h frame size is stale");
 
+// What eret restores as the processor state
+#define AARCH64_SPSR_M_EL1H 0x5ULL // M[3:0] = 0b0101, return to EL1 on SP_EL1
+
+// The DAIF masks, all clear in M_EL1H above.
+// A frame with I set runs once and never gives the CPU back
+#define AARCH64_SPSR_D (1ULL << 9) // debug
+#define AARCH64_SPSR_A (1ULL << 8) // SError
+#define AARCH64_SPSR_I (1ULL << 7) // IRQ
+#define AARCH64_SPSR_F (1ULL << 6) // FIQ
+
+// vectors.S reads this back out of the frame on the way out.
+// Below 8 leaves SP_EL1 alone, 8 and above writes the frame sp into SP_EL0
+#define AARCH64_VECTOR_CURRENT_EL_IRQ 5 // current EL on SP_EL1, IRQ
+
 struct trap_frame *aarch64_exception_handler(struct trap_frame *frame);
 
 #endif //PROS_AARCH64_EXCEPTIONS_H

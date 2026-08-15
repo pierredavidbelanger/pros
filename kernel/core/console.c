@@ -10,11 +10,10 @@ static bool earlycon_active = false;
 void console_init(void) {
     earlycon_init();
     earlycon_active = true;
-    // clear the terminal so kernel output starts on a clean line instead of overlapping
-    // const char *clear_seq = "\033[2J\033[H";
-    // for (const char *p = clear_seq; *p; p++) {
-        // console_putc(*p);
-    // }
+    // limine leaves the cursor at row 1, so our first line would land on theirs
+    // we dont clear, their output is worth reading when a boot goes wrong
+    console_putc('\n');
+    console_putc('\n');
 }
 
 void console_putc(char c) {

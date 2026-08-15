@@ -156,8 +156,7 @@ void *arch_get_stack_pointer(void) {
 // Task
 
 struct trap_frame *arch_task_init_frame(void *stack_top, void (*entry)(void)) {
-
-    // A stray ret pops this and gose to task_exit_guard
+    // no link register here, so a stray return pops this off the stack
     uint64_t *guard_slot = (uint64_t *) ((uint8_t *) stack_top - 8);
     *guard_slot = (uint64_t) task_exit_guard;
 
@@ -165,11 +164,11 @@ struct trap_frame *arch_task_init_frame(void *stack_top, void (*entry)(void)) {
     struct trap_frame *frame = (struct trap_frame *) (((uint64_t) guard_slot - sizeof(struct trap_frame)) & ~0xFULL);
 
     memset(frame, 0, sizeof(struct trap_frame));
-    frame->rip = (uint64_t) entry;
+    frame->rip = (uint64_t) entry; // where we iretq
     frame->cs = X86_64_SELECTOR_KERNEL_CODE;
     frame->ss = X86_64_SELECTOR_KERNEL_DATA;
     frame->rflags = X86_64_RFLAGS_RESERVED_BIT1 | X86_64_RFLAGS_IF;
-    frame->rsp = (uint64_t) guard_slot;
+    frame->rsp = (uint64_t) guard_slot; // iretq pops this even at the same privilege
     frame->int_no = 0xFF; // just to be able to "see" this in a dump
 
     return frame;
