@@ -7,7 +7,7 @@
 > This design was written as part of the original single-document Phase 3 plan and split out
 > when that phase was broken into three along the capability boundaries it had already
 > identified. The starting-line inventory, the trap-frame model it depends on, and the
-> scheduler live in [`PHASE3_PREEMPTION.md`](PHASE3_PREEMPTION.md).
+> scheduler live in [`PHASE3_PREEMPTION.md`](archive/PHASE3_PREEMPTION.md).
 
 > [!NOTE]
 > Mentor-mode reminder (see the note at the top of [`../README.md`](../README.md)): this is a
@@ -79,7 +79,7 @@ dereferencing a kernel address takes a page fault rather than reading kernel mem
 
 ### Entering ring 3 / EL0
 
-Per [`PHASE3_PREEMPTION.md`](PHASE3_PREEMPTION.md) Chapter 1: fabricate a trap frame and return
+Per [`PHASE3_PREEMPTION.md`](archive/PHASE3_PREEMPTION.md) Chapter 1: fabricate a trap frame and return
 from it. No special instruction.
 
 **x86_64** — build a stack that `iretq` will consume. `iretq` pops, in order:
@@ -206,11 +206,15 @@ Two Steps, and they must stay married — Step 1's success criterion is a *crash
 fine place to end a Step and a terrible place to end a phase.
 
 **⬜ Step 1 — Ring 3 / EL0, with a hand-fabricated user program.**
+→ [`PHASE4_STEP1_RING3_EL0.md`](PHASE4_STEP1_RING3_EL0.md)
 Skip the ELF loader: `memcpy` a few hand-assembled instructions into a user page and enter it.
 Needs user segments in the GDT on x86_64, laid out to `sysret`'s constraint even though
 nothing enforces it until Step 2. Acceptance: the process runs and then faults on a privileged
-instruction, and the existing unhandled-exception dump reports it from `CS=0x33` / SPSR EL0t.
+instruction, and the existing unhandled-exception dump reports it from a user `CS` / SPSR EL0t.
 **Faulting is the success criterion here** — it proves the privilege drop actually happened.
+Broken into six individually verifiable Parts (plus an optional SMEP one) in its own working
+document, which also computes this tree's actual user selectors — they are **not** Linux's
+`0x33`/`0x2b`, because the TSS sits at 0x18 here and shifts everything by a slot.
 
 **⬜ Step 2 — The syscall entry path.**
 `svc` dispatch on AArch64 (small); `syscall`/`sysret` + `swapgs` + the MSRs + the GDT layout on

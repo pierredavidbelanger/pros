@@ -1,4 +1,4 @@
-# Working Document: Phase 3 Step 3 — Two Kernel Threads, Round-Robin [STATUS: NOT STARTED ⬜]
+# Working Document: Phase 3 Step 3 — Two Kernel Threads, Round-Robin [STATUS: COMPLETE ✅]
 
 > [!NOTE]
 > **Phase 3 Step 3**, from [`PHASE3_PREEMPTION.md`](PHASE3_PREEMPTION.md) Chapter 6, expanded
@@ -8,12 +8,83 @@
 > This is **Phase 3's payoff**. Everything before it was plumbing.
 
 > [!NOTE]
-> Mentor-mode reminder (see the note at the top of [`../README.md`](../README.md)): this is a
+> Mentor-mode reminder (see the note at the top of [`../README.md`](../../README.md)): this is a
 > design reference to code from by hand, not code to paste in. Signatures, struct fields and
 > constants are given exactly, because guessing those wastes time without teaching anything —
 > but the bodies are yours. Where a register value or a hardware behaviour is stated, confirm
 > it against the manual; Step 1 and Step 2 both have corrections that exist because a draft was
 > trusted.
+
+---
+
+## ✅ What actually got built
+
+All six Parts are done. Both architectures boot green, three tasks interleave their output for
+the full three seconds, the countdown still reaches 3, and the machine shuts itself down. The
+switch counters land where the arithmetic says they should — AArch64 read `34 / 67 / 100` at the
+one-, two- and three-second marks, identical across all three tasks, against a predicted
+`300 / 3 = 100`. `core/test/` gained six `[TASK ]` checks, bringing the suite to 75.
+
+Seven places where the build diverged from the design below, recorded rather than edited away.
+
+**The `kstack` API was reshaped, and it's the best change in the step.** The design had
+`kstack_alloc()` return the stack *top* and left `task_owns_frame()` to re-derive the base with
+`kernel_stack_top - KSTACK_SIZE` in `task.c`. What got built inverts it: `kstack_alloc()` returns
+the **base**, `kstack_get_top()` derives the top, and `kstack_contains()` / `kstack_get_usage()`
+keep every piece of stack geometry inside `kstack.c` where the guard-slot math already lived.
+`struct task`'s field became `kernel_stack_base` to match. Strictly better, and visible in the
+boot log: the two pointers used to hold *identical* values for every created task, so
+`kernel_stack`'s "base, for freeing and for the guard check" comment described an intention
+rather than the data. They are now genuinely different numbers, and the dump prints a real
+`0x…ef000-0x…f3000` extent.
+
+**`arch_task_init_frame()` lives in `arch/<arch>/arch.c`, not `idt.c` / `exceptions.c`.** The
+design argued for keeping frame knowledge next to the trap path. It ended up next to the other
+`arch_*` hooks instead, which is the competing and equally defensible grouping. The x86_64
+constants did land in `idt.h` as designed.
+
+**The AArch64 constants were extracted late.** `frame->spsr = 0x5` and `frame->vector_type = 5`
+shipped as literals carrying `// TODO:` comments, and were given their designed names —
+`AARCH64_SPSR_M_EL1H`, `AARCH64_VECTOR_CURRENT_EL_IRQ`, plus the four DAIF masks — in
+`exceptions.h` just after the step closed. **Closed.**
+
+**`SCHED_TIME_SLICE_TICKS` was never defined.** The slice is one tick because
+`sched_on_timer_tick()` sets `need_resched` unconditionally — the behaviour the design wanted,
+but the named knob it explicitly asked for ("so the knob exists and is named, even while it's 1")
+is absent. **Open**, and the first thing to add when the output gets too noisy to read.
+
+**`task->name` is a copied array, not a borrowed pointer.** `char name[TASK_NAME_SIZE]` filled by
+`snprintf`, rather than the `const char *name` specified. A task owns its name instead of
+depending on the caller's string outliving it — worth the 128 bytes here.
+
+**The high-water mark reports *free*, not *used*, and scans byte-by-byte.** `kstack_alloc()`
+zeroes the whole allocation, and `kstack_get_usage()` walks up from just past the guard counting
+zero bytes until the first non-zero one. Finer-grained than the word-scan the design described,
+and it took two attempts: the first counted *non-zero* bytes (so it measured the guard and
+stopped), the second started at offset 0 (so it hit the guard immediately and always reported 0).
+Both bugs are invisible in a boot log unless you know what the number should be — steady
+`14057/16384` on AArch64, plateauing `14377 → 14185` on x86_64.
+
+**A commented-out `vmm_create_context()` is still sitting in `task_create()`.** It was written,
+then correctly backed out per this document's "`task->ctx` stays unused" scope line. The dead
+lines remain. **Open**, and a one-line cleanup.
+
+### The two failures worth remembering
+
+Both cost real time and neither was where it looked.
+
+**`arch_task_init_frame()` returned `void` at first**, so `task->frame` stayed `NULL` and the
+stub restored from address zero — `mov sp, x0` with `x0 = 0`, then a data abort on the next
+`ldr`, while already inside the exception path, on a stack pointer of zero. A silent fault loop:
+no panic, no reset, no output. The symptom is indistinguishable from a scheduler bug and the
+cause is a missing `return`.
+
+**The C3 deliberate-break test appeared to hang instead of panicking.** It didn't — the panic
+fired correctly, and `ansifilter`'s `std::ostream` buffer ate it, because a panic never closes
+the pipe and a forced kill never flushes it. This is exactly the failure
+[`SIDEQUEST.md`](../SIDEQUEST.md) predicted in its "Kill `ansifilter`" entry, met in the wild.
+Bypassing the filter with a direct `qemu-system-aarch64` invocation showed the panic intact.
+That side quest is now worth doing before the next long hang-debugging session.
 
 ---
 
@@ -160,7 +231,7 @@ you find out with one task on the CPU, not three.
 
 ---
 
-## 🧩 C0 — A run queue that advances ⬜
+## 🧩 C0 — A run queue that advances ✅
 
 **Goal:** `sched_pick_next()` walks a circular list. With one task in it, nothing changes.
 
@@ -251,7 +322,7 @@ if it panics, `task_stack_intact()` isn't being used.
 
 ---
 
-## 🧩 C1 — Build a task without scheduling it ⬜
+## 🧩 C1 — Build a task without scheduling it ✅
 
 **Goal:** a second `struct task` exists, fully formed, with its own kernel stack — and never
 runs.
@@ -315,7 +386,7 @@ where it started — the pattern `test_kstack.c` already uses.
 
 ---
 
-## 🅰️ A1 — x86_64: fabricate a frame ⬜
+## 🅰️ A1 — x86_64: fabricate a frame ✅
 
 **Goal:** write the frame `iretq` needs in order to "return" into a function that has never run.
 
@@ -406,7 +477,7 @@ about, believe the hardware.** Delete the print afterwards.
 
 ---
 
-## 🅱️ B1 — AArch64: fabricate a frame ⬜
+## 🅱️ B1 — AArch64: fabricate a frame ✅
 
 **Goal:** the same thing for `eret`, which is a shorter list and one sharp edge.
 
@@ -480,7 +551,7 @@ about whether the task will be preemptible.
 
 ---
 
-## 🧩 C2 — Two threads, and the payoff ⬜
+## 🧩 C2 — Two threads, and the payoff ✅
 
 **Goal:** interleaved output.
 
@@ -573,7 +644,7 @@ that nothing here is cooperative.
 
 ---
 
-## 🧩 C3 — Make the invariants real ⬜
+## 🧩 C3 — Make the invariants real ✅
 
 **Goal:** the assertions written in Step 2 "for later" now have something to catch.
 
@@ -662,25 +733,31 @@ Grouped by symptom, because that's how you'll meet them.
 
 ## 📁 Files touched
 
-- ⬜ `kernel/include/arch/arch.h` — `arch_task_init_frame()`
-- ⬜ `kernel/arch/x86_64/idt.h` — selector and `RFLAGS` constants
-- ⬜ `kernel/arch/x86_64/idt.c` — `arch_task_init_frame()`
-- ⬜ `kernel/arch/aarch64/exceptions.h` — `SPSR` and vector-slot constants
-- ⬜ `kernel/arch/aarch64/exceptions.c` — `arch_task_init_frame()`
-- ⬜ `kernel/include/proc/task.h` — `name`, `switch_count`; `task_create()`,
+- ✅ `kernel/include/arch/arch.h` — `arch_task_init_frame()`
+- ✅ `kernel/arch/x86_64/idt.h` — selector and `RFLAGS` constants
+- ✅ `kernel/arch/x86_64/arch.c` — `arch_task_init_frame()` (**not** `idt.c`, as designed)
+- ✅ `kernel/arch/aarch64/exceptions.h` — `SPSR` and vector-slot constants, added just after the
+  step closed; the values shipped as literals with `// TODO:` comments in `arch.c`
+- ✅ `kernel/arch/aarch64/arch.c` — `arch_task_init_frame()` (**not** `exceptions.c`)
+- ✅ `kernel/include/proc/task.h` — `name`, `switch_count`; `task_create()`,
   `task_destroy()`, `task_stack_intact()`, `task_owns_frame()`, `task_exit_guard()`,
-  `task_dump_all()`
-- ⬜ `kernel/proc/task.c` — the above, plus `pid` allocation
-- ⬜ `kernel/include/proc/sched.h` — `SCHED_TIME_SLICE_TICKS`, `sched_add_task()`
-- ⬜ `kernel/proc/sched.c` — circular run queue, real `sched_pick_next()`, the switch body
-- ⬜ `kernel/core/main.c` — two thread functions, `task_create()` + `sched_add_task()` before
-  `arch_irq_enable()`, `task_dump_all()` before and after
-- ⬜ `kernel/arch/aarch64/exceptions.c` / `kernel/arch/x86_64/idt.c` — `task_dump_all()` from
+  `task_dump_all()`; `kernel_stack` renamed `kernel_stack_base`
+- ✅ `kernel/proc/task.c` — the above, plus `pid` allocation
+- ✅ `kernel/include/proc/kstack.h` / `kernel/proc/kstack.c` — **not in the original list**:
+  `kstack_alloc()` now returns the base, plus `kstack_get_top()`, `kstack_contains()` and
+  `kstack_get_usage()`
+- 🚧 `kernel/include/proc/sched.h` — ✅ `sched_add_task()`; ⬜ `SCHED_TIME_SLICE_TICKS` never
+  defined
+- ✅ `kernel/proc/sched.c` — circular run queue, real `sched_pick_next()`, the switch body
+- ✅ `kernel/core/main.c` — two thread functions, `task_create()` + `sched_add_task()` before
+  `arch_irq_enable()`, `task_dump_all()` on each tick
+- ✅ `kernel/arch/aarch64/exceptions.c` / `kernel/arch/x86_64/idt.c` — `task_dump_all()` from
   the panic path (C3)
+- ✅ `kernel/core/test/test_task.c` + `kernel/include/core/test/test.h` — six new checks
 
-Deliberately **not** touched: `vectors.S` and `isr.S` — if a change wants to reach into the trap
-stubs, Step 2 got something wrong and that is the bug to fix. Also untouched: `mm/`, `fs/`, the
-GDT, `syscalls.h`.
+Deliberately **not** touched, as planned: `vectors.S` and `isr.S`, `mm/`, `fs/`, the GDT,
+`syscalls.h`. The trap stubs needed no changes at all, which is the strongest evidence Step 2
+got its contract right.
 
 ---
 

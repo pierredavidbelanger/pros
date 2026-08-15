@@ -41,11 +41,17 @@ read and an item you do. This is the settled version. **It applies to Claude too
 | — | **Chapter** | `Chapter 6` | a phase document |
 
 ```
-ROADMAP.md                               Phase 3
-  └─ PHASE3_PREEMPTION.md                Chapters 0-8   (read these)
-     │                                   Chapter 6 lists the Steps (do these)
-     └─ PHASE3_STEP2_KERNEL_STACKS.md    Parts  C0 C1 · A1 · B1 B2 · C2 C3 C4
+ROADMAP.md                               Phase 4
+  └─ PHASE4_PRIVILEGE.md                 Chapters 0-N   (read these)
+     │                                   its Steps chapter lists the Steps (do these)
+     └─ PHASE4_STEP1_*.md                Parts  C0 C1 · A1 · B1 B2 · C2 …
 ```
+
+(Phase 3 is the worked example, now finished:
+[`archive/PHASE3_PREEMPTION.md`](archive/PHASE3_PREEMPTION.md) with Chapters 0-8, and Chapter 6
+listing three Steps that each got a document —
+[`archive/PHASE3_STEP2_KERNEL_STACKS.md`](archive/PHASE3_STEP2_KERNEL_STACKS.md) ran Parts
+C0 C1 · A1 · B1 B2 · C2 C3 C4.)
 
 - **Only this file creates Phases.** Nothing else numbers them.
 - **"Step" is the only word for a unit of work inside a phase**, numbered sequentially within
@@ -137,35 +143,47 @@ Two consequences worth stating, because each prevents a specific mistake:
 ---
 
 ### Phase 3: Preemption — Timers, Tasks & the Scheduler
-* **Status**: **IN PROGRESS** 🚧 — Steps 1 and 2 of 3 are built; the remaining Step is the
-  payoff itself. Working doc: [`PHASE3_PREEMPTION.md`](PHASE3_PREEMPTION.md).
+* **Status**: **COMPLETE** ✅ — all three Steps built, across three step documents. **PrOS
+  preempts**: three tasks (the boot task plus two kernel threads) take turns on the CPU driven
+  only by the timer interrupt, their output interleaves, and the switch counters come out
+  near-equal — `34 / 67 / 100` per task at the one-, two- and three-second marks on AArch64,
+  against a predicted `300 / 3`. Nobody yields; nothing is cooperative. Working doc:
+  [`archive/PHASE3_PREEMPTION.md`](archive/PHASE3_PREEMPTION.md), with
+  [`Step 1`](archive/PHASE3_STEP1_TIMER.md),
+  [`Step 2`](archive/PHASE3_STEP2_KERNEL_STACKS.md) and
+  [`Step 3`](archive/PHASE3_STEP3_ROUND_ROBIN.md) beneath it. One named thing was deliberately
+  left open and is recorded in Step 3's retrospective: `SCHED_TIME_SLICE_TICKS` was never defined
+  (the slice is one tick, but the knob has no name). `-mno-sse` also remains open and belongs to
+  Phase 7.
 * **Payoff**: two kernel threads interleaving their output. Preemptive multitasking, real and
   visible, **entirely in ring 0** — where a mistake prints a register dump instead of resetting
   the machine.
-* **Starting line**: further along than it looks. The full trap frame exists on both
-  architectures, a TSS is built and loaded, `vmm_create_context()`/`vmm_switch_context()`
-  already give a process its own address space, and `VMM_USER` is plumbed to hardware.
-* **Steps**:
-  - ✅ **Step 1 — Timer & interrupts, no scheduler** — IDT gates above vector 31 + PIC remap +
-    PIT + the LAPIC in virtual wire mode (x86_64); GICv2 + Generic Timer (AArch64). A monotonic
-    tick counter to back `sys_clock_gettime`/`sys_nanosleep` later. Both architectures tick at
-    100 Hz and shut down on their own. Broken into individually verifiable Parts in
-    [`PHASE3_STEP1_TIMER.md`](archive/PHASE3_STEP1_TIMER.md).
-  - ✅ **Step 2 — `struct task`, per-task kernel stacks, trap-stub contract change** — the C
-    handler returns the frame to restore instead of `void`, which is what makes a context
-    switch four lines of assembly. Includes `tss.rsp0` (x86_64) maintenance, moving the kernel
-    to EL1h so SP_EL0 can belong to userland (AArch64), and the `vectors.S` rewrite that
-    follows from it. Still one task, so nothing observable changed — the acceptance criterion
-    was an absence, verified by deliberately nesting a data abort inside the timer IRQ handler
-    and watching both frames survive on the same stack. Broken into eight individually
-    verifiable Parts in
-    [`PHASE3_STEP2_KERNEL_STACKS.md`](archive/PHASE3_STEP2_KERNEL_STACKS.md).
-  - ⬜ **Step 3 — Two kernel threads, round-robin** — a second task with a fabricated frame
-    whose `rip` points at a kernel function, both printing. **The milestone where preemption is
-    real.** Step 2 left this narrower than it reads: `sched_on_trap_exit()` already runs on
-    every trap and already swaps frames when told to, so what's missing is a run queue, a
-    `task_create()`, and a `sched_pick_next()` that advances. Broken into individually
-    verifiable Parts in [`PHASE3_STEP3_ROUND_ROBIN.md`](PHASE3_STEP3_ROUND_ROBIN.md).
+* **What shipped**:
+  - ✅ **Timers and interrupt controllers on both architectures** — IDT gates above vector 31 +
+    PIC remap + PIT + the LAPIC in virtual wire mode (x86_64); GICv2 + Generic Timer (AArch64),
+    feeding one architecture-neutral monotonic tick counter at 100 Hz that will back
+    `sys_clock_gettime`/`sys_nanosleep` later. The LAPIC part wasn't in the plan and turned out
+    not to be optional.
+  - ✅ **The trap-stub contract change** — the C handler returns *the frame to restore* instead
+    of `void`, which is what reduces a context switch to four lines of assembly. This is the
+    single idea the whole phase rests on: the trap frame *is* the process.
+  - ✅ **Per-task kernel stacks** with guard values, `tss.rsp0` maintenance (x86_64), and the
+    move to EL1h so `SP_EL0` can belong to userland (AArch64) — plus the `vectors.S` rewrite
+    that follows from it, and the correctness fixes it swept up (`tpidrro_el0` no longer
+    clobbered, the interrupted `SP` saved from the right place).
+  - ✅ **`struct task`, a circular run queue, and round-robin scheduling** — `task_create()`
+    allocating a stack and fabricating an initial trap frame via the one new `arch_*` hook,
+    `sched_add_task()`, and a `sched_pick_next()` that advances. Preemption is decided in the
+    timer path (`need_resched`) and acted on at exactly one point — trap exit — so the kernel is
+    *preempted at trap exit* rather than preemptible, which is a much easier thing to get right.
+  - ✅ **Diagnosability, which paid for itself repeatedly** — `switch_count` per task (three
+    near-equal counters prove round-robin where interleaved output alone does not),
+    `task_owns_frame()` as a live invariant on every trap, stack high-water marks, and
+    `task_dump_all()` from both architectures' panic paths so every crash answers "which task
+    was running?".
+  - ✅ **11 new self-tests** — five `[KSTK ]` and six `[TASK ]`, including one that pins shut a
+    latent panic Step 2 left behind (asking `kstack_guard_intact()` about a task that has no
+    guard, i.e. the boot task on Limine's stack).
 
 ---
 
@@ -178,7 +196,9 @@ Two consequences worth stating, because each prevents a specific mistake:
   - ⬜ **Step 1 — Ring 3 / EL0 transition** — `iretq` (x86_64) / `eret` (AArch64) into a
     hand-fabricated user program, before any ELF loader exists. Needs user segments in the GDT,
     laid out to `sysret`'s constraint even though Step 2 is what enforces it. **Faulting on a
-    privileged instruction is the success criterion** — it proves the drop happened.
+    privileged instruction is the success criterion** — it proves the drop happened. Broken into
+    individually verifiable Parts in
+    [`PHASE4_STEP1_RING3_EL0.md`](PHASE4_STEP1_RING3_EL0.md).
   - ⬜ **Step 2 — Syscall entry path** — `svc` dispatch (AArch64, small: it lands in the
     existing vector table); `syscall`/`sysret` + `swapgs` + the `STAR`/`LSTAR`/`FMASK` MSRs
     (x86_64, not small). One syscall wired: `write`.

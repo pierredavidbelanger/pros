@@ -11,7 +11,7 @@
 > question never got forced), and gating the per-second print behind `pros.tests` (see C1).
 
 > [!NOTE]
-> **Phase 3 Step 1**, from [`PHASE3_PREEMPTION.md`](../PHASE3_PREEMPTION.md) Chapter 10, expanded
+> **Phase 3 Step 1**, from [`PHASE3_PREEMPTION.md`](PHASE3_PREEMPTION.md) Chapter 10, expanded
 > into individually verifiable Parts. Nothing here involves tasks, scheduling, userland, or
 > privilege levels. Read Chapter 4 of the phase document for the *why* behind the architecture
 > choices; this document is the *how*, in order.

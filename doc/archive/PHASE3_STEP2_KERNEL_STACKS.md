@@ -1,7 +1,7 @@
 # Working Document: Phase 3 Step 2 — `struct task`, Per-Task Kernel Stacks & the Trap-Stub Contract [STATUS: COMPLETE ✅]
 
 > [!NOTE]
-> **Phase 3 Step 2**, from [`PHASE3_PREEMPTION.md`](../PHASE3_PREEMPTION.md) Chapter 10, expanded into
+> **Phase 3 Step 2**, from [`PHASE3_PREEMPTION.md`](PHASE3_PREEMPTION.md) Chapter 10, expanded into
 > individually verifiable Parts. It draws on Chapter 1 (the trap frame *is* the process),
 > Chapter 2 (kernel stacks) and Chapter 5 (the surgical context switch). Read those for the
 > *why*; this document is the *how*, in order.

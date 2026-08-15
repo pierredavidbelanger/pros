@@ -65,7 +65,29 @@ correct*, which is exactly what should be holding still while the GIC itself is 
 Then change how the addresses are obtained, keeping the hardcoded pair in `gic.h` as a documented
 fallback for when there's no ACPI or no matching entry.
 
-## Kill `ansifilter`: the boot log loses its tail exactly when it matters
+## ~~Kill `ansifilter`: the boot log loses its tail exactly when it matters~~ ✅ DONE
+
+> [!NOTE]
+> **Resolved by removing the filter, not replacing it.** All four QEMU targets now end with a
+> plain `| tee logs/qemu-<arch>.log` — none of Options A/B/C below were needed, because the
+> escape codes turned out to be the lesser of the two problems. Losing a panic message is fatal
+> to a debugging session; a few `ESC[2J`s at the top of a log are an annoyance.
+>
+> The prediction in this entry was met almost exactly, twice. Phase 3 Step 3's deliberate-break
+> test (Part C3) appeared to hang with no panic; the panic had in fact fired correctly and
+> `ansifilter` had eaten it, which cost real time to diagnose and is written up in
+> [`archive/PHASE3_STEP3_ROUND_ROBIN.md`](archive/PHASE3_STEP3_ROUND_ROBIN.md). Phase 4 Step 1's
+> acceptance criterion *is* a panic, so the same bug would have hit it head-on.
+>
+> The readability half was solved in the kernel instead of in a filter: `console_init()` emits
+> two newlines rather than clearing the screen, so the firmware's own cursor-home sequences are
+> stranded on their own line and every kernel line starts at column 0 — `grep '^\[CON'` matches
+> again. The firmware's boot messages survive, which they did not when the kernel cleared the
+> screen.
+>
+> **Still worth having, if it ever gets annoying enough:** Option B's `tools/` filter, as a
+> *separate* pass over an existing log file rather than a pipe stage. Reading a finished file
+> cannot lose a byte, which was the whole failure mode here. `README.md` has been updated.
 
 **Where this came from:** all four QEMU targets in the root `Makefile` end with
 `| ansifilter | tee logs/qemu-<arch>.log`. The log is complete when the kernel shuts itself down,

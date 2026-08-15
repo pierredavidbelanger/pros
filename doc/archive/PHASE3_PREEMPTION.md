@@ -1,22 +1,33 @@
-# Working Document: Phase 3 — Preemption: Timers, Tasks & the Scheduler [STATUS: IN PROGRESS 🚧]
+# Working Document: Phase 3 — Preemption: Timers, Tasks & the Scheduler [STATUS: COMPLETE ✅]
 
 > [!NOTE]
-> **Where this stands.** Steps 1 and 2 are **done**. Both architectures take timer interrupts
-> at 100 Hz and shut down cleanly ([`PHASE3_STEP1_TIMER.md`](archive/PHASE3_STEP1_TIMER.md)),
-> and the trap path now builds its frame on the stack of whoever trapped, hands that frame to
-> a scheduler on the way out, and restores whichever frame the scheduler names
-> ([`PHASE3_STEP2_KERNEL_STACKS.md`](archive/PHASE3_STEP2_KERNEL_STACKS.md)).
+> **Where this ended.** All three Steps are **done**, and the payoff is real: three tasks — the
+> boot task plus two kernel threads — take turns on the CPU driven only by the timer interrupt,
+> their output interleaves, and the switch counters come out near-equal
+> (`34 / 67 / 100` per task at the one-, two- and three-second marks on AArch64, against a
+> predicted `300 / 3`). Nobody yields. **PrOS preempts.**
 >
-> **One Step remains, and it is the payoff.** Everything needed for a context switch is built
-> and running on every trap; Step 3's job is to give `sched_pick_next()` a second task to
-> return, and it is broken into Parts in
-> [`PHASE3_STEP3_ROUND_ROBIN.md`](PHASE3_STEP3_ROUND_ROBIN.md).
+> - [`PHASE3_STEP1_TIMER.md`](PHASE3_STEP1_TIMER.md) — both architectures tick at 100 Hz
+>   and shut down cleanly.
+> - [`PHASE3_STEP2_KERNEL_STACKS.md`](PHASE3_STEP2_KERNEL_STACKS.md) — the trap path
+>   builds its frame on the stack of whoever trapped, hands it to a scheduler on the way out,
+>   and restores whichever frame the scheduler names.
+> - [`PHASE3_STEP3_ROUND_ROBIN.md`](PHASE3_STEP3_ROUND_ROBIN.md) — a circular run queue,
+>   `task_create()` with a fabricated initial frame per architecture, and a `sched_pick_next()`
+>   that advances. The trap stubs needed no changes at all, which is the strongest evidence
+>   Step 2 got its contract right.
 >
-> This document is the map: what the phase is actually made of, which pieces already exist in
+> One thing is left open and is recorded in Step 3's document rather than fixed here:
+> `SCHED_TIME_SLICE_TICKS` was never defined (the slice is one tick, but the named knob doesn't
+> exist). The AArch64 `SPSR`/vector-slot constants shipped as literals and were named in
+> `exceptions.h` shortly after the step closed. The `-mno-sse` build change in Chapter 7 also
+> remains open, and belongs to Phase 7 where a second *user* task first exists.
+>
+> This document is the map: what the phase is actually made of, which pieces already existed in
 > the tree, what each new concept *is* and why it exists, and an order of work where every Step
-> still boots green. Where building Step 1 proved something in this document wrong, the text
-> has been corrected in place and the correction called out — the reasoning trail is worth more
-> than a clean-looking plan.
+> still boots green. Where building a Step proved something here wrong, the text was corrected
+> in place and the correction called out — the reasoning trail is worth more than a
+> clean-looking plan.
 
 > [!NOTE]
 > **This document used to cover all of userland bring-up**, under the title "Preemption,
@@ -27,14 +38,14 @@
 > | | Capability | Payoff |
 > |---|---|---|
 > | **Phase 3 — this document** | interruption + multiplicity | two kernel threads interleave |
-> | [**Phase 4 — Privilege**](PHASE4_PRIVILEGE.md) | distrust | ring-3 code calls `write` |
-> | [**Phase 5 — Loading**](PHASE5_LOADING.md) | loading | `/bin/init` runs from the filesystem |
+> | [**Phase 4 — Privilege**](../PHASE4_PRIVILEGE.md) | distrust | ring-3 code calls `write` |
+> | [**Phase 5 — Loading**](../PHASE5_LOADING.md) | loading | `/bin/init` runs from the filesystem |
 >
 > Chapter 0's inventory of what already exists still covers all three, because it's the
 > starting line for all of them.
 
 > [!NOTE]
-> Mentor-mode reminder (see the note at the top of [`../README.md`](../README.md)): this is a
+> Mentor-mode reminder (see the note at the top of [`../README.md`](../../README.md)): this is a
 > design reference to code from by hand, not code to paste in. Snippets are illustrative and
 > deliberately incomplete.
 
@@ -61,9 +72,9 @@ Chapter expands it.
 
 The rest of the userland vocabulary moved out with the phase split, and is indexed in the
 document that now owns it: **Ring 3 / EL0**, **`iretq`/`eret`**, **`syscall`/`sysret`/`svc`**
-and **`swapgs`** in [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md); **`PT_LOAD`**,
+and **`swapgs`** in [`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md); **`PT_LOAD`**,
 **`p_filesz` vs `p_memsz`**, **auxv**, **`copy_from_user`** and **`-errno`** in
-[`PHASE5_LOADING.md`](PHASE5_LOADING.md).
+[`PHASE5_LOADING.md`](../PHASE5_LOADING.md).
 
 ---
 
@@ -88,7 +99,7 @@ independent:
 **This phase takes the first two, and stops.** Not because the rest is harder, but because a
 bug in a scheduler and a bug in a privilege transition look *identical* from the outside — the
 machine resets — and debugging both at once is genuinely miserable. Distrust is
-[Phase 4](PHASE4_PRIVILEGE.md); loading is [Phase 5](PHASE5_LOADING.md).
+[Phase 4](../PHASE4_PRIVILEGE.md); loading is [Phase 5](../PHASE5_LOADING.md).
 
 The pleasant consequence: **everything in this phase happens in ring 0**, where a mistake
 prints a register dump instead of triple-faulting. Preemption gets proven with *kernel* threads
@@ -139,15 +150,15 @@ several Phase 3 "tasks" are really "finish and fix" rather than "write".
   fix with a per-context-switch obligation behind it (Chapter 2).
 - **The GDT has no user segments.** Only null / kernel code / kernel data / TSS
   (`idt.c:62-64`). Ring 3 needs a user code and user data descriptor, and `sysret` constrains
-  *where in the GDT* they may sit ([`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) Chapter 2).
+  *where in the GDT* they may sit ([`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md) Chapter 2).
 - ~~**The IDT is only populated for vectors 0-31.**~~ **Fixed in Step 1.** `IDT_STUB_COUNT` is
   now 48, `isr.S` carries stubs for 32-47, and a `_Static_assert` ties that count to the PIC's
   vector range so the two can't silently disagree.
 - **`struct file open_files[MAX_OPEN_FILES]` is a single kernel-global table**
   (`fs/vfs/file.c:7`). File descriptors are per-*process* in POSIX. This must move into the
-  task structure ([`PHASE5_LOADING.md`](PHASE5_LOADING.md) Chapter 2).
+  task structure ([`PHASE5_LOADING.md`](../PHASE5_LOADING.md) Chapter 2).
 - **Syscalls return `-1`, not `-errno`** (all of `fs/vfs/file.c`), contradicting
-  [`SYSCALL_DESIGN.md`](SYSCALL_DESIGN.md) §4.
+  [`SYSCALL_DESIGN.md`](../SYSCALL_DESIGN.md) §4.
 
 ### Present and actively wrong once userland exists
 
@@ -188,9 +199,9 @@ the phases that split off.
 | ✅ One global exception stack per arch | **Phase 3 Step 2** |
 | ✅ `#PF` routed to IST1, which does not nest | **Phase 3 Step 2** |
 | ✅ Kernel runs EL1t, so SP_EL0 is doing double duty | **Phase 3 Step 2** (new — found by Step 1) |
-| No user segments in the GDT | [**Phase 4**](PHASE4_PRIVILEGE.md) Step 1, constrained by its Step 2 ⚠️ |
-| `open_files[]` is kernel-global | [**Phase 5**](PHASE5_LOADING.md) Step 2 |
-| Syscalls return `-1`, not `-errno` | [**Phase 5**](PHASE5_LOADING.md) Step 2 |
+| No user segments in the GDT | [**Phase 4**](../PHASE4_PRIVILEGE.md) Step 1, constrained by its Step 2 ⚠️ |
+| `open_files[]` is kernel-global | [**Phase 5**](../PHASE5_LOADING.md) Step 2 |
+| Syscalls return `-1`, not `-errno` | [**Phase 5**](../PHASE5_LOADING.md) Step 2 |
 
 > [!NOTE]
 > **`tss.rsp0` is set, but not yet to a *safe* value.** Task 0 runs on the stack Limine handed
@@ -198,7 +209,7 @@ the phases that split off.
 > current `sp` as its `kernel_stack_top` and that is what reaches `tss.rsp0`. The CPU never
 > reads it while nothing traps from ring 3, so this is dormant rather than broken — but the
 > first return from EL0 would build a trap frame on top of task 0's live locals. Carried
-> forward to [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) Chapter 5.
+> forward to [`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md) Chapter 5.
 
 One consequence of that distribution is worth knowing before starting, because it isn't obvious
 from the Step list.
@@ -214,7 +225,7 @@ moves to EL1h, because "the stack the trap arrived on" is SP_EL1, which today ho
 
 (The GDT item carries its own ordering trap — the descriptors must be laid out to `sysret`'s
 constraint the first time even though nothing enforces it until Phase 4's second Step. It's
-written up where it applies, in [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) Chapter 2.)
+written up where it applies, in [`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md) Chapter 2.)
 
 ### None of these are live bugs today
 
@@ -294,7 +305,7 @@ assembly per architecture buys the entire context switch.
 
 Worth sitting with before writing anything: *why* does `iretq` restoring a frame whose `cs`
 has RPL 3 constitute "entering userland", when it's the same instruction used to return from
-a divide-by-zero? (Answer in [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) Chapter 1.)
+a divide-by-zero? (Answer in [`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md) Chapter 1.)
 
 ---
 
@@ -303,7 +314,7 @@ a divide-by-zero? (Answer in [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) Chapte
 > [!NOTE]
 > This chapter and Chapter 4's "surgical version" are what **Step 2** builds. The Parts, the
 > ordering, and the verification for each are in
-> [`PHASE3_STEP2_KERNEL_STACKS.md`](archive/PHASE3_STEP2_KERNEL_STACKS.md).
+> [`PHASE3_STEP2_KERNEL_STACKS.md`](PHASE3_STEP2_KERNEL_STACKS.md).
 
 ### Why one global exception stack stops working
 
@@ -399,7 +410,7 @@ Userland code *does* use the red zone, which is fine: the kernel never runs on t
 
 > [!NOTE]
 > **Built, in Step 1.** What follows is the design as planned; the corrections below are what
-> actually happened. The full account is in [`PHASE3_STEP1_TIMER.md`](archive/PHASE3_STEP1_TIMER.md).
+> actually happened. The full account is in [`PHASE3_STEP1_TIMER.md`](PHASE3_STEP1_TIMER.md).
 >
 > - **x86_64 needed a third thing this section didn't mention: the LAPIC.** A correctly
 >   programmed PIC and PIT deliver nothing, because the LAPIC's LINT0 LVT entry resets to
@@ -410,7 +421,7 @@ Userland code *does* use the red zone, which is fine: the kernel never runs on t
 > - **Neither architecture gets a DTB from Limine.** AAVMF consumes QEMU's FDT and publishes
 >   ACPI instead, so `dtb_request.response` is NULL on *both*. The GIC bases are hard-coded
 >   with a comment, and the ACPI walker that would replace them is in
->   [`SIDEQUEST.md`](SIDEQUEST.md).
+>   [`SIDEQUEST.md`](../SIDEQUEST.md).
 > - **`arch_timer_ticks()` does not exist.** The counter lives entirely in generic code
 >   (`core/timer.c`), which is the stricter version of what this section argues for.
 
@@ -548,7 +559,7 @@ struct trap_frame *schedule(struct trap_frame *current_frame) {
 ```
 
 Two things this buys beyond brevity. First, "start a brand new task" needs no special code —
-its `frame` is just a fabricated one ([`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) Chapter 1). Second, it forces the ordering that's easy to
+its `frame` is just a fabricated one ([`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md) Chapter 1). Second, it forces the ordering that's easy to
 get wrong: **switch the address space before returning to the frame, but note that the kernel
 stack you're currently standing on must stay mapped across that switch.** It does, because
 kernel mappings are shared by every context (`arch_vmm_new_context_root`) — but that's a real
@@ -617,14 +628,14 @@ it wrong is measured in very confusing floating-point results much later.
 Same discipline as Phase 2: every Step boots green on its own, and each one is independently
 verifiable. All three happen in ring 0.
 
-**✅ Step 1 — Timer and interrupts, no scheduler.** → [`PHASE3_STEP1_TIMER.md`](archive/PHASE3_STEP1_TIMER.md)
+**✅ Step 1 — Timer and interrupts, no scheduler.** → [`PHASE3_STEP1_TIMER.md`](PHASE3_STEP1_TIMER.md)
 `arch_timer_init`, IDT gates above 31 + PIT + PIC remap + LAPIC virtual wire on x86_64,
 GICv2 + Generic Timer on AArch64. Acceptance met: both architectures tick at 100 Hz, print
 once per second, and reach `arch_shutdown()` on their own. Broken into ten individually
 verifiable Parts in its own working document.
 
 **✅ Step 2 — `struct task`, per-task kernel stacks, and the stub contract change.**
-→ [`PHASE3_STEP2_KERNEL_STACKS.md`](archive/PHASE3_STEP2_KERNEL_STACKS.md)
+→ [`PHASE3_STEP2_KERNEL_STACKS.md`](PHASE3_STEP2_KERNEL_STACKS.md)
 The four-line stub change from Chapter 4 (handler returns a frame), `tss.rsp0` / `SP_EL1`
 maintenance, the move to EL1h on AArch64, and the `vectors.S` correctness fixes from Chapter 0.
 Still one task, so the "scheduler" always returns the frame it was given. Acceptance met:
@@ -633,22 +644,33 @@ into eight individually verifiable Parts in its own working document, whose C4 i
 before Step 3: it's the run that proved the frames really are per-stack rather than assumed to
 be.
 
-**⬜ Step 3 — Two kernel threads, round-robin.**
+**✅ Step 3 — Two kernel threads, round-robin.**
 → [`PHASE3_STEP3_ROUND_ROBIN.md`](PHASE3_STEP3_ROUND_ROBIN.md)
-Second task with a fabricated frame whose `rip` points at a kernel function, both printing.
-Acceptance: **interleaved output.** This is the milestone where preemption is real, it is
-**Phase 3's stated goal**, and it happens entirely in ring 0 where debugging is still easy.
+Second and third tasks with fabricated frames whose `rip`/`elr` point at a kernel function, all
+printing. Acceptance met: **interleaved output**, sustained for the full three seconds, with the
+boot task's countdown still reaching 3 and near-equal switch counters proving it's round-robin
+rather than erratic. This is the milestone where preemption is real, it is **Phase 3's stated
+goal**, and it happened entirely in ring 0 where a mistake printed a register dump instead of
+resetting the machine.
 
-Step 2 left it a narrower job than it looks. `sched_on_trap_exit()` already runs on every trap,
-already stores the outgoing frame in `current->frame`, already checks the incoming task's stack
-guard, and already calls `arch_set_kernel_stack()` before returning a different frame — all of
-it exercised today with `sched_pick_next()` returning `current`. What's missing is a run queue,
-a `task_create()` that allocates a kernel stack and fabricates an initial frame, and a
-`sched_pick_next()` that advances. The switch mechanism itself is built and running.
+Step 2 left it a narrower job than it looked. `sched_on_trap_exit()` already ran on every trap,
+already stored the outgoing frame in `current->frame`, already checked the incoming task's stack
+guard, and already called `arch_set_kernel_stack()` before returning a different frame — all of
+it exercised with `sched_pick_next()` returning `current`. What was missing was a run queue, a
+`task_create()` that allocates a kernel stack and fabricates an initial frame, and a
+`sched_pick_next()` that advances. The switch mechanism itself was built and running.
+
+The one genuinely new idea turned out to be the **bootstrap asymmetry**: a task that has run
+before has a real frame the stub wrote, but a brand-new task has never trapped, so the frame it
+resumes from has to be forged by hand — `arch_task_init_frame()`, the single new `arch_*` hook
+in the step. Broken into six individually verifiable Parts in its own working document, whose
+retrospective is worth reading for the two failures that cost the most time: a missing `return`
+that left `task->frame` NULL (which reads exactly like a scheduler bug and isn't one), and a
+panic that appeared to be a hang because `ansifilter` buffered it away.
 
 Everything that used to follow moved out with the phase split: ring 3 and the syscall entry
-path are [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md); the ELF loader and the real syscall
-surface are [`PHASE5_LOADING.md`](PHASE5_LOADING.md); `fork`/`execve`/`wait4` and the real
+path are [`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md); the ELF loader and the real syscall
+surface are [`PHASE5_LOADING.md`](../PHASE5_LOADING.md); `fork`/`execve`/`wait4` and the real
 `switch_to` are Phase 7, which will earn its own document once Steps here have taught what
 `struct task` actually needs to hold.
 
@@ -666,7 +688,7 @@ default. Several of these are the "open decisions" in `SYSCALL_DESIGN.md` §13.
 | Decision | Options | Recommendation | Settled? |
 |---|---|---|---|
 | x86 interrupt controller | PIC+PIT vs LAPIC+IOAPIC | PIC+PIT — replaceable, unblocks Step 1 today | ✅ PIC+PIT, *plus* the LAPIC in virtual wire mode, which turned out not to be optional |
-| AArch64 GIC base | DTB parse vs hard-code QEMU virt | Hard-code with a loud comment; discover it later | ✅ hard-coded; **DTB is not even available** (see [`SIDEQUEST.md`](SIDEQUEST.md)), so the replacement will be ACPI, not FDT |
+| AArch64 GIC base | DTB parse vs hard-code QEMU virt | Hard-code with a loud comment; discover it later | ✅ hard-coded; **DTB is not even available** (see [`SIDEQUEST.md`](../SIDEQUEST.md)), so the replacement will be ACPI, not FDT |
 | AArch64 stack pointer selection | stay EL1t vs move to EL1h | EL1h — SP_EL0 must belong to EL0 | ✅ EL1h, in Step 2 Part B1 (question only surfaced during Step 1) |
 | Kernel preemptibility | preemptible vs not | Not preemptible — reschedule only on trap exit | ✅ not preemptible; `need_resched` is set in the timer path and acted on only in `sched_on_trap_exit()` |
 | Kernel vector registers | `-mno-sse` vs eager save | `-mno-sse`, matching AArch64's existing stance | ⬜ any time |
@@ -674,8 +696,8 @@ default. Several of these are the "open decisions" in `SYSCALL_DESIGN.md` §13.
 | `#PF` stack | keep IST1 vs per-task stack | Per-task; IST1 stays for `#DF` only | ✅ Step 2 Part A1 |
 
 The decisions that moved out with their chapters are recorded where they now apply:
-`syscall`/`sysret` and `swapgs` in [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) Chapter 4; the
-ELF segment copy and user-pointer validation in [`PHASE5_LOADING.md`](PHASE5_LOADING.md)
+`syscall`/`sysret` and `swapgs` in [`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md) Chapter 4; the
+ELF segment copy and user-pointer validation in [`PHASE5_LOADING.md`](../PHASE5_LOADING.md)
 Chapter 4.
 
 ---
@@ -698,26 +720,32 @@ Collected because each one has a symptom that points somewhere other than the ca
   because that's when the stub is open anyway.
 
 The traps that only fire once a lower privilege level exists — `sysret`'s GDT constraint,
-`IA32_FMASK`, the fabricated `rflags` — are in [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md)
-Chapter 5. The loader's are in [`PHASE5_LOADING.md`](PHASE5_LOADING.md) Chapter 5.
+`IA32_FMASK`, the fabricated `rflags` — are in [`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md)
+Chapter 5. The loader's are in [`PHASE5_LOADING.md`](../PHASE5_LOADING.md) Chapter 5.
 
 ---
 
 ## 📁 Critical files
 
-Existing, to be modified:
+Existing, modified:
 
-- 🚧 `kernel/arch/x86_64/idt.c` — ✅ IDT gates above 31; ⬜ `rsp0`, `#PF` off IST (Step 2)
-- 🚧 `kernel/arch/x86_64/isr.S` — ✅ stubs 32-47; ⬜ handler returns a frame, restore from it
-  (Step 2)
-- ⬜ `kernel/arch/aarch64/vectors.S` — per-task stack instead of the global one, correct
-  `SP_EL0` save, drop the `tpidrro_el0` scratch use, handler returns a frame (Step 2)
-- 🚧 `kernel/arch/aarch64/exceptions.c` — ✅ IRQ dispatch before the panic path
-- 🚧 `kernel/include/arch/arch.h` — ✅ timer/IRQ primitives; ⬜ kernel-stack primitive, common
-  `trap_frame` name (Step 2)
-- 🚧 `kernel/core/main.c` — ✅ timer init/enable/wait; ⬜ start the scheduler (Step 2/3)
-- ⬜ `kernel/arch/x86_64/config.mk` — `-mno-sse` and friends
-- ⬜ `kernel/arch/aarch64/arch.c` — `msr spsel, #1` to move the kernel to EL1h (Step 2)
+- ✅ `kernel/arch/x86_64/idt.c` — IDT gates above 31 (Step 1); `rsp0`, `#PF` off IST (Step 2);
+  `task_dump_all()` from the panic path (Step 3)
+- ✅ `kernel/arch/x86_64/isr.S` — stubs 32-47 (Step 1); handler returns a frame, restore from it
+  (Step 2). Untouched by Step 3, as designed.
+- ✅ `kernel/arch/aarch64/vectors.S` — per-task stack instead of the global one, correct
+  `SP_EL0` save, `tpidrro_el0` scratch use dropped, handler returns a frame (Step 2). Untouched
+  by Step 3, as designed.
+- ✅ `kernel/arch/aarch64/exceptions.c` — IRQ dispatch before the panic path (Step 1);
+  `task_dump_all()` from the panic path (Step 3)
+- ✅ `kernel/include/arch/arch.h` — timer/IRQ primitives (Step 1); kernel-stack primitive and
+  common `trap_frame` name (Step 2); `arch_task_init_frame()` (Step 3)
+- ✅ `kernel/core/main.c` — timer init/enable/wait (Step 1); scheduler start (Step 2); two
+  kernel threads plus `sched_add_task()` before `arch_irq_enable()` (Step 3)
+- ⬜ `kernel/arch/x86_64/config.mk` — `-mno-sse` and friends. **Still open**, and it belongs to
+  Phase 7 where a second *user* task first exists.
+- ✅ `kernel/arch/aarch64/arch.c` — `msr spsel, #1` to move the kernel to EL1h (Step 2);
+  `arch_task_init_frame()` (Step 3, though the design put it in `exceptions.c`)
 
 New:
 
@@ -726,36 +754,46 @@ New:
   a file
 - ✅ `kernel/arch/aarch64/gic.c`, `timer.c`
 - ✅ `kernel/core/timer.c` — the generic tick counter
-- ⬜ `kernel/proc/task.c`, `sched.c` — `kernel/Makefile:30` globs `core mm drivers fs`, so
-  **a new top-level directory needs adding to that find**
+- ✅ `kernel/proc/task.c`, `sched.c`, `kstack.c` — `kernel/Makefile` now globs
+  `core mm drivers fs proc`. `kstack.c` wasn't in this plan at all; it came out of Step 2 and
+  grew the stack-geometry API (`kstack_get_top`, `kstack_contains`, `kstack_get_usage`) in
+  Step 3.
+- ✅ `kernel/core/test/test_kstack.c` (Step 2), `test_task.c` (Step 3) — 11 checks between them
 
 The files owned by the phases that split off are listed in their own documents:
-[`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) (user GDT entries, the MSRs, `syscall_entry.S`,
-the dispatch table) and [`PHASE5_LOADING.md`](PHASE5_LOADING.md) (`elf.c`, the fd table,
+[`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md) (user GDT entries, the MSRs, `syscall_entry.S`,
+the dispatch table) and [`PHASE5_LOADING.md`](../PHASE5_LOADING.md) (`elf.c`, the fd table,
 `errno.h`, `initrd/bin/init.c`).
 
 ## 📝 Docs to keep in step
 
-- ✅ `ROADMAP.md` — Phases 3-12 restructured around payoff-per-phase, with this document linked
-  from Phase 3. Also carries the naming conventions and the `doc/` vs `doc/archive/` split.
-- ✅ `README.md` — roadmap section points here as the live working document and explains the
-  archive convention. The subsystem table gained a row for Step 1's interrupt controllers and
-  timer; the scheduler owes one when Step 3 lands.
-- ⬜ `SYSCALL_DESIGN.md` — §13's open decisions answered from Chapter 7 as they're settled
-- ⬜ The subsystem table in `README.md` — a row for the scheduler once it exists
+- ✅ `ROADMAP.md` — Phases 3-12 restructured around payoff-per-phase. Also carries the naming
+  conventions and the `doc/` vs `doc/archive/` split. Phase 3's list was rewritten from Steps to
+  **What shipped** when the phase closed, per its own lifecycle table.
+- ✅ `README.md` — roadmap section explains the archive convention. The subsystem table gained a
+  row for Step 1's interrupt controllers and timer, and a **Tasks & scheduler** row when Step 3
+  landed.
+- ⬜ `SYSCALL_DESIGN.md` — §13's open decisions answered from Chapter 7 as they're settled.
+  **Still open**; Phase 4 inherits it.
 
 ## 🪜 Verification
 
 The `core/test/` suite can't reach most of this — a scheduler isn't assertable from inside a
 single-threaded kernel self-test. The honest split:
 
-**Still unit-testable** (add to `core/test/`): the kernel-stack guard-value check, and kernel
-stack allocation/free returning `pmm_get_free_page_count()` to where it started. Both are in
-[`PHASE3_STEP2_KERNEL_STACKS.md`](archive/PHASE3_STEP2_KERNEL_STACKS.md)'s verification section.
+**Still unit-testable** (added to `core/test/`): the kernel-stack guard-value check, and kernel
+stack allocation/free returning `pmm_get_free_page_count()` to where it started — five `[KSTK ]`
+checks from [`PHASE3_STEP2_KERNEL_STACKS.md`](PHASE3_STEP2_KERNEL_STACKS.md). Step 3
+added six more `[TASK ]` checks: task create/destroy leaks nothing, a fresh task's fabricated
+frame lies inside its own kernel stack, and `task_stack_intact()` reports a task with no known
+stack extent as intact — that last one pins the C0 bug shut so it cannot come back.
 
 **Only observable by booting**: preemption itself — the interleaved output from Step 3. That
-needs a *stated expected output*, which is what the acceptance criteria in Chapter 6 are for.
+needed a *stated expected output*, which is what the acceptance criteria in Chapter 6 were for.
+It's also why `switch_count` exists: interleaved output alone is consistent with a scheduler
+that switches erratically, and three near-equal counters are not.
 
-Worth adding early, since it costs little and pays across every remaining phase: a boot-time
-task dump printing each task's pid, state, and kernel stack usage. Most of the bad days ahead
-are "which task was actually running when this happened".
+The boot-time task dump was worth adding early exactly as predicted, and grew past pid/state/
+stack usage into `task_dump_all()` from both architectures' panic paths. Most of the bad days
+ahead are "which task was actually running when this happened", and that question now answers
+itself on every crash.

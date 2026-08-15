@@ -7,7 +7,7 @@
 > This design was written as part of the original single-document Phase 3 plan and split out
 > when that phase was broken into three along the capability boundaries it had already
 > identified. The starting-line inventory lives in
-> [`PHASE3_PREEMPTION.md`](PHASE3_PREEMPTION.md) Chapter 0; the privilege drop and the syscall
+> [`PHASE3_PREEMPTION.md`](archive/PHASE3_PREEMPTION.md) Chapter 0; the privilege drop and the syscall
 > entry path are [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md).
 
 > [!NOTE]
