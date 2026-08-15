@@ -1,4 +1,4 @@
-# Working Document: Phase 4 Step 1 — Ring 3 / EL0, with a Hand-Fabricated User Program [STATUS: NOT STARTED ⬜]
+# Working Document: Phase 4 Step 1 — Ring 3 / EL0, with a Hand-Fabricated User Program [STATUS: COMPLETE ✅]
 
 > [!NOTE]
 > **Phase 4 Step 1**, from [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) Chapter 3, expanded into
@@ -214,7 +214,7 @@ handing control to code that cannot be debugged by printing.
 
 ---
 
-## 🧩 C0 — A user page, with something in it ⬜
+## 🧩 C0 — A user page, with something in it ✅
 
 **Goal:** two pages mapped user-accessible at a known address, the blob copied in, verified by
 reading it back. **Nothing changes privilege level.** The boot log gains two lines.
@@ -261,7 +261,7 @@ shuts down cleanly.
 
 ---
 
-## 🧩 C1 — A task that owns user memory ⬜
+## 🧩 C1 — A task that owns user memory ✅
 
 **Goal:** a `struct task` describing a user program exists, fully formed, and is never scheduled.
 
@@ -315,7 +315,7 @@ returns to where it started — the same pattern `test_task.c` already uses.
 
 ---
 
-## 🅰️ A1 — x86_64: user segments, and an unprivileged frame ⬜
+## 🅰️ A1 — x86_64: user segments, and an unprivileged frame ✅
 
 **Goal:** a GDT that can describe ring 3, and a frame that names it.
 
@@ -404,7 +404,7 @@ the one that matters: RPL 3 is the privilege drop, in one bit pair.
 
 ---
 
-## 🅱️ B1 — AArch64: EL0t, and the field that finally earns its keep ⬜
+## 🅱️ B1 — AArch64: EL0t, and the field that finally earns its keep ✅
 
 **Goal:** the same thing for `eret`, which is shorter and has one genuinely elegant detail.
 
@@ -470,7 +470,7 @@ anything unprivileged has run.
 
 ---
 
-## 🧩 C2 — The drop ⬜
+## 🧩 C2 — The drop ✅
 
 **Goal:** run it. This is the Part where the machine stops booting cleanly, on purpose.
 
@@ -517,6 +517,17 @@ Three things to check, in order of how much they prove:
    `EC = 0x18` (trapped MSR/MRS) on AArch64. A *different* exception means something else went
    wrong first, and the privilege drop may not be what you're looking at.
 
+> [!WARNING]
+> **AArch64 actually delivers `EC = 0x00` (Unknown Reason) here, not `0x18` — verified against
+> QEMU's own `-d int` trace and identical across `cortex-a72`, `neoverse-n1`, `cortex-a76`, so
+> it's real behaviour, not a one-core TCG quirk.** `0x18` is for a register EL0 legitimately
+> has that got trapped by a configurable control (`CNTVCT_EL0` via `CNTKCTL_EL1`, say). `SCTLR_EL1`
+> isn't that — EL0 has no such register at all, so the encoding is simply undefined at EL0,
+> which is `0x00` territory. Doesn't weaken the proof: `vector_type == 8`, `SPSR_EL1`'s EL0t
+> nibble, and QEMU's own `Exception return ... to AArch64 EL0` line all independently confirm
+> the CPU was unprivileged when it faulted. Check `vector_type`/`SPSR`, not `EC`, for AArch64's
+> version of this step's acceptance criterion.
+
 `RSP`/`SP` should be the user stack top, untouched, since the blob never pushed.
 
 > [!NOTE]
@@ -527,7 +538,7 @@ Three things to check, in order of how much they prove:
 
 ---
 
-## 🧩 C3 — Prove it's actually unprivileged ⬜
+## 🧩 C3 — Prove it's actually unprivileged ✅
 
 **Goal:** three cheap experiments that each fail in a *different, specific* way. Together they
 close off "it looked like it worked".
@@ -634,14 +645,14 @@ Grouped by symptom, because that's how you'll meet them.
 
 ## 📁 Files touched
 
-- ⬜ `kernel/include/arch/arch.h` — `arch_task_init_user_frame()`
-- ⬜ `kernel/arch/x86_64/idt.h` — user selector constants, `X86_64_STAR_USER_BASE`
-- ⬜ `kernel/arch/x86_64/idt.c` — user code/data GDT entries, laid out to the `sysret` constraint
-- ⬜ `kernel/arch/x86_64/arch.c` — `arch_task_init_user_frame()`; SMEP in CR4 (A2)
-- ⬜ `kernel/arch/aarch64/arch.c` — `arch_task_init_user_frame()`, `SPSR`/vector-slot constants
-- ⬜ `kernel/include/proc/task.h` — `task_create_user()`
-- ⬜ `kernel/proc/task.c` — the above
-- ⬜ `kernel/core/main.c` — the blob, the two user mappings, `task_create_user()` +
+- ✅ `kernel/include/arch/arch.h` — `arch_task_init_user_frame()`
+- ✅ `kernel/arch/x86_64/idt.h` — user selector constants, `X86_64_STAR_USER_BASE`
+- ✅ `kernel/arch/x86_64/idt.c` — user code/data GDT entries, laid out to the `sysret` constraint
+- ✅ `kernel/arch/x86_64/arch.c` — `arch_task_init_user_frame()`; SMEP in CR4 still open (A2)
+- ✅ `kernel/arch/aarch64/arch.c` — `arch_task_init_user_frame()`, `SPSR`/vector-slot constants
+- ✅ `kernel/include/proc/task.h` — `task_create_user()`
+- ✅ `kernel/proc/task.c` — the above
+- ✅ `kernel/core/main.c` — the blob, the two user mappings, `task_create_user()` +
   `sched_add_task()` before `arch_irq_enable()`
 
 Deliberately **not** touched: `isr.S`, `vectors.S` — entering userland is the *existing* exit path

@@ -1,8 +1,9 @@
-# Working Document: Phase 4 — Privilege: Ring 3 / EL0 and the Syscall Boundary [STATUS: NOT STARTED ⬜]
+# Working Document: Phase 4 — Privilege: Ring 3 / EL0 and the Syscall Boundary [STATUS: IN PROGRESS 🚧]
 
 > [!NOTE]
-> **Where this stands.** Not started, and correctly blocked on Phase 3 — entering userland *is*
-> the scheduler restoring a fabricated frame, so the scheduler has to exist first.
+> **Where this stands.** Step 1 is complete on both architectures — see
+> [`PHASE4_STEP1_RING3_EL0.md`](PHASE4_STEP1_RING3_EL0.md). Step 2 (the syscall entry path) is
+> next.
 >
 > This design was written as part of the original single-document Phase 3 plan and split out
 > when that phase was broken into three along the capability boundaries it had already
@@ -217,6 +218,7 @@ document, which also computes this tree's actual user selectors — they are **n
 `0x33`/`0x2b`, because the TSS sits at 0x18 here and shifts everything by a slot.
 
 **⬜ Step 2 — The syscall entry path.**
+→ [`PHASE4_STEP2_SYSCALL.md`](PHASE4_STEP2_SYSCALL.md)
 `svc` dispatch on AArch64 (small); `syscall`/`sysret` + `swapgs` + the MSRs + the GDT layout on
 x86_64 (not small). Wire exactly one syscall — `write` to the console. Acceptance: the
 hand-made user program prints a string and exits cleanly. **Phase 4's stated goal is met

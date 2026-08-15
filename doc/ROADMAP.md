@@ -188,20 +188,24 @@ Two consequences worth stating, because each prevents a specific mistake:
 ---
 
 ### Phase 4: Privilege — Ring 3 / EL0 and the Syscall Boundary
-* **Status**: **NOT STARTED** ⬜ — designed, not written. Working doc:
+* **Status**: **IN PROGRESS** 🚧 — Step 1 complete on both architectures. Working doc:
   [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md).
 * **Payoff**: a program the kernel does not trust calls `write` and the string appears on the
   console. The moment the OS becomes an OS.
 * **Steps**:
-  - ⬜ **Step 1 — Ring 3 / EL0 transition** — `iretq` (x86_64) / `eret` (AArch64) into a
-    hand-fabricated user program, before any ELF loader exists. Needs user segments in the GDT,
+  - ✅ **Step 1 — Ring 3 / EL0 transition** — `iretq` (x86_64) / `eret` (AArch64) into a
+    hand-fabricated user program, before any ELF loader exists. User segments added to the GDT,
     laid out to `sysret`'s constraint even though Step 2 is what enforces it. **Faulting on a
-    privileged instruction is the success criterion** — it proves the drop happened. Broken into
-    individually verifiable Parts in
-    [`PHASE4_STEP1_RING3_EL0.md`](PHASE4_STEP1_RING3_EL0.md).
+    privileged instruction is the success criterion** — verified on both architectures (`#GP` on
+    x86_64, a trapped `mrs` on AArch64), plus three follow-up experiments confirming the
+    enforcement is real (kernel-address read, W^X write, bare `ret`). Individually verifiable
+    Parts in [`PHASE4_STEP1_RING3_EL0.md`](PHASE4_STEP1_RING3_EL0.md), which also documents an
+    AArch64 `EC` correction found along the way and a real VMM demand-paging bug
+    (`try_handle_hhdm_mmio_fault()` missing a presence check) found and fixed in the process.
   - ⬜ **Step 2 — Syscall entry path** — `svc` dispatch (AArch64, small: it lands in the
     existing vector table); `syscall`/`sysret` + `swapgs` + the `STAR`/`LSTAR`/`FMASK` MSRs
-    (x86_64, not small). One syscall wired: `write`.
+    (x86_64, not small). One syscall wired: `write`. Broken into individually verifiable Parts
+    in [`PHASE4_STEP2_SYSCALL.md`](PHASE4_STEP2_SYSCALL.md).
 
 ---
 
