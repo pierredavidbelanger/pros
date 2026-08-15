@@ -173,3 +173,15 @@ struct trap_frame *arch_task_init_frame(void *stack_top, void (*entry)(void)) {
 
     return frame;
 }
+
+struct trap_frame *arch_task_init_user_frame(void *kernel_stack_top, uint64_t user_entry, uint64_t user_stack_top) {
+    struct trap_frame *frame = (struct trap_frame *) (((uint64_t) kernel_stack_top - sizeof(struct trap_frame)) & ~0xFULL);
+    memset(frame, 0, sizeof(struct trap_frame));
+    frame->rip = user_entry; // where we iretq
+    frame->cs = X86_64_SELECTOR_USER_CODE;
+    frame->ss = X86_64_SELECTOR_USER_DATA;
+    frame->rflags = X86_64_RFLAGS_RESERVED_BIT1 | X86_64_RFLAGS_IF;
+    frame->rsp = user_stack_top;
+    frame->int_no = 0xFF;
+    return frame;
+}

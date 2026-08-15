@@ -214,3 +214,13 @@ struct trap_frame *arch_task_init_frame(void *stack_top, void (*entry)(void)) {
     frame->vector_type = AARCH64_VECTOR_CURRENT_EL_IRQ; // below 8, so the exit path leaves SP_EL1 alone
     return frame;
 }
+
+struct trap_frame *arch_task_init_user_frame(void *kernel_stack_top, uint64_t user_entry, uint64_t user_stack_top) {
+    struct trap_frame *frame = (struct trap_frame *) ((uint8_t *) kernel_stack_top - TRAP_FRAME_SIZE);
+    memset(frame, 0, sizeof(struct trap_frame));
+    frame->sp = user_stack_top; // user stack
+    frame->elr = user_entry;
+    frame->spsr = AARCH64_SPSR_M_EL0T;
+    frame->vector_type = AARCH64_VECTOR_LOWER_EL_IRQ; // exit path installs sp into SP_EL0
+    return frame;
+}

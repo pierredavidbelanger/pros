@@ -100,6 +100,43 @@ void _start(void) {
     sched_add_task(task1);
     sched_add_task(task2);
 
+    // throwaway code that schedule a userland process
+    /*
+#ifdef __aarch64__
+    // user blob: mrs x0, sctlr_el1 (must trap at EL0), b .
+    static const uint8_t user_blob[] = {
+        0x00, 0x10, 0x38, 0xD5,  // mrs x0, sctlr_el1
+        0x00, 0x00, 0x00, 0x14,  // b .
+    };
+#else
+    // user blob: hlt (must trap at ring 3), jmp . (backstop if it somehow doesn't)
+    static const uint8_t user_blob[] = {
+        0xF4, 0xEB, 0xFD,  // hlt; jmp .
+    };
+#endif
+#define USER_BASE       0x0000000040000000ULL
+#define USER_CODE_ADDR  USER_BASE
+#define USER_STACK_ADDR (USER_BASE + PAGE_SIZE)
+#define USER_STACK_TOP  (USER_STACK_ADDR + PAGE_SIZE)
+    uint64_t code_phys = pmm_alloc(1);
+    uint64_t stack_phys = pmm_alloc(1);
+    if (!code_phys || !stack_phys) kpanic("user page alloc failed");
+    // code page: user + executable (VMM_NO_EXECUTE absent means executable)
+    vmm_map_page(vmm_kernel_context, USER_CODE_ADDR, code_phys, VMM_USER);
+    // stack page: user + writable, never executable
+    vmm_map_page(vmm_kernel_context, USER_STACK_ADDR, stack_phys, VMM_USER | VMM_WRITABLE | VMM_NO_EXECUTE);
+    // write through the HHDM
+    memcpy(pmm_phys_to_virt(code_phys), user_blob, sizeof(user_blob));
+    uint64_t resolved = vmm_virt_to_phys(vmm_kernel_context, USER_CODE_ADDR);
+    kprintf("USER", "code page virt:%p phys:%p resolved:%p\n", (void *) USER_CODE_ADDR, (void *) code_phys, (void *) resolved);
+    uint8_t *readback = (uint8_t *) USER_CODE_ADDR;
+    kprintf("USER", "readback: %02x %02x %02x %02x\n", readback[0], readback[1], readback[2], readback[3]);
+    struct task *user = task_create_user("user", USER_CODE_ADDR, USER_STACK_TOP);
+    if (!user) kpanic("task_create_user failed");
+    sched_add_task(user);
+    task_dump_all();
+    */
+
     kprintf("TIMER", "Starting timer at %d Hz\n", TIMER_HZ);
     arch_timer_init(TIMER_HZ);
 

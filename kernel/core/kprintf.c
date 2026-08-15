@@ -13,7 +13,9 @@ void kprintf(const char *tag, const char *format, ...) {
 
 void kpanic(const char *msg) {
     kprintf("PANIC", "%s\n", msg);
-    arch_halt();
+    // we really just want to halt here, but i find it convenient not to have to CTRL-c QEMU, so...
+    // arch_halt();
+    arch_shutdown();
 }
 
 // _putchar function that printf wants is impl here and simply sends to console

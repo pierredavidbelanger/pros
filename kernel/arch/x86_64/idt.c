@@ -35,6 +35,9 @@ static struct {
     struct gdt_entry kernel_code;
     struct gdt_entry kernel_data;
     struct tss_gdt_entry tss_entry;
+    struct gdt_entry user_reserved;  // 0x28, sysret's 32-bit compat CS slot, never loaded in 64-bit mode
+    struct gdt_entry user_data;      // 0x30 -> SS = 0x33
+    struct gdt_entry user_code;      // 0x38 -> CS = 0x3b
 } __attribute__((packed, aligned(16))) gdt;
 
 static struct gdt_ptr gdt_pointer;
@@ -72,9 +75,12 @@ static const char *exception_names[IDT_EXCEPTION_COUNT] = {
 };
 
 static void tss_init(void) {
-    gdt.null_entry  = (struct gdt_entry){0, 0, 0, 0, 0, 0};
-    gdt.kernel_code = (struct gdt_entry){0xFFFF, 0, 0, 0x9A, 0xAF, 0}; // 0x08
-    gdt.kernel_data = (struct gdt_entry){0xFFFF, 0, 0, 0x92, 0xCF, 0}; // 0x10
+    gdt.null_entry =    (struct gdt_entry){0, 0, 0, 0, 0, 0};
+    gdt.kernel_code =   (struct gdt_entry){0xFFFF, 0, 0, 0x9A, 0xAF, 0}; // 0x08
+    gdt.kernel_data =   (struct gdt_entry){0xFFFF, 0, 0, 0x92, 0xCF, 0}; // 0x10
+    gdt.user_reserved = (struct gdt_entry){0, 0, 0, 0, 0, 0};
+    gdt.user_data =     (struct gdt_entry){0xFFFF, 0, 0, 0xF2, 0xCF, 0}; // 0x92 | 0x60 (DPL 3)
+    gdt.user_code =     (struct gdt_entry){0xFFFF, 0, 0, 0xFA, 0xAF, 0}; // 0x9A | 0x60 (DPL 3)
 
     memset(&sys_tss, 0, sizeof(sys_tss));
     uint64_t ist1_top = (uint64_t)&x86_64_exception_stack[16384];

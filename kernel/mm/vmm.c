@@ -199,14 +199,17 @@ void vmm_switch_context(struct vmm_context *ctx) {
     }
 }
 
-// HHDM Higher-Half MMIO Access Fault (e.g. PCIe ECAM at 0xE0000000). HHDM range is
-// [hhdm_base, hhdm_base + max physical extent), derived from the actual Limine memmap
-// instead of a guessed span. Excludes kernel text at 0xffffffff80000000, which is above
-// VMM_ADDR_SPLIT and never reaches get_root_table()'s lower-half path.
-static bool try_handle_hhdm_mmio_fault(uint64_t fault_addr) {
+static bool try_handle_hhdm_mmio_fault(uint64_t fault_addr, uint64_t error_code) {
     uint64_t hhdm_base = pmm_get_hhdm_offset();
     uint64_t hhdm_top = hhdm_base + pmm_get_max_phys_addr();
+
     if (hhdm_base == 0 || fault_addr < hhdm_base || fault_addr >= hhdm_top) {
+        return false;
+    }
+
+    // inside the range, but the error code here says we should not touch it
+    if (arch_vmm_fault_is_present(error_code)) {
+        kprintf("VMM", "Fault: disallowed %s access to HHDM MMIO at %p\n", arch_vmm_fault_is_write(error_code) ? "write" : "read", (void *)fault_addr);
         return false;
     }
 
@@ -214,8 +217,7 @@ static bool try_handle_hhdm_mmio_fault(uint64_t fault_addr) {
     uint64_t aligned_virt = fault_addr & ~(PAGE_SIZE - 1);
     uint64_t aligned_phys = phys_addr & ~(PAGE_SIZE - 1);
 
-    return vmm_map_page(vmm_kernel_context, aligned_virt, aligned_phys,
-                        VMM_WRITABLE | VMM_CACHE_DISABLE) == 0;
+    return vmm_map_page(vmm_kernel_context, aligned_virt, aligned_phys, VMM_WRITABLE | VMM_CACHE_DISABLE) == 0;
 }
 
 // Lower-Half User-Space Demand Paging,
@@ -235,8 +237,7 @@ static bool try_handle_demand_page_fault(uint64_t fault_addr, uint64_t error_cod
         // not-present demand-paging fault. Return false rather than panicking here directly —
         // the caller's existing unhandled-exception path dumps full register state before
         // panicking, which is strictly more useful for debugging.
-        kprintf("VMM", "Fault: disallowed %s access to present page at %p\n",
-                arch_vmm_fault_is_write(error_code) ? "write" : "read", (void *)fault_addr);
+        kprintf("VMM", "Fault: disallowed %s access to present page at %p\n", arch_vmm_fault_is_write(error_code) ? "write" : "read", (void *)fault_addr);
         return false;
     }
 
@@ -257,7 +258,7 @@ static bool try_handle_demand_page_fault(uint64_t fault_addr, uint64_t error_cod
 }
 
 bool vmm_handle_page_fault(uint64_t fault_addr, uint64_t error_code) {
-    if (try_handle_hhdm_mmio_fault(fault_addr)) {
+    if (try_handle_hhdm_mmio_fault(fault_addr, error_code)) {
         return true;
     }
     return try_handle_demand_page_fault(fault_addr, error_code);

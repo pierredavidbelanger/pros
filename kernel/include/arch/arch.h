@@ -73,4 +73,6 @@ void *arch_get_stack_pointer(void);
 
 struct trap_frame *arch_task_init_frame(void *stack_top, void (*entry)(void));
 
+struct trap_frame *arch_task_init_user_frame(void *kernel_stack_top, uint64_t user_entry, uint64_t user_stack_top);
+
 #endif //PROS_ARCH_H

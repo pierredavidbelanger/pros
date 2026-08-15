@@ -27,6 +27,10 @@ struct task *task_init_boot(void);
 
 struct task *task_create(const char *name, void (*entry)(void));
 
+// build a task that starts at EL0/ring3,
+// user_entry/user_stack_top are user addresses, never kernel ones
+struct task *task_create_user(const char *name, uint64_t user_entry, uint64_t user_stack_top);
+
 void task_destroy(struct task *task);
 
 bool task_owns_frame(const struct task *task, const struct trap_frame *frame);

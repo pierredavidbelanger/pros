@@ -42,6 +42,22 @@ struct task *task_create(const char *name, void (*entry)(void)) {
     return task;
 }
 
+struct task *task_create_user(const char *name, uint64_t user_entry, uint64_t user_stack_top) {
+    struct task *task = kcalloc(1, sizeof(struct task));
+    if (!task) return NULL;
+    task->pid = next_pid++;
+    task->state = TASK_READY;
+    snprintf(task->name, TASK_NAME_SIZE, "%s", name);
+    task->kernel_stack_base = kstack_alloc();
+    if (!task->kernel_stack_base) {
+        kfree(task);
+        return NULL;
+    }
+    task->kernel_stack_top = kstack_get_top(task->kernel_stack_base);
+    task->frame = arch_task_init_user_frame(task->kernel_stack_top, user_entry, user_stack_top);
+    return task;
+}
+
 void task_destroy(struct task *task) {
     if (!task) return;
     if (task->kernel_stack_base) {
