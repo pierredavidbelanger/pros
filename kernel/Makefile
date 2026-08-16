@@ -1,10 +1,10 @@
 
 ARCH ?= aarch64
 
-include arch/$(ARCH)/config.mk
+include config.$(ARCH).mk
 
 .PHONY: default
-default: bin/kernel-$(ARCH)
+default: bin/$(ARCH)/kernel
 
 .PHONY: clean
 clean:
@@ -14,9 +14,9 @@ clean:
 distclean: clean
 	rm -rf libs
 
-.PHONY: bin/kernel-$(ARCH)
-bin/kernel-$(ARCH): libs
-	mkdir -p bin
+.PHONY: bin/$(ARCH)/kernel
+bin/$(ARCH)/kernel: libs
+	mkdir -p bin/$(ARCH)
 	$(CC) \
 		-Wall -std=gnu11 -nostdinc -ffreestanding -fno-stack-protector -fno-PIC \
 		$(CFLAGS) \
@@ -30,7 +30,7 @@ bin/kernel-$(ARCH): libs
 		$(shell find core mm drivers fs proc syscall -name '*.c' 2>/dev/null) \
 		-Wl,-T,arch/$(ARCH)/linker.lds \
 		$(LDFLAGS) \
-		-o bin/kernel-$(ARCH)
+		-o bin/$(ARCH)/kernel
 
 libs: libs/freestanding-c-hdrs libs/cc-runtime libs/limine-protocol libs/printf
 

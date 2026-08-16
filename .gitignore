@@ -2,7 +2,6 @@
 /bin/
 /kernel/bin/
 /kernel/libs/
-/initrd/
+/user/bin/
+/initrd/bin/
 /logs/
-/root/
-/initrd.tar
