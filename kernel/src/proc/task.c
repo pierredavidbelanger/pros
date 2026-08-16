@@ -102,8 +102,9 @@ void task_dump(struct task *task) {
 
     // Task 0 runs on the stack handed by Limine: no base, no extent, no guard.
     if (!task->kernel_stack_base) {
-        kprintf("TASK", "pid %zu  %s  %s  switch_count %zu  boot stack, sp was 0x%016lx, extent unknown, guard n/a\n",
+        kprintf("TASK", "pid %zu  %s  %s  switch_count %zu  ctx 0x%016lx  boot stack, sp was 0x%016lx, extent unknown, guard n/a\n",
             task->pid, task->name, state, task->switch_count,
+            (uint64_t)task->ctx,
             (uint64_t)task->kernel_stack_top);
         return;
     }
@@ -111,8 +112,9 @@ void task_dump(struct task *task) {
     uint64_t free = 0;
     uint64_t total = 0;
     kstack_get_usage(task->kernel_stack_base, &free, &total);
-    kprintf("TASK", "pid %zu  %s  %s  switch_count %zu  kstack 0x%016lx-0x%016lx  free %zu/%zu  guard %s\n",
+    kprintf("TASK", "pid %zu  %s  %s  switch_count %zu  ctx 0x%016lx  kstack 0x%016lx-0x%016lx  free %zu/%zu  guard %s\n",
         task->pid, task->name, state, task->switch_count,
+        (uint64_t)task->ctx,
         (uint64_t)task->kernel_stack_base, (uint64_t)task->kernel_stack_top,
         free, total,
         kstack_guard_intact(task->kernel_stack_base) ? "ok" : "GONE");
