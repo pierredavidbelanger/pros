@@ -1,9 +1,12 @@
-# Working Document: Phase 4 — Privilege: Ring 3 / EL0 and the Syscall Boundary [STATUS: IN PROGRESS 🚧]
+# Working Document: Phase 4 — Privilege: Ring 3 / EL0 and the Syscall Boundary [STATUS: COMPLETE ✅]
 
 > [!NOTE]
-> **Where this stands.** Step 1 is complete on both architectures — see
-> [`PHASE4_STEP1_RING3_EL0.md`](PHASE4_STEP1_RING3_EL0.md). Step 2 (the syscall entry path) is
-> next.
+> **Where this stands.** Both Steps are complete on both architectures. Step 1 (the privilege
+> drop) — see [`PHASE4_STEP1_RING3_EL0.md`](PHASE4_STEP1_RING3_EL0.md). Step 2 (the syscall entry
+> path) — see [`PHASE4_STEP2_SYSCALL.md`](PHASE4_STEP2_SYSCALL.md): `write(1, ...)` from ring 3 /
+> EL0 reaches the console on both architectures, proven end to end, plus bounds/adversarial checks
+> on both. Phase 4's payoff — a program the kernel does not trust calls `write` and the string
+> appears on the console — is met.
 >
 > This design was written as part of the original single-document Phase 3 plan and split out
 > when that phase was broken into three along the capability boundaries it had already

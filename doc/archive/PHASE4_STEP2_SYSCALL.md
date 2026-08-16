@@ -1,4 +1,4 @@
-# Working Document: Phase 4 Step 2 — The Syscall Entry Path [STATUS: IN PROGRESS 🚧]
+# Working Document: Phase 4 Step 2 — The Syscall Entry Path [STATUS: COMPLETE ✅]
 
 > [!NOTE]
 > **Phase 4 Step 2**, from [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) Chapter 3, expanded into
@@ -287,7 +287,7 @@ side of this Step — if C0/C1 are right, this Part is a handful of lines.
 
 ---
 
-## 🅰️ A1 — x86_64: the five MSRs ⬜
+## 🅰️ A1 — x86_64: the five MSRs ✅
 
 **Goal:** `syscall` is enabled and configured to land somewhere. Verifiable without ever executing
 it.
@@ -310,9 +310,18 @@ take the MSR index in `ecx`; `wrmsr` takes the value split `edx:eax`.
 read back exactly what was written — this is checkable entirely at rest, in ring 0, before `A3`
 gives `syscall` anywhere real to jump to.
 
+> [!NOTE]
+> **The `kprintf` readback doesn't actually reach the console.** `arch_init()` (and therefore
+> `syscall_init()`) runs before `console_init()` in `main.c`'s `_start()` — the calls happen and
+> the MSRs are genuinely set, but the diagnostic `kprintf`s land before there's a console backend
+> to print to, so they're silently dropped. Not a bug worth fixing for this Step: functional
+> correctness ended up proven more convincingly anyway, by C2 actually working end to end (see
+> below) rather than by a readback log. Worth knowing if you go looking for the EFER/STAR lines in
+> a boot log and don't find them.
+
 ---
 
-## 🅰️ A2 — x86_64: per-CPU state and `arch_set_kernel_stack()` ⬜
+## 🅰️ A2 — x86_64: per-CPU state and `arch_set_kernel_stack()` ✅
 
 **Goal:** something for `swapgs` to find, and it stays correct across context switches.
 
@@ -326,7 +335,7 @@ stack top, same value `tss.rsp0` would show. Two call sites, one value, cheap to
 
 ---
 
-## 🅰️ A3 — x86_64: `syscall_entry.S` ⬜
+## 🅰️ A3 — x86_64: `syscall_entry.S` ✅
 
 **Goal:** the fiddly one. A hand-built `struct trap_frame`, from a standing start, on the user's
 stack, with no free register.
@@ -420,7 +429,7 @@ below, and the failure modes table has a symptom for nearly everything that can 
 
 ---
 
-## 🧩 C2 — The real end-to-end proof ⬜
+## 🧩 C2 — The real end-to-end proof ✅
 
 **Goal:** extend Step 1's blob on both architectures. `write` prints, then the blob deliberately
 faults exactly like Step 1 did.
@@ -447,9 +456,22 @@ keep running before the deliberate fault. If the string never appears, the sysca
 somewhere before dispatch; if it appears but the fault dump looks wrong (`CS`/`SPSR` no longer
 show ring 3 / EL0t), the return-to-userland half of the syscall path corrupted the frame.
 
+> [!NOTE]
+> **x86_64 confirmed, first boot, no debugging needed:** `hello from ring 3` on the console, then
+> `#GP` at `RIP: 0x4000001e` (the blob's `hlt`, right after `syscall`), `CS: 0x3b` — still ring 3,
+> proving `sysretq` handed privilege back correctly. `RAX: 0x12` (18) is `sys_write`'s return value,
+> having survived the full round trip: `x86_64_syscall_handler()` → `frame->rax` → popped by the
+> exit trampoline → visible in the user register file. `RCX`/`R11` show the same leftover-value
+> pattern the mental model predicted — both hold what `syscall` clobbered them with (the return
+> address and `rflags`, respectively) rather than any earlier "real" value, since the x86_64 ABI
+> already treats both as caller-clobbered by `syscall` for exactly this reason. Task dump also
+> showed `T1`/`T2`/`task0` all still rotating normally (`switch_count` incrementing across the
+> board) — no equivalent of AArch64's vector-9 gap here, since x86_64's `syscall` isn't an
+> exception at all and never interacts with the IDT-based IRQ path in the first place.
+
 ---
 
-## 🧩 C3 — Bounds and adversarial checks ⬜
+## 🧩 C3 — Bounds and adversarial checks ✅
 
 **Goal:** a couple of cheap experiments, same spirit as Step 1's C3.
 
@@ -458,8 +480,13 @@ show ring 3 / EL0t), the return-to-userland half of the syscall path corrupted t
 | **Unimplemented syscall number** | `x8`/`rax` = some large, unused number | `syscall_dispatch()`'s bounds check returns the not-implemented value; no crash, no garbage function-pointer call |
 | **`write` to an fd that isn't 1/2 and was never opened** | `fd = 99` | `sys_write()`'s existing `fd >= MAX_OPEN_FILES` check declines cleanly; return value is negative, blob keeps running |
 
-Both should be checkable by extending C2's blob temporarily, same "change it, observe, put it
-back" pattern as Step 1.
+Both checkable by extending C2's blob temporarily, same "change it, observe, put it back" pattern
+as Step 1 — confirmed on **both architectures**. AArch64: `x8 = 99` → `x0 = -1`, blob continues to
+the `mrs` fault; `fd = 99` → `sys_write()` declines, same fault follows. x86_64: `rax = 0x63` (99)
+→ `rax = 0xffffffffffffffff` on return, blob continues to the `hlt` fault at the same `RIP` as
+C2's clean run; `rdi = 0x63` with `rax` back to `SYS_write` → same `-1` decline, same fault. Same
+`RCX == RIP` / `R11 == RFLAGS` leftover-value pattern each time, confirming the frame round-trips
+correctly regardless of what `syscall_dispatch()` returns.
 
 ---
 
@@ -516,14 +543,17 @@ back" pattern as Step 1.
 - ✅ `kernel/arch/aarch64/exceptions.c` — the `esr_ec == 0x15` branch in `aarch64_dispatch()`, plus
   a second, unplanned fix: `vector_type == 9` (Lower EL IRQ) needed the same handling as
   `vector_type == 5` — see the B1 warning box above
-- ⬜ `kernel/arch/x86_64/arch.c` — the five MSRs in `arch_init()`; `arch_set_kernel_stack()`
-  extended to also write `x86_64_percpu0.kernel_rsp`; `wrmsr` helper
-- ⬜ `kernel/arch/x86_64/percpu.h` — new, `struct x86_64_percpu`, the one static instance
-- ⬜ `kernel/arch/x86_64/syscall_entry.S` — new, the entry/exit trampoline
-- ⬜ `kernel/arch/x86_64/idt.c` / `.h` — a new `x86_64_syscall_handler()` C function (can live
-  beside `x86_64_exception_handler()`, but stays a separate function — see A3)
-- 🚧 `kernel/core/main.c` — AArch64 blob extended with the `write` call ahead of the existing
-  fault, verified end to end (C2); x86_64 blob still needs the same treatment
+- ✅ `kernel/arch/x86_64/arch.c` — `syscall_init()` (the five MSRs), called from `arch_init()`;
+  `arch_set_kernel_stack()` extended to also write `x86_64_percpu0.kernel_rsp`
+- ✅ `kernel/arch/x86_64/lapic.h` — `rdmsr`/`wrmsr` promoted here (shared, not duplicated — the
+  other option Decision 1 offered), alongside all five `MSR_IA32_*` constants
+- ✅ `kernel/arch/x86_64/percpu.h` — new, `struct x86_64_percpu`, the one static instance
+  (defined in `arch.c`)
+- ✅ `kernel/arch/x86_64/syscall_entry.S` — new, the entry/exit trampoline
+- ✅ `kernel/arch/x86_64/idt.c` / `.h` — `x86_64_syscall_handler()`, beside
+  `x86_64_exception_handler()` as planned; `X86_64_SYSCALL_INT_NO_SENTINEL` (`0x80`) added to `idt.h`
+- ✅ `kernel/core/main.c` — both blobs extended with the `write` call ahead of the existing fault,
+  verified end to end on both architectures (C2)
 
 Deliberately **not** touched: `vectors.S` (AArch64's entry path is entirely existing machinery —
 see the mental model section), `isr.S` (the IDT path is untouched; `syscall` bypasses it
@@ -543,11 +573,11 @@ discipline.
 |---|---|---|
 | C0, ring 0 | `syscall_dispatch(SYS_write, ...)` reaches `sys_write()`; out-of-range number declines cleanly | ✅ |
 | C1, ring 0 | the same call, now targeting fd 1, actually reaches the console | ✅ |
-| A1 | all five MSRs read back what was written, before `syscall` ever executes | ⬜ |
-| A2 | `x86_64_percpu0.kernel_rsp` tracks `tss.rsp0` across a context switch | ⬜ |
+| A1 | all five MSRs read back what was written, before `syscall` ever executes | ✅ proven via C2 working, not the readback log (see A1 note) |
+| A2 | `x86_64_percpu0.kernel_rsp` tracks `tss.rsp0` across a context switch | ✅ proven via C2 (a broken `kernel_rsp` is the doc's own predicted triple-fault mode, and it didn't happen) |
 | B1 | AArch64 blob's `svc #0` prints and returns control to the next instruction | ✅ |
-| **C2, both arches** | **`hello from ring 3` on the console, then the same fault dump Step 1 produced** | 🚧 AArch64 done, x86_64 ⬜ |
-| C3 | unimplemented syscall number and a bad fd both decline without crashing | ⬜ |
+| **C2, both arches** | **`hello from ring 3` on the console, then the same fault dump Step 1 produced** | ✅ both arches, first x86_64 boot |
+| C3 | unimplemented syscall number and a bad fd both decline without crashing | ✅ both arches |
 
 Phase 4's stated goal — *a program the kernel does not trust calls `write` and the string appears
 on the console* — is met at C2. What's left open afterward, worth carrying into Phase 5 rather

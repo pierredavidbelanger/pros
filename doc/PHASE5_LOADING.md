@@ -1,14 +1,14 @@
 # Working Document: Phase 5 — Loading: The ELF Loader and a Real `/bin/init` [STATUS: NOT STARTED ⬜]
 
 > [!NOTE]
-> **Where this stands.** Not started, and blocked on Phase 4 — there is no point loading a
-> program until there is somewhere unprivileged to run it and a way for it to call back in.
+> **Where this stands.** Not started. Phase 4 is now complete on both architectures — ring 3 / EL0
+> and the syscall boundary both exist — so this Phase is unblocked.
 >
 > This design was written as part of the original single-document Phase 3 plan and split out
 > when that phase was broken into three along the capability boundaries it had already
 > identified. The starting-line inventory lives in
 > [`PHASE3_PREEMPTION.md`](archive/PHASE3_PREEMPTION.md) Chapter 0; the privilege drop and the syscall
-> entry path are [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md).
+> entry path are [`PHASE4_PRIVILEGE.md`](archive/PHASE4_PRIVILEGE.md).
 
 > [!NOTE]
 > Mentor-mode reminder (see the note at the top of [`../README.md`](../README.md)): this is a

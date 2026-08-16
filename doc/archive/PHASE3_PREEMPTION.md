@@ -38,7 +38,7 @@
 > | | Capability | Payoff |
 > |---|---|---|
 > | **Phase 3 — this document** | interruption + multiplicity | two kernel threads interleave |
-> | [**Phase 4 — Privilege**](../PHASE4_PRIVILEGE.md) | distrust | ring-3 code calls `write` |
+> | [**Phase 4 — Privilege**](PHASE4_PRIVILEGE.md) | distrust | ring-3 code calls `write` |
 > | [**Phase 5 — Loading**](../PHASE5_LOADING.md) | loading | `/bin/init` runs from the filesystem |
 >
 > Chapter 0's inventory of what already exists still covers all three, because it's the
@@ -72,7 +72,7 @@ Chapter expands it.
 
 The rest of the userland vocabulary moved out with the phase split, and is indexed in the
 document that now owns it: **Ring 3 / EL0**, **`iretq`/`eret`**, **`syscall`/`sysret`/`svc`**
-and **`swapgs`** in [`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md); **`PT_LOAD`**,
+and **`swapgs`** in [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md); **`PT_LOAD`**,
 **`p_filesz` vs `p_memsz`**, **auxv**, **`copy_from_user`** and **`-errno`** in
 [`PHASE5_LOADING.md`](../PHASE5_LOADING.md).
 
@@ -99,7 +99,7 @@ independent:
 **This phase takes the first two, and stops.** Not because the rest is harder, but because a
 bug in a scheduler and a bug in a privilege transition look *identical* from the outside — the
 machine resets — and debugging both at once is genuinely miserable. Distrust is
-[Phase 4](../PHASE4_PRIVILEGE.md); loading is [Phase 5](../PHASE5_LOADING.md).
+[Phase 4](PHASE4_PRIVILEGE.md); loading is [Phase 5](../PHASE5_LOADING.md).
 
 The pleasant consequence: **everything in this phase happens in ring 0**, where a mistake
 prints a register dump instead of triple-faulting. Preemption gets proven with *kernel* threads
@@ -150,7 +150,7 @@ several Phase 3 "tasks" are really "finish and fix" rather than "write".
   fix with a per-context-switch obligation behind it (Chapter 2).
 - **The GDT has no user segments.** Only null / kernel code / kernel data / TSS
   (`idt.c:62-64`). Ring 3 needs a user code and user data descriptor, and `sysret` constrains
-  *where in the GDT* they may sit ([`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md) Chapter 2).
+  *where in the GDT* they may sit ([`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) Chapter 2).
 - ~~**The IDT is only populated for vectors 0-31.**~~ **Fixed in Step 1.** `IDT_STUB_COUNT` is
   now 48, `isr.S` carries stubs for 32-47, and a `_Static_assert` ties that count to the PIC's
   vector range so the two can't silently disagree.
@@ -199,7 +199,7 @@ the phases that split off.
 | ✅ One global exception stack per arch | **Phase 3 Step 2** |
 | ✅ `#PF` routed to IST1, which does not nest | **Phase 3 Step 2** |
 | ✅ Kernel runs EL1t, so SP_EL0 is doing double duty | **Phase 3 Step 2** (new — found by Step 1) |
-| No user segments in the GDT | [**Phase 4**](../PHASE4_PRIVILEGE.md) Step 1, constrained by its Step 2 ⚠️ |
+| No user segments in the GDT | [**Phase 4**](PHASE4_PRIVILEGE.md) Step 1, constrained by its Step 2 ⚠️ |
 | `open_files[]` is kernel-global | [**Phase 5**](../PHASE5_LOADING.md) Step 2 |
 | Syscalls return `-1`, not `-errno` | [**Phase 5**](../PHASE5_LOADING.md) Step 2 |
 
@@ -209,7 +209,7 @@ the phases that split off.
 > current `sp` as its `kernel_stack_top` and that is what reaches `tss.rsp0`. The CPU never
 > reads it while nothing traps from ring 3, so this is dormant rather than broken — but the
 > first return from EL0 would build a trap frame on top of task 0's live locals. Carried
-> forward to [`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md) Chapter 5.
+> forward to [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) Chapter 5.
 
 One consequence of that distribution is worth knowing before starting, because it isn't obvious
 from the Step list.
@@ -225,7 +225,7 @@ moves to EL1h, because "the stack the trap arrived on" is SP_EL1, which today ho
 
 (The GDT item carries its own ordering trap — the descriptors must be laid out to `sysret`'s
 constraint the first time even though nothing enforces it until Phase 4's second Step. It's
-written up where it applies, in [`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md) Chapter 2.)
+written up where it applies, in [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) Chapter 2.)
 
 ### None of these are live bugs today
 
@@ -305,7 +305,7 @@ assembly per architecture buys the entire context switch.
 
 Worth sitting with before writing anything: *why* does `iretq` restoring a frame whose `cs`
 has RPL 3 constitute "entering userland", when it's the same instruction used to return from
-a divide-by-zero? (Answer in [`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md) Chapter 1.)
+a divide-by-zero? (Answer in [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) Chapter 1.)
 
 ---
 
@@ -559,7 +559,7 @@ struct trap_frame *schedule(struct trap_frame *current_frame) {
 ```
 
 Two things this buys beyond brevity. First, "start a brand new task" needs no special code —
-its `frame` is just a fabricated one ([`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md) Chapter 1). Second, it forces the ordering that's easy to
+its `frame` is just a fabricated one ([`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) Chapter 1). Second, it forces the ordering that's easy to
 get wrong: **switch the address space before returning to the frame, but note that the kernel
 stack you're currently standing on must stay mapped across that switch.** It does, because
 kernel mappings are shared by every context (`arch_vmm_new_context_root`) — but that's a real
@@ -669,7 +669,7 @@ that left `task->frame` NULL (which reads exactly like a scheduler bug and isn't
 panic that appeared to be a hang because `ansifilter` buffered it away.
 
 Everything that used to follow moved out with the phase split: ring 3 and the syscall entry
-path are [`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md); the ELF loader and the real syscall
+path are [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md); the ELF loader and the real syscall
 surface are [`PHASE5_LOADING.md`](../PHASE5_LOADING.md); `fork`/`execve`/`wait4` and the real
 `switch_to` are Phase 7, which will earn its own document once Steps here have taught what
 `struct task` actually needs to hold.
@@ -696,7 +696,7 @@ default. Several of these are the "open decisions" in `SYSCALL_DESIGN.md` §13.
 | `#PF` stack | keep IST1 vs per-task stack | Per-task; IST1 stays for `#DF` only | ✅ Step 2 Part A1 |
 
 The decisions that moved out with their chapters are recorded where they now apply:
-`syscall`/`sysret` and `swapgs` in [`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md) Chapter 4; the
+`syscall`/`sysret` and `swapgs` in [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) Chapter 4; the
 ELF segment copy and user-pointer validation in [`PHASE5_LOADING.md`](../PHASE5_LOADING.md)
 Chapter 4.
 
@@ -720,7 +720,7 @@ Collected because each one has a symptom that points somewhere other than the ca
   because that's when the stub is open anyway.
 
 The traps that only fire once a lower privilege level exists — `sysret`'s GDT constraint,
-`IA32_FMASK`, the fabricated `rflags` — are in [`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md)
+`IA32_FMASK`, the fabricated `rflags` — are in [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md)
 Chapter 5. The loader's are in [`PHASE5_LOADING.md`](../PHASE5_LOADING.md) Chapter 5.
 
 ---
@@ -761,7 +761,7 @@ New:
 - ✅ `kernel/core/test/test_kstack.c` (Step 2), `test_task.c` (Step 3) — 11 checks between them
 
 The files owned by the phases that split off are listed in their own documents:
-[`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md) (user GDT entries, the MSRs, `syscall_entry.S`,
+[`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) (user GDT entries, the MSRs, `syscall_entry.S`,
 the dispatch table) and [`PHASE5_LOADING.md`](../PHASE5_LOADING.md) (`elf.c`, the fd table,
 `errno.h`, `initrd/bin/init.c`).
 

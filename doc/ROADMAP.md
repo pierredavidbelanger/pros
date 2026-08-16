@@ -188,8 +188,11 @@ Two consequences worth stating, because each prevents a specific mistake:
 ---
 
 ### Phase 4: Privilege — Ring 3 / EL0 and the Syscall Boundary
-* **Status**: **IN PROGRESS** 🚧 — Step 1 complete on both architectures. Working doc:
-  [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md).
+* **Status**: **COMPLETE** ✅ — both Steps built, on both architectures. **A program the kernel
+  does not trust calls `write(1, "hello from ring 3\n", 18)` from ring 3 / EL0, and the string
+  appears on the console** — then the same task deliberately executes a privileged instruction and
+  faults, proving the machine survived the syscall cleanly and privilege is still enforced.
+  Working doc: [`archive/PHASE4_PRIVILEGE.md`](archive/PHASE4_PRIVILEGE.md).
 * **Payoff**: a program the kernel does not trust calls `write` and the string appears on the
   console. The moment the OS becomes an OS.
 * **Steps**:
@@ -199,13 +202,19 @@ Two consequences worth stating, because each prevents a specific mistake:
     privileged instruction is the success criterion** — verified on both architectures (`#GP` on
     x86_64, a trapped `mrs` on AArch64), plus three follow-up experiments confirming the
     enforcement is real (kernel-address read, W^X write, bare `ret`). Individually verifiable
-    Parts in [`PHASE4_STEP1_RING3_EL0.md`](PHASE4_STEP1_RING3_EL0.md), which also documents an
-    AArch64 `EC` correction found along the way and a real VMM demand-paging bug
+    Parts in [`archive/PHASE4_STEP1_RING3_EL0.md`](archive/PHASE4_STEP1_RING3_EL0.md), which also
+    documents an AArch64 `EC` correction found along the way and a real VMM demand-paging bug
     (`try_handle_hhdm_mmio_fault()` missing a presence check) found and fixed in the process.
-  - ⬜ **Step 2 — Syscall entry path** — `svc` dispatch (AArch64, small: it lands in the
+  - ✅ **Step 2 — Syscall entry path** — `svc` dispatch (AArch64, small: it lands in the
     existing vector table); `syscall`/`sysret` + `swapgs` + the `STAR`/`LSTAR`/`FMASK` MSRs
-    (x86_64, not small). One syscall wired: `write`. Broken into individually verifiable Parts
-    in [`PHASE4_STEP2_SYSCALL.md`](PHASE4_STEP2_SYSCALL.md).
+    (x86_64, not small — a hand-built `struct trap_frame` from a standing start, no hardware
+    frame, no free register). One syscall wired: `write`, dispatched through a table indexed by
+    Linux syscall numbers. Verified end to end on both architectures, plus bounds/adversarial
+    checks (bad syscall number, bad fd) on both. A real bug found and fixed along the way:
+    AArch64's IRQ handling only checked vector slot 5 (IRQs interrupting kernel code), missing
+    slot 9 (IRQs interrupting EL0 code) — the first time in the project an interrupt ever had to
+    land mid-userland-execution, which produced a silent live-lock, not a crash. Individually
+    verifiable Parts in [`archive/PHASE4_STEP2_SYSCALL.md`](archive/PHASE4_STEP2_SYSCALL.md).
 
 ---
 

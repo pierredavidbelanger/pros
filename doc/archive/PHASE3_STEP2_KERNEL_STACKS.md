@@ -61,7 +61,7 @@ middle of Limine's live boot stack — and `sched_init()` hands that to `arch_se
 So on x86_64, `tss.rsp0` currently points into a stack that is actively in use.
 
 Harmless today: nothing traps from ring 3, so the CPU never consults `rsp0`. It stops being
-harmless at [`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md) Step 1, where the first trap back from
+harmless at [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) Step 1, where the first trap back from
 userland would build its frame on top of task 0's live locals. C2 deliberately left task 0 on
 Limine's stack — you can't move a stack you're standing on — so the fix belongs to whichever
 Step first has a task that both owns a real kernel stack and returns from EL0. Recorded in
@@ -174,7 +174,7 @@ this kernel never sets.
 The alternative — stay EL1t and seed SP_EL1 with a per-task kernel stack — technically works,
 but leaves SP_EL0 meaning "kernel stack" for kernel threads and "user stack" for user tasks,
 which is exactly the kind of two-meanings-one-register that produces unexplainable bugs in
-[`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md) Step 1.
+[`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) Step 1.
 
 ### 2. Where do kernel stacks come from?
 
@@ -489,7 +489,7 @@ something.
 > **Never write a lower-EL entry's saved `sp` into SP_EL1.** On a lower-EL return that value is
 > the *user's* stack pointer; putting it in SP_EL1 hands userland the kernel's stack pointer for
 > the next trap, which is a privilege escalation wearing a typo's clothing. It's not reachable
-> until [`PHASE4_PRIVILEGE.md`](../PHASE4_PRIVILEGE.md) Step 1, and it is exactly the sort of thing that gets written now and found much later.
+> until [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) Step 1, and it is exactly the sort of thing that gets written now and found much later.
 
 ### The exit path
 
