@@ -6,20 +6,18 @@
 
 #include "stdc.h"
 
-#define TASK_NAME_SIZE 128
-
 #define TASK_READY   0
 #define TASK_RUNNING 1
 
 struct task {
     uint64_t pid;
     int state;
-    char name[TASK_NAME_SIZE]; // for the dump essentially
-    void *kernel_stack_base;   // base, for freeing and for the guard check
-    void *kernel_stack_top;    // what arch_set_kernel_stack() gets
-    struct trap_frame *frame;  // valid only while suspended
+    char const *name;           // for the dump essentially
+    void *kernel_stack_base;    // base, for freeing and for the guard check
+    void *kernel_stack_top;     // what arch_set_kernel_stack() gets
+    struct trap_frame *frame;   // valid only while suspended
     struct vmm_context *ctx;
-    uint64_t switch_count;     // how many times this task has been switched to
+    uint64_t switch_count;      // how many times this task has been switched to
     struct task *next;
 };
 
@@ -35,9 +33,9 @@ void task_destroy(struct task *task);
 
 bool task_owns_frame(const struct task *task, const struct trap_frame *frame);
 
-void task_exit_guard(void);
-
 bool task_stack_intact(const struct task *task);
+
+void task_exit_guard(void);
 
 void task_dump(struct task *task);
 

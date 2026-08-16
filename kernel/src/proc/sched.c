@@ -15,16 +15,20 @@ static struct task *sched_pick_next(void) {
 
 void sched_init(void) {
     run_queue_head = NULL;
-    struct task *task = task_init_boot();
-    if (!task) kpanic("cant create boot task");
-    run_queue_head = task;
-    task->next = task;
-    arch_set_kernel_stack(task->kernel_stack_top);
-    current = task;
 }
 
 void sched_add_task(struct task *task) {
-    task->next = run_queue_head->next;
+    if (!task) return;
+    if (!run_queue_head) {
+        // we are given the first task, but sched_on_trap_exit has not schedule it by itself yet
+        // we need to call arch_set_kernel_stack manually here and make it the current
+        run_queue_head = task;
+        task->state = TASK_RUNNING;
+        arch_set_kernel_stack(task->kernel_stack_top);
+        current = task;
+    } else {
+        task->next = run_queue_head->next;
+    }
     run_queue_head->next = task;
 }
 

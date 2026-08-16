@@ -7,64 +7,72 @@
 #include "proc/kstack.h"
 #include "proc/sched.h"
 
-static uint64_t next_pid = 1;
+static uint64_t next_pid = 0;
+
 static const char *task_state_names[] = {"READY", "RUNNING"};
 
-struct task *task_init_boot(void) {
-    struct task *task = kcalloc(1, sizeof(struct task));
-    if (!task) return NULL;
-    task->pid = 0;
-    task->state = TASK_RUNNING;
-    snprintf(task->name, TASK_NAME_SIZE, "task0");
-    task->kernel_stack_top = arch_get_stack_pointer(); // a point inside Limine stack, not its top
-    return task;
-}
-
-struct task *task_create(const char *name, void (*entry)(void)) {
+static struct task *task_inner_create(char const *name, void *kernel_stack_top, struct vmm_context *ctx) {
     struct task *task = kcalloc(1, sizeof(struct task));
     if (!task) return NULL;
     task->pid = next_pid++;
     task->state = TASK_READY;
-    snprintf(task->name, TASK_NAME_SIZE, "%s", name);
-    task->kernel_stack_base = kstack_alloc();
-    if (!task->kernel_stack_base) {
-        kfree(task);
-        return NULL;
+    task->name = name;
+    // are we provided with a stack we dont own, otherwise create one
+    if (kernel_stack_top) {
+        task->kernel_stack_top = kernel_stack_top;
+    } else {
+        task->kernel_stack_base = kstack_alloc();
+        if (!task->kernel_stack_base) {
+            kfree(task);
+            return NULL;
+        }
+        task->kernel_stack_top = kstack_get_top(task->kernel_stack_base);
     }
-    task->kernel_stack_top = kstack_get_top(task->kernel_stack_base);
-    // task->ctx = vmm_create_context();
-    // if (!task->ctx) {
-        // kfree(task);
-        // kstack_free(task->kstack);
-        // return NULL;
-    // }
+    // are we provided with a context we dont own, otherwise create one
+    if (ctx) {
+        task->ctx = ctx;
+    } else {
+        task->ctx = vmm_create_context();
+        if (!task->ctx) {
+            if (!kernel_stack_top) {
+                kstack_free(task->kernel_stack_base);
+            }
+            kfree(task);
+            return NULL;
+        }
+    }
+    return task;
+}
+
+struct task *task_init_boot(void) {
+    struct task *task = task_inner_create("BOOT", arch_get_stack_pointer(), vmm_kernel_context);
+    if (!task) return NULL;
+    return task;
+}
+
+struct task *task_create(const char *name, void (*entry)(void)) {
+    struct task *task = task_inner_create(name, NULL, vmm_kernel_context);
+    if (!task) return NULL;
     task->frame = arch_task_init_frame(task->kernel_stack_top, entry);
     return task;
 }
 
 struct task *task_create_user(const char *name, uint64_t user_entry, uint64_t user_stack_top) {
-    struct task *task = kcalloc(1, sizeof(struct task));
+    struct task *task = task_inner_create(name, NULL, NULL);
     if (!task) return NULL;
-    task->pid = next_pid++;
-    task->state = TASK_READY;
-    snprintf(task->name, TASK_NAME_SIZE, "%s", name);
-    task->kernel_stack_base = kstack_alloc();
-    if (!task->kernel_stack_base) {
-        kfree(task);
-        return NULL;
-    }
-    task->kernel_stack_top = kstack_get_top(task->kernel_stack_base);
     task->frame = arch_task_init_user_frame(task->kernel_stack_top, user_entry, user_stack_top);
     return task;
 }
 
 void task_destroy(struct task *task) {
     if (!task) return;
+    // do we have a ctx and do we own it
+    if (task->ctx && task->ctx != vmm_kernel_context) {
+        vmm_destroy_context(task->ctx);
+    }
+    // do we have a stack that we own
     if (task->kernel_stack_base) {
         kstack_free(task->kernel_stack_base);
-    }
-    if (task->ctx) {
-        vmm_destroy_context(task->ctx);
     }
     kfree(task);
 }
@@ -76,15 +84,15 @@ bool task_owns_frame(const struct task *task, const struct trap_frame *frame) {
     return true;
 }
 
-void task_exit_guard(void) {
-    kpanic("kernel thread returned");
-}
-
 bool task_stack_intact(const struct task *task) {
     if (!task) return false;
     if (!task->kernel_stack_base) return true;
     if (!kstack_guard_intact(task->kernel_stack_base)) return false;
     return true;
+}
+
+void task_exit_guard(void) {
+    kpanic("kernel thread returned");
 }
 
 void task_dump(struct task *task) {

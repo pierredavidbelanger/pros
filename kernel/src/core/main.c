@@ -97,6 +97,11 @@ void _start(void) {
     sched_init();
     kprintf("SCHED", "Initialized scheduler, ready to switch context when timer will be up\n");
 
+    // the kernel thread that will execute the rest of the boot process once we go preemptive
+    struct task *boot_task = task_init_boot();
+    if (!boot_task) kpanic("cannot create boot task");
+    sched_add_task(boot_task);
+
     struct task *task1 = task_create("T1", task1_entry);
     struct task *task2 = task_create("T2", task2_entry);
     sched_add_task(task1);
