@@ -2,6 +2,7 @@
 
 #include "arch/arch.h"
 #include "core/kprintf.h"
+#include "mm/vmm.h"
 #include "proc/task.h"
 
 static bool need_resched;
@@ -59,10 +60,10 @@ struct trap_frame *sched_on_trap_exit(struct trap_frame *frame) {
     current->state = TASK_READY;
     next->state = TASK_RUNNING;
     next->switch_count++;
-
-    arch_set_kernel_stack(next->kernel_stack_top);
     current = next;
 
+    arch_set_kernel_stack(current->kernel_stack_top);
+    vmm_switch_context(current->ctx);
     return current->frame;
 }
 
