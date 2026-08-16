@@ -3,6 +3,7 @@
 #include "idt.h"
 #include "pic.h"
 #include "lapic.h"
+#include "percpu.h"
 #include "io.h"
 #include "mm/vmm.h"
 #include "mm/pmm.h"
@@ -37,11 +38,11 @@ void arch_shutdown(void) {
 
 #define IA32_EFER_SCE (1ULL << 0)
 
-// TODO: missing!!
+// A3: arch/x86_64/syscall_entry.S
 extern void syscall_entry(void);
-// TODO: missing!!
-struct x86_64_percpu;
-extern struct x86_64_percpu x86_64_percpu0;
+
+// the one static per-CPU instance, for now
+struct x86_64_percpu x86_64_percpu0;
 
 void syscall_init(void) {
     // preserve LME/NXE etc, only SCE is ours to add
@@ -184,6 +185,8 @@ void arch_irq_disable(void) {
 
 void arch_set_kernel_stack(void *stack_top) {
     idt_tss_set_rsp0(stack_top);
+    // rsp0 is only ever consulted by interrupt-taken traps; `syscall` never looks at it
+    x86_64_percpu0.kernel_rsp = (uint64_t) stack_top;
 }
 
 void *arch_get_stack_pointer(void) {

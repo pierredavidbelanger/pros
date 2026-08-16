@@ -47,8 +47,13 @@ struct trap_frame {
 #define X86_64_RFLAGS_RESERVED_BIT1 (1ULL << 1) // always 1
 #define X86_64_RFLAGS_IF            (1ULL << 9) // interrupts enabled
 
+// syscall_entry.S's int_no: not a real IDT vector (those top out at 47), just legible in a dump
+#define X86_64_SYSCALL_INT_NO_SENTINEL 0x80
+
 void idt_init(void);
 
 void idt_tss_set_rsp0(void *rsp0);
+
+struct trap_frame *x86_64_syscall_handler(struct trap_frame *frame);
 
 #endif //PROS_X86_64_IDT_H
