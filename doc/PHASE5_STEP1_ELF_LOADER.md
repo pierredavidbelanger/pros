@@ -1,4 +1,4 @@
-# Working Document: Phase 5 Step 1 — The ELF64 Loader and a Freestanding `/bin/init` [STATUS: NOT STARTED ⬜]
+# Working Document: Phase 5 Step 1 — The ELF64 Loader and a Freestanding `/bin/init` [STATUS: IN PROGRESS 🚧 — D0 done]
 
 > [!NOTE]
 > **Phase 5 Step 1**, from [`PHASE5_LOADING.md`](PHASE5_LOADING.md) Chapter 3, expanded into
@@ -45,7 +45,7 @@ Phase 4 Step 1 deliberately mapped its blob into `vmm_kernel_context` to keep th
 single new idea. The cost of that shortcut is due now: **`task->ctx` has never been set, and
 `vmm_switch_context()` has never been called outside of `vmm_init()`.** Confirmed by reading the
 tree — `task_create()` has `task->ctx = vmm_create_context()` commented out
-(`proc/task.c:35`), and `sched_on_trap_exit()` (`proc/sched.c`) swaps `frame` and
+(`src/proc/task.c:35`), and `sched_on_trap_exit()` (`src/proc/sched.c`) swaps `frame` and
 `kernel_stack_top` on every switch but never touches `vmm_current_context`.
 
 That was invisible until now because every task so far has run entirely in the upper half
@@ -84,33 +84,22 @@ constant doesn't change, only which root table it's a leaf of.
             as an accidental-growth guard.
 ```
 
-### 3. One `init.c`, or one per architecture?
+### 3. One `init.c`, or one per architecture? — 🗄️ superseded, see below
 
-**Real constraint, not a style choice: `limine.conf` ships a single, shared
-`module_path: boot():/boot/initrd.tar`** for both boot entries (`limine.conf:5,11`). An x86_64
-ELF cannot execute on AArch64 and vice versa, so a single `/bin/init` cannot serve both.
+🗄️ **No longer as described here.** This decision assumed `limine.conf` would keep shipping a
+single, shared `module_path:` for both boot entries, forcing arch-suffixed filenames inside one
+shared tar so one architecture's `init` couldn't silently overwrite the other's. That constraint
+is gone: the build system that came out of D0 gives each architecture its **own** `initrd`
+archive (`initrd/bin/$(ARCH)/initrd`), and `limine.conf`'s two entries each point at their own
+`boot():/boot/$(ARCH)/{kernel,initrd}`. There's nothing to disambiguate inside a single tar
+anymore, so `main.c`'s `init_path` is just `"/bin/init"`, unconditionally — the
+`#ifdef __x86_64__` split this decision recommended never ended up needed.
 
-**Recommendation: build both variants, name them by arch inside the tar, let the arch-specific
-kernel pick its own.**
-
-```
-initrd/bin/init-x86_64      ← built with kernel/arch/x86_64/config.mk's CC
-initrd/bin/init-aarch64     ← built with kernel/arch/aarch64/config.mk's CC
-```
-
-`main.c` is already compiled per-architecture (the whole kernel is), so an `#ifdef __x86_64__` /
-`#else` around the path string it hands the loader costs one macro, no new build machinery:
-
-```c
-#ifdef __x86_64__
-const char *init_path = "/bin/init-x86_64";
-#else
-const char *init_path = "/bin/init-aarch64";
-#endif
-```
-
-The alternative — one `initrd.tar` per architecture — means splitting `root:`'s single output
-tree in the top-level `Makefile` into two, which is a bigger change for the same result.
+*(Original reasoning, kept for the trail: `limine.conf` used to carry a single shared
+`module_path: boot():/boot/initrd.tar` for both boot entries, which was the constraint this
+decision was working around by suggesting `initrd/bin/init-x86_64` / `initrd/bin/init-aarch64`
+inside one tar. The "alternative" this section dismissed as "a bigger change for the same
+result" — one `initrd.tar` per architecture — is the one that actually shipped.)*
 
 ### 4. `e_machine` validation, per architecture
 
@@ -142,38 +131,71 @@ that doesn't touch ELF at all and can be proven with tools that already exist (`
 a hand-mapped page, same as Phase 4 Step 1 C0's verify step). C2 and C3 both depend on C0 (a
 `ctx` to map into) and can be built in either order once it lands.
 
+**Status: D0 done, C0 next.** C1-C4 are all unstarted.
+
 ---
 
-## 🧩 D0 — A real, freestanding ELF64 binary to load
+## 🧩 D0 — A real, freestanding ELF64 binary to load ✅ DONE (2026-08-15)
 
-**Goal:** two static, non-PIE ELF64 binaries — `initrd/bin/init-x86_64` and
-`initrd/bin/init-aarch64` — built by the existing toolchain, staged into `initrd.tar`, with
-nothing in the kernel changed yet.
-
-`init.c` needs no libc — just `_start`, inline-asm syscall wrappers for `write` and `exit` (even
-if `exit` has nowhere to go yet), and the `zig cc ... -target {x86_64,aarch64}-linux-none`
-freestanding target [`PHASE5_LOADING.md`](PHASE5_LOADING.md) Chapter 1 already names. Something
-like:
+**Goal, as built:** two static, non-PIE ELF64 binaries, `user/bin/x86_64/init` and
+`user/bin/aarch64/init`, built by real inline-asm `write` syscall wrappers matching this
+kernel's own trap-entry ABI (`syscall` on x86_64, `svc #0` on AArch64), packed into
+`initrd/bin/$(ARCH)/initrd` — nothing in the kernel changed yet.
 
 ```c
-// initrd/bin/init.c — no libc, no CRT: _start IS the entry point
-static long sys_write(long fd, const void *buf, long len);
+// user/src/init/init.c — no libc, no CRT: _start IS the entry point
+#ifdef __x86_64__
+static inline long sys_write(long fd, const void *buf, long len) {
+    long ret;
+    asm volatile ("syscall" : "=a"(ret) : "a"(1), "D"(fd), "S"(buf), "d"(len) : "rcx", "r11", "memory");
+    return ret;
+}
+#else
+static inline long sys_write(long fd, const void *buf, long len) {
+    register long x8 asm("x8") = 64;
+    register long x0 asm("x0") = fd, x1 asm("x1") = (long) buf, x2 asm("x2") = len;
+    asm volatile ("svc #0" : "+r"(x0) : "r"(x8), "r"(x1), "r"(x2) : "memory");
+    return x0;
+}
+#endif
+
 void _start(void) {
     sys_write(1, "hello from /bin/init\n", 22);
     for (;;) {}
 }
 ```
 
-Two Makefile rules join the existing `initrd.tar` recipe (top-level `Makefile:26-29`), one per
-`config.mk`, each invoking that architecture's `$(CC)` against `init.c` with no CRT startup
-files and a linker script or `-Wl,--entry=_start` forcing `ET_EXEC` at a known `p_vaddr`
-(`0x40000000`, matching decision 2 above — `-Wl,-Ttext=0x40000000` is the simplest lever).
+**What actually shipped, different from the plan above:** rather than two Makefile rules bolted
+onto the top-level `Makefile`, writing `init.c` turned into restructuring the whole build system —
+`kernel/`, `user/`, and `initrd/` are now three sibling, ARCH-parametrized subprojects (each with
+its own `Makefile` + `config.$(ARCH).mk`). Every new user program
+(`user/src/<name>/<name>.c`) is picked up automatically — `user/Makefile` discovers it via
+`$(wildcard src/*/)` and generates its build rule, `initrd/Makefile` packs it via
+`$(wildcard ../user/bin/$(ARCH)/*)` — no per-program edits needed anywhere. See decision 3 below
+(now superseded) for how that changed the `initrd`-per-architecture question.
 
-**Verify:** `readelf -h`/`readelf -l` on both outputs, by hand, before any kernel code reads
-them. Confirm: `Type: EXEC`, `Machine` matches, exactly one `LOAD` segment (a ~30-line freestanding
-program has no `.bss` to speak of, but check anyway), `Entry point address` equals the linked
-`p_vaddr`. This is the same discipline [`PHASE4_STEP1_RING3_EL0.md`](archive/PHASE4_STEP1_RING3_EL0.md)
-used on hand-assembled bytes — verify against the toolchain's own output, never a listing.
+One toolchain gotcha hit along the way, worth keeping for the next binary: `-Wl,-Ttext=0x40000000`
+(this doc's original recommendation) is rejected by this `zig cc`'s bundled linker
+(`unsupported linker arg: -Ttext`) — `-Wl,--image-base=0x40000000` is the form that actually
+works, and is what `user/config.*.mk`'s `LDFLAGS` uses.
+
+**Verify — done:**
+```
+$ readelf -h user/bin/x86_64/init | grep -i "Type\|Machine\|Entry"
+  Type:                              EXEC (Executable file)
+  Machine:                           Advanced Micro Devices X86-64
+  Entry point address:               0x400011f0
+
+$ readelf -h user/bin/aarch64/init | grep -i "Type\|Machine\|Entry"
+  Type:                              EXEC (Executable file)
+  Machine:                           AArch64
+  Entry point address:               0x400101dc
+```
+Both `Type: EXEC`, correct `Machine` each, entry near the linked `0x40000000`, two `LOAD`
+segments each (a `.text`/`.rodata` split — no `.bss` to speak of yet, matches expectations for
+this ~15-line program). Same discipline
+[`PHASE4_STEP1_RING3_EL0.md`](archive/PHASE4_STEP1_RING3_EL0.md) used on hand-assembled bytes —
+verified against the toolchain's own output, never a listing.
 
 ---
 
@@ -184,16 +206,16 @@ used on hand-assembled bytes — verify against the toolchain's own output, neve
 this is provable entirely with the existing kernel threads.**
 
 ```c
-// proc/task.c — task_create() (kernel thread path)
+// src/proc/task.c — task_create() (kernel thread path)
 task->ctx = vmm_kernel_context;   // was: commented-out vmm_create_context()
 
-// proc/task.c — task_create_user()
+// src/proc/task.c — task_create_user()
 task->ctx = vmm_create_context();
 if (!task->ctx) { kstack_free(task->kernel_stack_base); kfree(task); return NULL; }
 ```
 
 ```c
-// proc/sched.c — sched_on_trap_exit(), right where kernel_stack is switched
+// src/proc/sched.c — sched_on_trap_exit(), right where kernel_stack is switched
 arch_set_kernel_stack(next->kernel_stack_top);
 vmm_switch_context(next->ctx);
 current = next;
@@ -333,7 +355,7 @@ retrofitting alignment logic under time pressure is how Phase 4 Step 1's frame b
 acceptance criterion happens.
 
 ```c
-// core/main.c, replacing the commented-out blob block
+// src/core/main.c, replacing the commented-out blob block
 struct vmm_context *init_ctx = vmm_create_context();
 if (!init_ctx) kpanic("vmm_create_context for init failed");
 
@@ -404,17 +426,18 @@ it).
 
 New:
 
-- ⬜ `kernel/proc/elf.c`, `kernel/include/proc/elf.h` — `elf_load()`, `elf_build_user_stack()`
-- ⬜ `initrd/bin/init.c` — freestanding, inline-asm `write`, no libc
-- ⬜ top-level `Makefile` — two build rules (one per `config.mk`), staged into `initrd.tar` as
-  `bin/init-x86_64` / `bin/init-aarch64`
+- ⬜ `kernel/src/proc/elf.c`, `kernel/include/proc/elf.h` — `elf_load()`, `elf_build_user_stack()`
+- ✅ `user/src/init/init.c` — freestanding, inline-asm `write`, no libc (D0)
+- ✅ `kernel/`, `user/`, `initrd/` build system — restructured into three ARCH-parametrized
+  subprojects during D0, superseding the "two Makefile rules" plan this section originally
+  described; see D0 below for the shape it took
 
 Existing, to be modified:
 
-- ⬜ `kernel/proc/task.c` — `task_create()` assigns `task->ctx = vmm_kernel_context`;
+- ⬜ `kernel/src/proc/task.c` — `task_create()` assigns `task->ctx = vmm_kernel_context`;
   `task_create_user()` assigns a fresh one (C0)
-- ⬜ `kernel/proc/sched.c` — `sched_on_trap_exit()` calls `vmm_switch_context()` (C0)
-- ⬜ `kernel/core/main.c` — the commented-out blob block replaced by `elf_load()` +
+- ⬜ `kernel/src/proc/sched.c` — `sched_on_trap_exit()` calls `vmm_switch_context()` (C0)
+- ⬜ `kernel/src/core/main.c` — the commented-out blob block replaced by `elf_load()` +
   `elf_build_user_stack()` + `task_create_user()` (C4)
 
 ---
@@ -424,7 +447,7 @@ Existing, to be modified:
 - **C0** is fully testable at rest with the existing kernel threads — no ELF, no user mode,
   same tools Phase 3/4 already used (`task_dump_all()`, switch counters).
 - **C1** is a pure function of bytes, same as `PHASE5_LOADING.md`'s Verification chapter says —
-  worth a `core/test/test_elf.c` alongside the boot-log check: accept a good header, reject bad
+  worth a `src/core/test/test_elf.c` alongside the boot-log check: accept a good header, reject bad
   magic, wrong class, `ET_DYN`, and the other architecture's `e_machine`.
 - **C3**'s layout and alignment given a known `argc`/`argv`/`envp` is likewise pure-data
   testable, independent of C2 or scheduling.

@@ -124,7 +124,7 @@ Two consequences worth stating, because each prevents a specific mistake:
 
 ### Phase 1: Virtual Memory Management (VMM) & Demand Paging
 * **Status**: **COMPLETE** ✅ — later revisited for an architecture-neutral redesign pass: single source of truth for the paging-level/index constants (was hand-copied in three functions), a real per-context demand-paging policy that inspects the actual fault reason (`arch_vmm_fault_is_present`/`arch_vmm_fault_is_write`) instead of ignoring it, a fixed memory leak in context teardown (previously only freed the root table, not the tree beneath it), and root-table setup/cloning delegated to per-architecture `arch_vmm_ensure_user_root()`/`arch_vmm_new_context_root()` so `vmm.c` no longer needs to explain x86_64-vs-AArch64 differences in its own comments. The working docs for both passes (`PHASE1_VMM.md`, `PHASE1_VMM_REDESIGN.md`) have been folded into this summary and removed now that the work is done.
-* **Prerequisites**: Physical Memory Manager (PMM) — implemented in `kernel/mm/pmm.c`.
+* **Prerequisites**: Physical Memory Manager (PMM) — implemented in `kernel/src/mm/pmm.c`.
 * **Goal**: Build page-table abstractions to isolate kernel memory space from user processes and support dynamic memory mapping.
 
 ---
@@ -135,7 +135,7 @@ Two consequences worth stating, because each prevents a specific mistake:
 * **History**: The original plan targeted a disk-backed FAT filesystem over a hand-written VirtIO-block/PCI/ACPI stack ([`archive/PHASE2_VFS.md`](archive/PHASE2_VFS.md) Steps 1-9) — it worked, but wasn't clean enough to keep, and was fully removed (`git log`: *"rip out everything i found not clean enough, will redo later"*) in favor of the simpler initrd approach below. The VFS core (`fs/vfs/`) and its syscalls were untouched by the rip-out and remain exactly as originally built.
 * **What shipped**:
   - ✅ **Iterative VFS path resolution** (`vfs_lookup`) — `sys_open`'s old single-segment shortcut replaced with real `/`-delimited path tokenization.
-  - ✅ **Limine module parsing** — `module_request` registered in `boot.c`, `limine.conf` carries the module directive, `initrd.tar` built and staged by the Makefile.
+  - ✅ **Limine module parsing** — `module_request` registered in `boot.c`, `limine.conf` carries the module directive, the initrd archive built per-architecture and staged by `initrd/Makefile`.
   - ✅ **ramfs driver + TAR loader split** (`fs/ramfs/ramfs.c`, `fs/tar/tar.c`) — the archive format no longer *is* the filesystem. `ramfs` owns the storage (in-memory tree, first-child/next-sibling), and `tar_load()` is reduced to a parser that populates it purely through the public VFS path API — the same separation as Linux's `rootfs` + `unpack_to_rootfs()`. Originally `tar_mount()` did both jobs at once; making that writable would have made it a tmpfs wearing a tar costume, hence the split.
   - ✅ **Mount to VFS root `/`** — `ramfs_create_root()` mounted at `/` before anything else, then `tar_load()` fills it. Verified at boot: `/root` resolves through the mount table and `readdir` lists `hello.txt`.
   - ✅ **File content storage** — each node carries a sparse page list (`void **pages`, a `NULL` entry being a hole that reads as zeros), grown on demand via `krealloc` and backed page-by-page by the PMM. That is what real `tmpfs` does and what `mmap` will need in Phase 8. `lseek` past EOF then write produces a genuine hole, with no zero-fill pass and no pages allocated for the gap.

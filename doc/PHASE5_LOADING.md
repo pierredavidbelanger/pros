@@ -1,8 +1,9 @@
-# Working Document: Phase 5 — Loading: The ELF Loader and a Real `/bin/init` [STATUS: NOT STARTED ⬜]
+# Working Document: Phase 5 — Loading: The ELF Loader and a Real `/bin/init` [STATUS: IN PROGRESS 🚧]
 
 > [!NOTE]
-> **Where this stands.** Not started. Phase 4 is now complete on both architectures — ring 3 / EL0
-> and the syscall boundary both exist — so this Phase is unblocked.
+> **Where this stands.** Step 1 underway — D0 (a real `/bin/init` binary) is done; the loader
+> itself (C0-C4) is not yet started. Phase 4 is complete on both architectures — ring 3 / EL0
+> and the syscall boundary both exist — so this Phase was unblocked to begin with.
 >
 > This design was written as part of the original single-document Phase 3 plan and split out
 > when that phase was broken into three along the capability boundaries it had already
@@ -135,10 +136,10 @@ resulting `#GP` on a `movaps` is one of the classic first-userland-process bugs.
 
 ### Getting a test binary without a libc
 
-`zig cc` is already the toolchain (`arch/*/config.mk`), and it can target
+`zig cc` is already the toolchain (`user/config.*.mk`), and it can target
 `x86_64-linux-none` / `aarch64-linux-none` freestanding. So the first `/bin/init` can be a
 ~30-line C file with inline-asm syscall wrappers, no libc, statically linked — added to
-`initrd/` and picked up by the existing `initrd.tar` rule in the top-level `Makefile`.
+`user/src/init/` and picked up automatically by `initrd/Makefile`'s per-arch packing.
 
 That matters for sequencing: **userland can be tested long before a C library exists** — which
 is the whole reason Phase 9 can be deferred until after there is an interactive shell.
@@ -200,11 +201,12 @@ an internal helper, but the ABI-facing syscall will need to be `getdents64` befo
 
 ## 🪜 Chapter 3: The Steps
 
-**⬜ Step 1 — The ELF loader and a freestanding `/bin/init`.**
-Loader per Chapter 1, plus an `init.c` built by `zig cc` and added to `initrd.tar`. Acceptance:
-`/bin/init` loads from the ramfs and prints from ring 3 using only `write` — the one syscall
-Phase 4 wired. Broken into individually verifiable Parts in
-[`PHASE5_STEP1_ELF_LOADER.md`](PHASE5_STEP1_ELF_LOADER.md).
+**🚧 Step 1 — The ELF loader and a freestanding `/bin/init`.**
+Loader per Chapter 1, plus an `init.c` built by `zig cc` and packed into the per-arch `initrd`
+archive. Acceptance: `/bin/init` loads from the ramfs and prints from ring 3 using only `write`
+— the one syscall Phase 4 wired. Broken into individually verifiable Parts in
+[`PHASE5_STEP1_ELF_LOADER.md`](PHASE5_STEP1_ELF_LOADER.md), where D0 (the binary itself) is
+done and C0-C4 (the actual loader) are not yet started.
 
 **⬜ Step 2 — The real syscall surface.**
 Per-process fd tables, `copy_from_user`/`copy_to_user`, the `-errno` conversion, and
@@ -243,17 +245,20 @@ Per-process fd tables, `copy_from_user`/`copy_to_user`, the `-errno` conversion,
 
 Existing, to be modified:
 
-- ⬜ `kernel/fs/vfs/file.c` + `kernel/include/fs/vfs/file.h` — fd table into `struct task`,
+- ⬜ `kernel/src/fs/vfs/file.c` + `kernel/include/fs/vfs/file.h` — fd table into `struct task`,
   `-errno` throughout
-- ⬜ `kernel/proc/task.c` — the per-process fd array
-- ⬜ `kernel/core/main.c` — load and start `/bin/init` instead of shutting down
-- ⬜ `Makefile` (top level) — a rule building `initrd/bin/init` with `zig cc`
+- ⬜ `kernel/src/proc/task.c` — the per-process fd array
+- ⬜ `kernel/src/core/main.c` — load and start `/bin/init` instead of shutting down
 
 New:
 
-- ⬜ `kernel/proc/elf.c` — the loader and the initial-stack builder
+- ⬜ `kernel/src/proc/elf.c` — the loader and the initial-stack builder
 - ⬜ `kernel/include/errno.h`
-- ⬜ `initrd/bin/init.c` — freestanding, inline-asm syscall wrappers, no libc
+- ✅ `user/src/init/init.c` — freestanding, inline-asm syscall wrappers, no libc. Built
+  automatically per-arch by `user/Makefile` and packed by `initrd/Makefile` — no dedicated
+  top-level `Makefile` rule needed; see [`PHASE5_STEP1_ELF_LOADER.md`](PHASE5_STEP1_ELF_LOADER.md)
+  D0 for how the build system ended up shaped (`kernel/`, `user/`, `initrd/` as three
+  ARCH-parametrized subprojects).
 
 ---
 

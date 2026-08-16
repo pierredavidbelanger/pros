@@ -5,7 +5,7 @@ PrOS is a minimalist, freestanding operating system kernel implemented in C for 
 > [!NOTE]
 > PrOS is a personal hobby project created to explore bare-metal programming, learn low-level system software development, and have fun building an OS from scratch! 
 > AI IS utilized as a tutor, mentor, debugger, rubber duck, code reviewer and doc writer, not to generate slop I don't care about.
-> One deliberate exception: the self-test suites under `kernel/core/test/` are mostly AI-written. I love tests, just not enough to write them.
+> One deliberate exception: the self-test suites under `kernel/src/core/test/` are mostly AI-written. I love tests, just not enough to write them.
 > I try to keep the AI commit attributions, so modifications lands with co-author trailers so the git history says plainly who wrote what.
 
 ---
@@ -40,23 +40,40 @@ Everything below is built and boots on **both** architectures. Sources are in `k
 
 ## 📁 Project Structure
 
+Three sibling, architecture-parametrized subprojects (`kernel/`, `user/`, `initrd/`), each with
+its own `Makefile` and `config.$(ARCH).mk`, orchestrated by the root `Makefile` — the only place
+that knows the cross-subproject build order (`user` → `initrd` → the assembled boot image).
+Every build artifact, from every subproject, lands under `bin/`.
+
 ```text
 .
-├── Makefile               # Root build script (EFI System Partition setup, OVMF/Limine binaries, QEMU launchers)
-├── limine.conf            # Limine bootloader configuration
+├── Makefile               # Orchestrates kernel/user/initrd, OVMF/Limine downloads, QEMU launchers
+├── limine.conf            # Limine bootloader configuration (per-arch kernel/initrd paths)
 ├── README.md              # Project documentation
 ├── doc/                   # Roadmap & the working document for the phase being designed now
 │   └── archive/           # Finished & superseded working documents, kept for the reasoning trail
-└── kernel/                # Kernel source root
-    ├── Makefile           # Kernel compilation script
-    ├── arch/              # Architecture-specific code (aarch64, x86_64), linker scripts, exceptions, interrupts
-    ├── core/              # Core kernel subsystems (boot, fb, console, kprintf, main) and test/ (one self-test file per subsystem)
-    ├── fs/                # Filesystems: vfs/ (core + fd table), ramfs/ (in-memory root), tar/ (initrd loader)
-    ├── include/           # Kernel headers (arch, core, fs, mm, proc)
-    ├── libs/              # Downloaded third-party libraries (freestanding headers, printf, limine)
-    ├── mm/                # Memory Management (pmm, vmm, heap)
-    └── proc/              # Tasks & scheduling (task, sched, kstack)
+├── kernel/                # Kernel source root
+│   ├── Makefile           # ARCH-parametrized build → kernel/bin/$(ARCH)/kernel
+│   ├── config.x86_64.mk, config.aarch64.mk   # Per-arch CC/CFLAGS/LDFLAGS
+│   ├── include/           # Kernel headers (arch, core, fs, mm, proc)
+│   └── src/               # Kernel sources
+│       ├── arch/          # Architecture-specific code (aarch64, x86_64), linker scripts, exceptions, interrupts
+│       ├── core/          # Core kernel subsystems (boot, fb, console, kprintf, main) and test/ (one self-test file per subsystem)
+│       ├── fs/            # Filesystems: vfs/ (core + fd table), ramfs/ (in-memory root), tar/ (initrd loader)
+│       ├── mm/            # Memory Management (pmm, vmm, heap)
+│       ├── proc/          # Tasks & scheduling (task, sched, kstack)
+│       └── syscall/       # Syscall dispatch table
+├── user/                  # Userland programs, one subdirectory per program
+│   ├── Makefile           # ARCH-parametrized, auto-discovers src/*/ → user/bin/$(ARCH)/<program>
+│   ├── config.x86_64.mk, config.aarch64.mk   # Per-arch CC/LDFLAGS (freestanding, linux-none target)
+│   └── src/init/          # /bin/init — no libc, inline-asm syscall wrappers
+└── initrd/                # The RAM-backed root filesystem's tracked source content
+    ├── Makefile           # Packs data/ + that arch's user/ binaries into initrd/bin/$(ARCH)/initrd
+    └── data/root/         # Tracked filesystem content (e.g. hello.txt) — the name IS the runtime /root path
 ```
+
+`kernel/libs/` (downloaded third-party libraries — freestanding headers, printf, limine) is
+gitignored build output, same as every subproject's `bin/`.
 
 ---
 
@@ -66,7 +83,7 @@ Development happens in iterative phases, tracked entirely in [`doc/`](doc/ROADMA
 
 Phases 1 through 4 are done. Phase 3 ([`PHASE3_PREEMPTION.md`](doc/archive/PHASE3_PREEMPTION.md)) closed with the payoff it was shaped around: **preemptive multitasking**. Three tasks — the boot task plus two kernel threads — take turns on the CPU driven only by the timer interrupt, their output interleaves, and each one's switch counter lands within a few of the others after three seconds at 100 Hz. Nothing yields; nothing is cooperative. It all happens in ring 0, deliberately, because that's where a mistake prints a register dump instead of resetting the machine.
 
-Phase 4 ([`PHASE4_PRIVILEGE.md`](doc/archive/PHASE4_PRIVILEGE.md)) closed with *its* payoff: **a program the kernel does not trust calls `write` and the string appears on the console.** Step 1 dropped to ring 3 / EL0 — a hand-fabricated user program runs unprivileged and faults on a privileged instruction, with three follow-up experiments confirming the CPU actually enforces it rather than just claiming to ([`PHASE4_STEP1_RING3_EL0.md`](doc/archive/PHASE4_STEP1_RING3_EL0.md)). Step 2 built the syscall boundary itself — `svc` dispatch on AArch64, and `syscall`/`sysret` + `swapgs` + a hand-built trap frame on x86_64 — and wired exactly one syscall, `write`, dispatched through a table indexed by Linux syscall numbers ([`PHASE4_STEP2_SYSCALL.md`](doc/archive/PHASE4_STEP2_SYSCALL.md)). The blob calls `write(1, "hello from ring 3\n", 18)` from ring 3 / EL0, the string appears on the console, and the same task then deliberately faults on a privileged instruction, proving the machine survived the syscall cleanly. Phase 5 ([`PHASE5_LOADING.md`](doc/PHASE5_LOADING.md)) is next: already designed but unwritten, adding the ELF loader and a real `/bin/init`. From there the roadmap runs through an interactive shell, `fork`/`exec`, `/dev/fb0`, BusyBox, PTYs, X11 and finally a web browser.
+Phase 4 ([`PHASE4_PRIVILEGE.md`](doc/archive/PHASE4_PRIVILEGE.md)) closed with *its* payoff: **a program the kernel does not trust calls `write` and the string appears on the console.** Step 1 dropped to ring 3 / EL0 — a hand-fabricated user program runs unprivileged and faults on a privileged instruction, with three follow-up experiments confirming the CPU actually enforces it rather than just claiming to ([`PHASE4_STEP1_RING3_EL0.md`](doc/archive/PHASE4_STEP1_RING3_EL0.md)). Step 2 built the syscall boundary itself — `svc` dispatch on AArch64, and `syscall`/`sysret` + `swapgs` + a hand-built trap frame on x86_64 — and wired exactly one syscall, `write`, dispatched through a table indexed by Linux syscall numbers ([`PHASE4_STEP2_SYSCALL.md`](doc/archive/PHASE4_STEP2_SYSCALL.md)). The blob calls `write(1, "hello from ring 3\n", 18)` from ring 3 / EL0, the string appears on the console, and the same task then deliberately faults on a privileged instruction, proving the machine survived the syscall cleanly. Phase 5 ([`PHASE5_LOADING.md`](doc/PHASE5_LOADING.md)) is next, adding the ELF loader and a real `/bin/init`: the freestanding `/bin/init` binary itself now builds and boots for both architectures, the loader that will actually run it is not yet written. From there the roadmap runs through an interactive shell, `fork`/`exec`, `/dev/fb0`, BusyBox, PTYs, X11 and finally a web browser.
 
 Large Steps get their own document while being built, then move to the archive when they close — most recently [`PHASE3_STEP3_ROUND_ROBIN.md`](doc/archive/PHASE3_STEP3_ROUND_ROBIN.md), whose retrospective records where the build diverged from the design and the two failures that cost the most time. A phase document joins them once its last Step lands. `ROADMAP.md` also records the naming convention these documents follow: Phase → Step → Part, with Chapters inside a phase document. That folder is the source of truth for what's done and what's next, not this README.
 
@@ -117,9 +134,11 @@ make qemu-x86_64
 These commands will:
 1. Download EDK2 OVMF UEFI binaries (AArch64 / x86_64) and the Limine bootloader into `bin/` (if missing).
 2. Download freestanding headers, runtime, limine protocol, and `mpaland/printf` into `kernel/libs/` (if missing).
-3. Compile the kernel (`kernel/bin/kernel-aarch64` and `kernel/bin/kernel-x86_64`).
-4. Build `initrd.tar` (a ustar archive of `initrd/`) and generate the bootable EFI System Partition structure in `root/` (Limine's EFI binary, `limine.conf`, the compiled kernel, and the initrd).
-5. Launch QEMU with UEFI firmware, presenting `root/` as a `virtio-blk-pci` disk so OVMF can find and chainload it. That disk is used only by the firmware to boot — the kernel's own `/` is the in-memory ramfs, populated from the `initrd.tar` that Limine hands over as a module.
+3. Compile the kernel for both architectures (`kernel/bin/x86_64/kernel`, `kernel/bin/aarch64/kernel`).
+4. Compile userland programs for both architectures (`user/bin/x86_64/init`, `user/bin/aarch64/init`, and so on for any others under `user/src/`).
+5. Pack each architecture's `initrd/data/` content plus that architecture's userland binaries into its own archive (`initrd/bin/x86_64/initrd`, `initrd/bin/aarch64/initrd`).
+6. Assemble the bootable EFI System Partition structure in `bin/root/` — Limine's EFI binary, `limine.conf`, and each architecture's kernel + initrd under `bin/root/boot/$(ARCH)/`.
+7. Launch QEMU with UEFI firmware, presenting `bin/root/` as a `virtio-blk-pci` disk so OVMF can find and chainload it. That disk is used only by the firmware to boot — the kernel's own `/` is the in-memory ramfs, populated from the matching-architecture `initrd` that Limine hands over as a module.
 
 The kernel calls `arch_shutdown()` once boot finishes, so QEMU exits **on its own** — no need to close the window or kill the process manually.
 
@@ -141,7 +160,7 @@ All four QEMU targets pipe their serial output straight to `tee` — nothing sit
 
 ### 3. Toggling Kernel Self-Tests
 
-`test_pmm()`/`test_heap()`/`test_vmm()`/`test_vfs()`/`test_kstack()`/`test_task()` live one-per-file under `kernel/core/test/` and are gated on the Limine command line rather than being commented in/out of the source. Each `/Kernel (...)` entry in `limine.conf` carries `cmdline: pros.tests`, currently **enabled**:
+`test_pmm()`/`test_heap()`/`test_vmm()`/`test_vfs()`/`test_kstack()`/`test_task()` live one-per-file under `kernel/src/core/test/` and are gated on the Limine command line rather than being commented in/out of the source. Each `/Kernel (...)` entry in `limine.conf` carries `cmdline: pros.tests`, currently **enabled**:
 
 ```ini
 /Kernel (ARM64)
@@ -150,7 +169,7 @@ All four QEMU targets pipe their serial output straight to `tee` — nothing sit
     cmdline: pros.tests
 ```
 
-Comment that line out with `;` (Limine's comment marker) for a quiet boot. No kernel rebuild is required either way — `make` re-stages `root/` from the edited config on the next run.
+Comment that line out with `;` (Limine's comment marker) for a quiet boot. No kernel rebuild is required either way — `make` re-stages `bin/root/` from the edited config on the next run.
 
 Each check prints a single line through the shared `test_report()`:
 
@@ -158,26 +177,33 @@ Each check prints a single line through the shared `test_report()`:
 [TEST ] [HEAP ] krealloc grow in place                 PASS
 ```
 
-### 4. Manual Kernel Build Steps
+### 4. Manual Subproject Build Steps
 
-If you only want to compile the kernel binaries without launching QEMU:
+Each subproject (`kernel/`, `user/`, `initrd/`) is independently buildable without launching QEMU:
 
 ```bash
-# Build kernel binaries for both architectures (outputs: kernel/bin/kernel-aarch64 & kernel/bin/kernel-x86_64)
+# Build one subproject for both architectures (outputs land under <subproject>/bin/$(ARCH)/)
 make kernel
+make user
+make initrd    # depends on `user` — packs that arch's userland binaries into the initrd archive
 
-# Or build a specific target architecture from inside kernel/
+# Or build a specific architecture from inside a subproject directory
 cd kernel
 make ARCH=x86_64
 make ARCH=aarch64
 ```
+
+Cross-subproject build order (`user` before `initrd`, both before the assembled `bin/root/`) is
+the root `Makefile`'s job — each subproject's own `Makefile` only knows how to build itself, so
+running one standalone (e.g. `make -C initrd ARCH=x86_64`) before its dependency is built fails
+with a clear error rather than silently producing something incomplete.
 
 ---
 
 ## 🧹 Cleaning Build Artifacts
 
 ```bash
-# Clean root directory and kernel build outputs
+# Clean every subproject's build output plus the assembled boot image
 make clean
 
 # Clean everything including downloaded third-party binaries and cloned libs
