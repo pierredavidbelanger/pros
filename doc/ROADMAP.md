@@ -227,7 +227,9 @@ Two consequences worth stating, because each prevents a specific mistake:
 * **Steps**:
   - ⬜ **Step 1 — ELF64 loader & a freestanding `/bin/init`** — `PT_LOAD` segments mapped into
     the new context, `.bss` zeroed, initial user stack built (`argc`, `argv`, `envp`, `auxv`).
-    An `init.c` built with the existing `zig cc` toolchain, no libc needed.
+    An `init.c` built with the existing `zig cc` toolchain, no libc needed. Broken into
+    individually verifiable Parts in
+    [`PHASE5_STEP1_ELF_LOADER.md`](PHASE5_STEP1_ELF_LOADER.md).
   - ⬜ **Step 2 — The real syscall surface** — per-process fd tables (they're kernel-global
     today), `copy_from_user` validation, `-errno` returns replacing `-1`, and
     `open`/`read`/`close`/`exit`/`getpid` reachable from ring 3.

@@ -203,7 +203,8 @@ an internal helper, but the ABI-facing syscall will need to be `getdents64` befo
 **⬜ Step 1 — The ELF loader and a freestanding `/bin/init`.**
 Loader per Chapter 1, plus an `init.c` built by `zig cc` and added to `initrd.tar`. Acceptance:
 `/bin/init` loads from the ramfs and prints from ring 3 using only `write` — the one syscall
-Phase 4 wired.
+Phase 4 wired. Broken into individually verifiable Parts in
+[`PHASE5_STEP1_ELF_LOADER.md`](PHASE5_STEP1_ELF_LOADER.md).
 
 **⬜ Step 2 — The real syscall surface.**
 Per-process fd tables, `copy_from_user`/`copy_to_user`, the `-errno` conversion, and
