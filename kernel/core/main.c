@@ -15,6 +15,8 @@
 #include "fs/tar/tar.h"
 #include "proc/sched.h"
 #include "proc/task.h"
+#include "asm/unistd.h"
+#include "syscall/syscall.h"
 
 // Tick frequency.
 // Fast enough for a responsive scheduler time slice later, slow enough that the handler's cost is irrelevant.
@@ -100,16 +102,23 @@ void _start(void) {
     sched_add_task(task1);
     sched_add_task(task2);
 
-    // throwaway code that schedule a userland process
+    // throwaway to validate syscall_dispatch
     /*
+    int64_t SYS_write_num = syscall_dispatch(SYS_write, 1, (uint64_t) "HelloWorld!\n", 12, 0, 0, 0);
+    kprintf("SCALL", "SYS_write_num %lld\n", SYS_write_num);
+    int64_t SYS_invalid_num = syscall_dispatch(NR_SYSCALLS + 1, 0, 0, 0, 0, 0, 0);
+    kprintf("SCALL", "SYS_invalid_num %lld\n", SYS_invalid_num);
+    */
+
+    // throwaway code that schedule a userland process
 #ifdef __aarch64__
-    // user blob: mrs x0, sctlr_el1 (must trap at EL0), b .
     static const uint8_t user_blob[] = {
-        0x00, 0x10, 0x38, 0xD5,  // mrs x0, sctlr_el1
-        0x00, 0x00, 0x00, 0x14,  // b .
+        0x08, 0x08, 0x80, 0xd2, 0x60, 0x0c, 0x80, 0xd2, 0xa1, 0x00, 0x00, 0x10,
+        0x42, 0x02, 0x80, 0xd2, 0x01, 0x00, 0x00, 0xd4, 0x00, 0x10, 0x38, 0xd5,
+        0x00, 0x00, 0x00, 0x14, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x66, 0x72,
+        0x6f, 0x6d, 0x20, 0x72, 0x69, 0x6e, 0x67, 0x20, 0x33, 0x0a
     };
 #else
-    // user blob: hlt (must trap at ring 3), jmp . (backstop if it somehow doesn't)
     static const uint8_t user_blob[] = {
         0xF4, 0xEB, 0xFD,  // hlt; jmp .
     };
@@ -135,7 +144,6 @@ void _start(void) {
     if (!user) kpanic("task_create_user failed");
     sched_add_task(user);
     task_dump_all();
-    */
 
     kprintf("TIMER", "Starting timer at %d Hz\n", TIMER_HZ);
     arch_timer_init(TIMER_HZ);

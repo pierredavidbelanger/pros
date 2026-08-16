@@ -10,8 +10,11 @@
 #include "core/kprintf.h"
 #include "proc/task.h"
 
+void syscall_init(void);
+
 void arch_init(void) {
     idt_init();
+    syscall_init();
     pic_init();
 }
 
@@ -28,6 +31,42 @@ void arch_shutdown(void) {
     outw(0x501, 0x00);
     // Fallback: halt if poweroff is not supported by hardware
     arch_halt();
+}
+
+// ─── Syscall: syscall/sysret MSRs ────────────────────────────
+
+#define IA32_EFER_SCE (1ULL << 0)
+
+// TODO: missing!!
+extern void syscall_entry(void);
+// TODO: missing!!
+struct x86_64_percpu;
+extern struct x86_64_percpu x86_64_percpu0;
+
+void syscall_init(void) {
+    // preserve LME/NXE etc, only SCE is ours to add
+    uint64_t efer = rdmsr(MSR_IA32_EFER);
+    if (efer & IA32_EFER_SCE) {
+        kpanic("syscall_init: IA32_EFER.SCE already set");
+    }
+    wrmsr(MSR_IA32_EFER, efer | IA32_EFER_SCE);
+
+    // STAR[63:48]: sysret CS/SS base, STAR[47:32]: syscall's kernel CS
+    uint64_t star = ((uint64_t) X86_64_STAR_USER_BASE << 48) | ((uint64_t) X86_64_SELECTOR_KERNEL_CODE << 32);
+    wrmsr(MSR_IA32_STAR, star);
+
+    wrmsr(MSR_IA32_LSTAR, (uint64_t) syscall_entry);
+
+    // IF must be masked on entry, or a syscall can be interrupted before it has a kernel stack
+    wrmsr(MSR_IA32_FMASK, X86_64_RFLAGS_IF);
+
+    wrmsr(MSR_IA32_KERNEL_GS_BASE, (uint64_t) &x86_64_percpu0);
+
+    kprintf("X8664", "EFER:  0x%016lx\n", rdmsr(MSR_IA32_EFER));
+    kprintf("X8664", "STAR:  0x%016lx\n", rdmsr(MSR_IA32_STAR));
+    kprintf("X8664", "LSTAR: 0x%016lx\n", rdmsr(MSR_IA32_LSTAR));
+    kprintf("X8664", "FMASK: 0x%016lx\n", rdmsr(MSR_IA32_FMASK));
+    kprintf("X8664", "KGSB:  0x%016lx\n", rdmsr(MSR_IA32_KERNEL_GS_BASE));
 }
 
 // ─── VMM Architecture Primitives ─────────────────────────────

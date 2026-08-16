@@ -4,11 +4,6 @@
 #include "mm/pmm.h"
 #include "mm/vmm.h"
 
-// IA32_APIC_BASE. Bit 11 is the hardware enable, bits 12 and up hold the
-// physical base of the register file. That base is 0xFEE00000 on essentially
-// every machine, but it is firmware-controlled rather than architectural, so
-// read it instead of assuming it (same reason aarch64 must read CNTFRQ_EL0).
-#define MSR_IA32_APIC_BASE   0x1B
 #define LAPIC_BASE_ENABLE    (1ULL << 11)
 #define LAPIC_BASE_ADDR_MASK 0xFFFFFFFFFFFFF000ULL
 
@@ -30,13 +25,6 @@
 #define LAPIC_LVT_VIRTUAL_WIRE (0x7u << 8)
 
 static volatile uint32_t *lapic_regs;
-
-// rdmsr takes the register index in ECX and returns the value split as EDX:EAX.
-static uint64_t rdmsr(uint32_t msr) {
-    uint32_t lo, hi;
-    asm volatile ("rdmsr" : "=a"(lo), "=d"(hi) : "c"(msr));
-    return ((uint64_t)hi << 32) | lo;
-}
 
 static uint32_t lapic_read(uint32_t reg) {
     return lapic_regs[reg / sizeof(uint32_t)];

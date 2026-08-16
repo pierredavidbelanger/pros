@@ -46,7 +46,7 @@ struct trap_frame *sched_on_trap_exit(struct trap_frame *frame) {
     if (!need_resched) return frame;
     need_resched = false;
 
-    struct task *next = sched_pick_next(); // returns current today
+    struct task *next = sched_pick_next();
     if (next == current) return frame;
 
     if (!task_stack_intact(current)) kpanic("kernel stack overflow on the current task");
@@ -59,7 +59,7 @@ struct trap_frame *sched_on_trap_exit(struct trap_frame *frame) {
     arch_set_kernel_stack(next->kernel_stack_top);
     current = next;
 
-    return next->frame;
+    return current->frame;
 }
 
 void sched_on_timer_tick(void) {

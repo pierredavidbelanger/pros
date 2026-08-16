@@ -1,4 +1,4 @@
-# Working Document: Phase 4 Step 2 — The Syscall Entry Path [STATUS: NOT STARTED ⬜]
+# Working Document: Phase 4 Step 2 — The Syscall Entry Path [STATUS: IN PROGRESS 🚧]
 
 > [!NOTE]
 > **Phase 4 Step 2**, from [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) Chapter 3, expanded into
@@ -210,7 +210,7 @@ right where a mistake is a `kprintf` away from obvious, then hand control to the
 
 ---
 
-## 🧩 C0 — Syscall numbers and the dispatch table ⬜
+## 🧩 C0 — Syscall numbers and the dispatch table ✅
 
 **Goal:** `syscall_dispatch(SYS_write, ...)`, called directly from `main.c`, reaches `sys_write()`.
 No trap involved yet.
@@ -225,7 +225,7 @@ crash.
 
 ---
 
-## 🧩 C1 — `fd 1`/`fd 2` reach the console ⬜
+## 🧩 C1 — `fd 1`/`fd 2` reach the console ✅
 
 **Goal:** the same direct, ring-0 call now actually prints.
 
@@ -237,7 +237,7 @@ before handing control to code that can't be debugged by printing.
 
 ---
 
-## 🅱️ B1 — AArch64: `svc` dispatch ⬜
+## 🅱️ B1 — AArch64: `svc` dispatch ✅
 
 **Goal:** `write(1, ...)` from EL0 works, end to end.
 
@@ -262,6 +262,28 @@ slot a trapped `mrs` used in Step 1.
 
 **Verify:** extend the Step 1 AArch64 blob (see C2) and boot. This is genuinely the whole AArch64
 side of this Step — if C0/C1 are right, this Part is a handful of lines.
+
+> [!WARNING]
+> **A real gap found here, not hypothetical: `aarch64_dispatch()`'s IRQ check only tested
+> `frame->vector_type == 5` ("Current EL SP_EL1 IRQ") — there was no case for `vector_type == 9`
+> ("Lower EL AArch64 IRQ"), the slot a timer tick lands in when it interrupts EL0 code.** Nothing
+> before this Step ever exercised that slot: `T1`/`T2` only ever run at EL1 (always slot 5), and
+> Step 1's blob always faulted synchronously on its first instruction, before the 100 Hz timer
+> ever got a chance to land mid-flight. This Step's blob is the first code in the project that
+> runs long enough at EL0, uninterrupted, for a real timer tick to hit it there.
+>
+> Symptom was a silent hang, not a crash: a slot-9 IRQ fell through the `vector_type == 5` check,
+> then through `esr_ec == 0x15` — matching, because `ESR_EL1` is only meaningfully written for
+> *synchronous* exceptions, so the IRQ entry read back the stale `EC = 0x15` left over from the
+> `svc` moments earlier. That routed every subsequent timer tick into `syscall_dispatch()` with
+> garbage `x0`-`x5`, so it never reached `gic_acknowledge()`/`arm_timer_rearm()`/`gic_eoi()` —
+> meaning the interrupt was never actually acknowledged at the GIC and kept re-firing immediately,
+> forever. Net effect: `mrs` (the instruction right after `svc`) never got to execute, and
+> `sched_on_trap_exit()` never saw `need_resched` set, so `T1`/`T2` never ran again either — a
+> live-lock on the `user` task specifically, invisible from the serial log alone (confirmed via
+> QEMU's monitor `info registers` and a `-d int` trace, which showed `ELR_EL1`/return `PC` frozen
+> at `mrs`'s address across hundreds of thousands of cycles). Fix: handle `vector_type == 9`
+> exactly like `vector_type == 5` in `aarch64_dispatch()`.
 
 ---
 
@@ -488,17 +510,20 @@ back" pattern as Step 1.
 
 ## 📁 Files touched
 
-- ⬜ `kernel/include/asm/unistd.h` — new, `SYS_write`, `NR_SYSCALLS`
-- ⬜ `kernel/syscall/syscall.c` — new, `syscall_dispatch()`, the table, the fd 1/2 wrapper
-- ⬜ `kernel/Makefile` — add `syscall` to the `find` line (or relocate the file under `core/`)
-- ⬜ `kernel/arch/aarch64/exceptions.c` — one new `esr_ec == 0x15` branch in `aarch64_dispatch()`
+- ✅ `kernel/include/asm/unistd.h` — new, `SYS_write`, `NR_SYSCALLS`
+- ✅ `kernel/syscall/syscall.c` — new, `syscall_dispatch()`, the table, the fd 1/2 wrapper
+- ✅ `kernel/Makefile` — add `syscall` to the `find` line (or relocate the file under `core/`)
+- ✅ `kernel/arch/aarch64/exceptions.c` — the `esr_ec == 0x15` branch in `aarch64_dispatch()`, plus
+  a second, unplanned fix: `vector_type == 9` (Lower EL IRQ) needed the same handling as
+  `vector_type == 5` — see the B1 warning box above
 - ⬜ `kernel/arch/x86_64/arch.c` — the five MSRs in `arch_init()`; `arch_set_kernel_stack()`
   extended to also write `x86_64_percpu0.kernel_rsp`; `wrmsr` helper
 - ⬜ `kernel/arch/x86_64/percpu.h` — new, `struct x86_64_percpu`, the one static instance
 - ⬜ `kernel/arch/x86_64/syscall_entry.S` — new, the entry/exit trampoline
 - ⬜ `kernel/arch/x86_64/idt.c` / `.h` — a new `x86_64_syscall_handler()` C function (can live
   beside `x86_64_exception_handler()`, but stays a separate function — see A3)
-- ⬜ `kernel/core/main.c` — extend both blobs with the `write` call ahead of the existing fault
+- 🚧 `kernel/core/main.c` — AArch64 blob extended with the `write` call ahead of the existing
+  fault, verified end to end (C2); x86_64 blob still needs the same treatment
 
 Deliberately **not** touched: `vectors.S` (AArch64's entry path is entirely existing machinery —
 see the mental model section), `isr.S` (the IDT path is untouched; `syscall` bypasses it
@@ -514,15 +539,15 @@ Same story as Step 1: a privilege transition and a fast syscall entry aren't ass
 before touching either entry path, exactly like Step 1's C0/C1/A1/B1 verify-before-scheduling
 discipline.
 
-| Check | Expected |
-|---|---|
-| C0, ring 0 | `syscall_dispatch(SYS_write, ...)` reaches `sys_write()`; out-of-range number declines cleanly |
-| C1, ring 0 | the same call, now targeting fd 1, actually reaches the console |
-| A1 | all five MSRs read back what was written, before `syscall` ever executes |
-| A2 | `x86_64_percpu0.kernel_rsp` tracks `tss.rsp0` across a context switch |
-| B1 | AArch64 blob's `svc #0` prints and returns control to the next instruction |
-| **C2, both arches** | **`hello from ring 3` on the console, then the same fault dump Step 1 produced** |
-| C3 | unimplemented syscall number and a bad fd both decline without crashing |
+| Check | Expected | |
+|---|---|---|
+| C0, ring 0 | `syscall_dispatch(SYS_write, ...)` reaches `sys_write()`; out-of-range number declines cleanly | ✅ |
+| C1, ring 0 | the same call, now targeting fd 1, actually reaches the console | ✅ |
+| A1 | all five MSRs read back what was written, before `syscall` ever executes | ⬜ |
+| A2 | `x86_64_percpu0.kernel_rsp` tracks `tss.rsp0` across a context switch | ⬜ |
+| B1 | AArch64 blob's `svc #0` prints and returns control to the next instruction | ✅ |
+| **C2, both arches** | **`hello from ring 3` on the console, then the same fault dump Step 1 produced** | 🚧 AArch64 done, x86_64 ⬜ |
+| C3 | unimplemented syscall number and a bad fd both decline without crashing | ⬜ |
 
 Phase 4's stated goal — *a program the kernel does not trust calls `write` and the string appears
 on the console* — is met at C2. What's left open afterward, worth carrying into Phase 5 rather
