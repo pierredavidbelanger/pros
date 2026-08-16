@@ -4,13 +4,14 @@ ARCH ?= aarch64
 .PHONY: default
 default: bin/$(ARCH)/initrd
 
-../user/bin/$(ARCH)/init:
-	$(MAKE) -C ../user ARCH=$(ARCH)
+USER_BIN := ../user/bin/$(ARCH)
+USER_PROGRAMS := $(wildcard $(USER_BIN)/*)
 
-bin/$(ARCH)/initrd: ../user/bin/$(ARCH)/init $(shell find data -type f)
+bin/$(ARCH)/initrd: $(USER_PROGRAMS) $(shell find data -type f)
+	test -n "$(USER_PROGRAMS)" || { echo "no programs in $(USER_BIN) : build user first (ARCH=$(ARCH))" >&2; exit 1; }
 	mkdir -p bin/$(ARCH)/stage/bin
 	cp -r data/* bin/$(ARCH)/stage/
-	cp ../user/bin/$(ARCH)/* bin/$(ARCH)/stage/bin/
+	cp $(USER_PROGRAMS) bin/$(ARCH)/stage/bin/
 	cd bin/$(ARCH)/stage && tar --format=ustar -cf ../initrd * && cd ../../..
 
 .PHONY: clean
