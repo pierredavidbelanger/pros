@@ -3,13 +3,13 @@ ARCH ?= aarch64
 
 include config.$(ARCH).mk
 
-PROGRAMS := $(filter-out bin,$(patsubst %/,%,$(wildcard */)))
+PROGRAMS := $(patsubst %/,%,$(patsubst src/%,%,$(wildcard src/*/)))
 
 .PHONY: default
 default: $(PROGRAMS:%=bin/$(ARCH)/%)
 
 define PROGRAM_RULE
-bin/$(ARCH)/$(1): $(1)/$(1).c
+bin/$(ARCH)/$(1): src/$(1)/$(1).c
 	mkdir -p bin/$(ARCH)
 	$$(CC) -nostdinc -ffreestanding $$< $$(LDFLAGS) -o $$@
 endef

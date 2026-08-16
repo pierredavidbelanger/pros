@@ -25,10 +25,10 @@ bin/$(ARCH)/kernel: libs
 		-isystem libs/printf \
 		-I include \
 		libs/printf/printf.c \
-		$(wildcard arch/$(ARCH)/*.S) \
-		$(wildcard arch/$(ARCH)/*.c) \
-		$(shell find core mm drivers fs proc syscall -name '*.c' 2>/dev/null) \
-		-Wl,-T,arch/$(ARCH)/linker.lds \
+		$(wildcard src/arch/$(ARCH)/*.S) \
+		$(wildcard src/arch/$(ARCH)/*.c) \
+		$(shell find src/core src/mm src/drivers src/fs src/proc src/syscall -name '*.c' 2>/dev/null) \
+		-Wl,-T,src/arch/$(ARCH)/linker.lds \
 		$(LDFLAGS) \
 		-o bin/$(ARCH)/kernel
 
