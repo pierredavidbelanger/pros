@@ -11,13 +11,16 @@
 
 #define COPY_BUFFER_SIZE 512
 
+#define AT_FDCWD -100 // from Linux
+
 static struct file **current_task_fds() {
     struct task *task = sched_get_current_task();
     if (!task) return NULL;
     return task->fds;
 }
 
-int sys_open(const char *path, int flags) {
+int sys_openat(int dirfd, const char *path, int flags, int mode) {
+    if (dirfd != AT_FDCWD) return -ENOSYS; // do not support dirfd relative open for now
     if (!path) return -ENOENT;
 
     // vfs_lookup will get the mount point and search each path segment with target->ops->finddir
@@ -54,6 +57,10 @@ int sys_open(const char *path, int flags) {
     fds[fd]->ref_count = 1;
 
     return fd;
+}
+
+int sys_open(const char *path, int flags) {
+    return sys_openat(AT_FDCWD, path, flags, 0);
 }
 
 int sys_close(int fd) {

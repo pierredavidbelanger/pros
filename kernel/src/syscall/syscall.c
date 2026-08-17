@@ -21,7 +21,12 @@ static int64_t sys_write_console_or_vfs(int fd, const void *buf, uint64_t count)
 typedef int64_t (*syscall_handler_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 
 static syscall_handler_t syscall_table[NR_SYSCALLS] = {
+    [SYS_read] = (syscall_handler_t) sys_read,
     [SYS_write] = (syscall_handler_t) sys_write_console_or_vfs,
+    [SYS_open] = (syscall_handler_t) sys_open,
+    [SYS_openat] = (syscall_handler_t) sys_openat,
+    [SYS_close] = (syscall_handler_t) sys_close,
+    [SYS_getpid] = (syscall_handler_t) sys_getpid,
 };
 
 int64_t syscall_dispatch(uint64_t num, uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5) {

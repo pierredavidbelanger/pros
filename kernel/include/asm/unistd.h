@@ -3,11 +3,21 @@
 
 #ifdef __aarch64__
 
-#define SYS_write 64
+#define SYS_read    63
+#define SYS_write   64
+#define SYS_open   511 // for some reason sys_open does not exists on aarch64 in Linux, we will delegates to sys_openat
+#define SYS_openat  56
+#define SYS_close   57
+#define SYS_getpid 172
 
 #else
 
-#define SYS_write 1
+#define SYS_read     0
+#define SYS_write    1
+#define SYS_open     2
+#define SYS_openat 257
+#define SYS_close    3
+#define SYS_getpid  39
 
 #endif
 

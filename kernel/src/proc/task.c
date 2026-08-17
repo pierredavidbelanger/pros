@@ -2,6 +2,7 @@
 
 #include "arch/arch.h"
 #include "core/kprintf.h"
+#include "core/syscalls.h"
 #include "mm/heap.h"
 #include "mm/vmm.h"
 #include "proc/kstack.h"
@@ -129,4 +130,8 @@ void task_dump_all(void) {
         task = task->next;
         if (task == first) break;
     }
+}
+
+pid_t sys_getpid(void) {
+    return (pid_t) sched_get_current_task()->pid;
 }
