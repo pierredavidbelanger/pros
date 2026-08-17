@@ -4,7 +4,7 @@
 #include "arch/arch.h"
 
 void kprintf(const char *tag, const char *format, ...) {
-    printf("[%-*s] ", KPRINTF_TAG_WIDTH, tag);
+    printf("[" TERM_COLOR_DARK_GRAY "%-*s" TERM_COLOR_RESET "] ", KPRINTF_TAG_WIDTH, tag);
     va_list args;
     va_start(args, format);
     vprintf(format, args);
@@ -12,7 +12,7 @@ void kprintf(const char *tag, const char *format, ...) {
 }
 
 void kpanic(const char *msg) {
-    kprintf("PANIC", "%s\n", msg);
+    kprintf("PANIC", TERM_COLOR_RED "%s\n" TERM_COLOR_RESET, msg);
     // we really just want to halt here, but i find it convenient not to have to CTRL-c QEMU, so...
     // arch_halt();
     arch_shutdown();

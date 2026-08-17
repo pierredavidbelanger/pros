@@ -105,6 +105,46 @@ static const uint8_t font_8x16[128][16] = {
     ['~'] = {0x00, 0x00, 0x3B, 0x6E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
 };
 
+// ANSI SGR state, updated char by char since fb_terminal_print_char only ever sees one at a time
+enum fb_ansi_state { FB_ANSI_NORMAL, FB_ANSI_ESC, FB_ANSI_CSI };
+static enum fb_ansi_state ansi_state = FB_ANSI_NORMAL;
+static int ansi_param = 0;
+
+static uint32_t fg_color = 0x00FFFFFF;
+static uint32_t bg_color = 0x00000000;
+
+static uint32_t fb_ansi_color(int code) {
+    switch (code) {
+        case 30: case 40: return 0x00000000;
+        case 31: case 41: return 0x00AA0000;
+        case 32: case 42: return 0x0000AA00;
+        case 33: case 43: return 0x00AA5500;
+        case 34: case 44: return 0x000000AA;
+        case 35: case 45: return 0x00AA00AA;
+        case 36: case 46: return 0x0000AAAA;
+        case 37: case 47: return 0x00AAAAAA;
+        case 90: case 100: return 0x00555555;
+        case 91: case 101: return 0x00FF5555;
+        case 92: case 102: return 0x0055FF55;
+        case 93: case 103: return 0x00FFFF55;
+        case 94: case 104: return 0x005555FF;
+        case 95: case 105: return 0x00FF55FF;
+        case 96: case 106: return 0x0055FFFF;
+        case 97: case 107: return 0x00FFFFFF;
+        default: return 0x00FFFFFF;
+    }
+}
+
+// one SGR parameter, already parsed out of the escape sequence
+static void fb_ansi_apply(int code) {
+    if (code == 0) { fg_color = 0x00FFFFFF; bg_color = 0x00000000; return; } // reset
+    if (code >= 30 && code <= 37) { fg_color = fb_ansi_color(code); return; }
+    if (code >= 90 && code <= 97) { fg_color = fb_ansi_color(code); return; }
+    if (code >= 40 && code <= 47) { bg_color = fb_ansi_color(code); return; }
+    if (code >= 100 && code <= 107) { bg_color = fb_ansi_color(code); return; }
+    // unrecognized code, ignore rather than guess
+}
+
 static void fb_put_pixel(struct limine_framebuffer *fb, size_t x, size_t y, uint32_t color) {
     if (x >= fb->width || y >= fb->height) return;
     volatile uint32_t *fb_ptr = (volatile uint32_t *) fb->address;
@@ -156,11 +196,26 @@ static void terminal_scroll(void) {
 }
 
 void fb_terminal_print_char(char c) {
+    switch (ansi_state) {
+        case FB_ANSI_NORMAL:
+            if (c == 0x1B) { ansi_state = FB_ANSI_ESC; return; }
+            break; // not an escape, fall through to the glyph-drawing code below
+        case FB_ANSI_ESC:
+            if (c == '[') { ansi_state = FB_ANSI_CSI; ansi_param = 0; return; }
+            ansi_state = FB_ANSI_NORMAL; // not a CSI sequence, bail out quietly
+            return;
+        case FB_ANSI_CSI:
+            if (c >= '0' && c <= '9') { ansi_param = ansi_param * 10 + (c - '0'); return; }
+            if (c == ';') { fb_ansi_apply(ansi_param); ansi_param = 0; return; }
+            if (c == 'm') { fb_ansi_apply(ansi_param); ansi_state = FB_ANSI_NORMAL; return; }
+            ansi_state = FB_ANSI_NORMAL; // unsupported final byte, bail out quietly
+            return;
+    }
     if (c == '\n') {
         cursor_x = 0;
         cursor_y += FONT_HEIGHT;
     } else {
-        fb_draw_char(fb, cursor_x, cursor_y, c, 0x00FFFFFF, 0x00000000);
+        fb_draw_char(fb, cursor_x, cursor_y, c, fg_color, bg_color);
         cursor_x += FONT_WIDTH;
         if (cursor_x + FONT_WIDTH > fb->width) {
             cursor_x = 0;
