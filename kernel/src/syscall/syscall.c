@@ -7,6 +7,8 @@
 #include "errno.h"
 
 // special case for now
+// no copy_from_user / copy_to_user for console_putc,
+// that will be refactored into a proper /dev/console someday
 static int64_t sys_write_console_or_vfs(int fd, const void *buf, uint64_t count) {
     if (fd == 1 || fd == 2) {
         const char *chars = buf;

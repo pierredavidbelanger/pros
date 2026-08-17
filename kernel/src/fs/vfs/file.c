@@ -4,9 +4,12 @@
 #include "core/memory.h"
 #include "core/kprintf.h"
 #include "mm/heap.h"
+#include "mm/uaccess.h"
 #include "proc/sched.h"
 
 #include "errno.h"
+
+#define COPY_BUFFER_SIZE 512
 
 static struct file **current_task_fds() {
     struct task *task = sched_get_current_task();
@@ -111,12 +114,28 @@ int64_t sys_read(int fd, void *buf, uint64_t count) {
     if (!f) return -EBADF;
     if (!f->node->ops || !f->node->ops->read) return -ENOSYS; // Filesystem doesn't support reading
 
-    int64_t bytes_read = f->node->ops->read(f->node, f->offset, count, buf);
-    if (bytes_read > 0) {
-        f->offset += bytes_read;
+    char chunk[COPY_BUFFER_SIZE];
+    int64_t total_count = 0;
+    while (total_count < count) {
+        uint64_t chunk_len = (count - total_count) < COPY_BUFFER_SIZE ? (count - total_count) : COPY_BUFFER_SIZE;
+        int64_t actual_chunk_len = f->node->ops->read(f->node, f->offset, chunk_len, chunk);
+        if (actual_chunk_len > 0) {
+            if (copy_to_user((uint8_t *) buf + total_count, chunk, actual_chunk_len) != 0) {
+                // keep what already reached the caller
+                return total_count > 0 ? total_count : -EFAULT;
+            }
+            total_count += actual_chunk_len;
+            f->offset += actual_chunk_len;
+        } else if (actual_chunk_len < 0 && total_count == 0) {
+            // a real error and we read nothing yet
+            return actual_chunk_len;
+        } else {
+            // EOF, or a later error after a partial read
+            break;
+        }
     }
 
-    return bytes_read;
+    return total_count;
 }
 
 int64_t sys_write(int fd, const void *buf, uint64_t count) {
@@ -134,12 +153,28 @@ int64_t sys_write(int fd, const void *buf, uint64_t count) {
 
     if (!f->node->ops || !f->node->ops->write) return -ENOSYS; // Filesystem doesn't support writing
 
-    int64_t bytes_written = f->node->ops->write(f->node, f->offset, count, buf);
-    if (bytes_written > 0) {
-        f->offset += bytes_written;
+    char chunk[COPY_BUFFER_SIZE];
+    int64_t total_count = 0;
+    while (total_count < count) {
+        uint64_t chunk_len = (count - total_count) < COPY_BUFFER_SIZE ? (count - total_count) : COPY_BUFFER_SIZE;
+        if (copy_from_user(chunk, (uint8_t *) buf + total_count, chunk_len) != 0) {
+            // keep what already made it out
+            return total_count > 0 ? total_count : -EFAULT;
+        }
+        int64_t actual_chunk_len = f->node->ops->write(f->node, f->offset, chunk_len, chunk);
+        if (actual_chunk_len > 0) {
+            total_count += actual_chunk_len;
+            f->offset += actual_chunk_len;
+        } else if (actual_chunk_len < 0 && total_count == 0) {
+            // a real error and we wrote nothing yet
+            return actual_chunk_len;
+        } else {
+            // a short write, or a later error after a partial write
+            break;
+        }
     }
 
-    return bytes_written;
+    return total_count;
 }
 
 int64_t sys_lseek(int fd, int64_t offset, int whence) {
