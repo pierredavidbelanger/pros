@@ -5,6 +5,8 @@
 
 void test_report(const char *tag, const char *name, bool ok);
 
+void test_all(void);
+
 void test_pmm(void);
 void test_heap(void);
 void test_vmm(void);

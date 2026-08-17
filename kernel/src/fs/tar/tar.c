@@ -105,21 +105,24 @@ int tar_load(uint64_t tar_addr, size_t tar_size) {
             } else {
 
                 // ask vfs to create this path as a file
-                struct vfs_node *file = vfs_create(path, VFS_FILE);
-                if (!file) return -1;
+                struct vfs_node *node = vfs_create(path, VFS_FILE);
+                if (!node) return -1;
+                if (!node->ops || !node->ops->write) return -1;
+
+                // callback open on the newly created file
+                if (node->ops->open) {
+                    if (node->ops->open(node) != 0) return -1;
+                }
 
                 // get the start of the data
                 const void *data = (const void *) (addr + TAR_BLOCK_SIZE);
-
-                // open the newly created file
-                int fd = sys_open(path, O_WRONLY);
-                if (fd < 0) return -1;
-
                 // write the data into the file
-                int64_t count = sys_write(fd, data, size);
+                int64_t count = node->ops->write(node, 0, size, data);
 
-                // close the file
-                if (sys_close(fd) < 0) return -1;
+                // callback close on the newly created file
+                if (node->ops->close) {
+                    if (node->ops->close(node) != 0) return -1;
+                }
 
                 // do the data was all written
                 if (count < 0 || (uint64_t) count != size) return -1;

@@ -25,7 +25,7 @@ void vmm_init(void) {
     if (!paging_mode_request.response || paging_mode_request.response->mode != paging_mode_request.min_mode) {
         kpanic("[VMM  ] bootloader returned an unsupported paging mode.");
     }
-    kprintf("VMM", "Paging mode: %lu (%d-level)\n", paging_mode_request.response->mode, VMM_LEVELS);
+    // kprintf("VMM", "Paging mode: %lu (%d-level)\n", paging_mode_request.response->mode, VMM_LEVELS);
 
     vmm_kernel_context = kmalloc(sizeof(struct vmm_context));
     if (!vmm_kernel_context) {

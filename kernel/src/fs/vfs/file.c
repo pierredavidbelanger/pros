@@ -3,23 +3,15 @@
 #include "core/syscalls.h"
 #include "core/memory.h"
 #include "core/kprintf.h"
+#include "mm/heap.h"
+#include "proc/sched.h"
 
 #include "errno.h"
 
-static struct file open_files[MAX_OPEN_FILES];
-
-void file_init(void) {
-    memset(open_files, 0, sizeof(open_files));
-}
-
-// Find an empty file descriptor slot
-static int allocate_fd(void) {
-    for (int i = 0; i < MAX_OPEN_FILES; i++) {
-        if (open_files[i].ref_count == 0) {
-            return i;
-        }
-    }
-    return -EAGAIN;
+static struct file **current_task_fds() {
+    struct task *task = sched_get_current_task();
+    if (!task) return NULL;
+    return task->fds;
 }
 
 int sys_open(const char *path, int flags) {
@@ -34,15 +26,29 @@ int sys_open(const char *path, int flags) {
         if (target_node->ops->open(target_node) != 0) return -EAGAIN;
     }
 
-    int fd = allocate_fd();
+    struct file **fds = current_task_fds();
+    if (!fds) return -EBADF;
+
+    // find an unused slot
+    // after FSs 0-2: they are reserved fo stdin, stdout and stderr
+    int fd = -1;
+    for (int i = 3; i < MAX_OPEN_FILES; i++) {
+        if (!fds[i]) {
+            fd = i;
+            break;
+        }
+    }
     if (fd < 0) {
-        return fd;
+        return -EAGAIN;
     }
 
-    open_files[fd].node = target_node;
-    open_files[fd].offset = 0;
-    open_files[fd].flags = flags;
-    open_files[fd].ref_count = 1;
+    fds[fd] = kmalloc(sizeof(struct file));
+    if (!fds[fd]) return -ENOMEM;
+
+    fds[fd]->node = target_node;
+    fds[fd]->offset = 0;
+    fds[fd]->flags = flags;
+    fds[fd]->ref_count = 1;
 
     return fd;
 }
@@ -50,17 +56,23 @@ int sys_open(const char *path, int flags) {
 int sys_close(int fd) {
     if (fd < 0 || fd >= MAX_OPEN_FILES) return -EBADF;
 
-    struct file *f = &open_files[fd];
-    if (f->ref_count == 0) return -EBADF; // Already closed
+    struct file **fds = current_task_fds();
+    if (!fds) return -EBADF;
 
+    struct file *f = fds[fd];
+    if (!f) return -EBADF; // Already closed
+
+    // last sys_close on a file will kfree it
     f->ref_count--;
     if (f->ref_count == 0) {
         // If the node has a close callback, call it
         if (f->node && f->node->ops && f->node->ops->close) {
             f->node->ops->close(f->node);
         }
-        f->node = NULL;
+        kfree(f);
     }
+
+    fds[fd] = NULL;
 
     return 0;
 }
@@ -69,9 +81,13 @@ int sys_readdir(int fd, struct vfs_dirent *out) {
     if (fd < 0 || fd >= MAX_OPEN_FILES) return -EBADF;
     if (!out) return -EFAULT;
 
-    struct file *f = &open_files[fd];
-    if (f->ref_count == 0 || !f->node) return -EBADF;
+    struct file **fds = current_task_fds();
+    if (!fds) return -EBADF;
+
+    struct file *f = fds[fd];
+    if (!f) return -EBADF;
     if (!f->node->ops || !f->node->ops->readdir) return -ENOSYS;
+
     // Use f->offset as the directory index
     int res = f->node->ops->readdir(f->node, f->offset, out);
 
@@ -88,9 +104,11 @@ int64_t sys_read(int fd, void *buf, uint64_t count) {
     if (fd < 0 || fd >= MAX_OPEN_FILES) return -EBADF;
     if (!buf) return -EFAULT;
 
-    struct file *f = &open_files[fd];
-    if (f->ref_count == 0 || !f->node) return -EBADF;
+    struct file **fds = current_task_fds();
+    if (!fds) return -EBADF;
 
+    struct file *f = fds[fd];
+    if (!f) return -EBADF;
     if (!f->node->ops || !f->node->ops->read) return -ENOSYS; // Filesystem doesn't support reading
 
     int64_t bytes_read = f->node->ops->read(f->node, f->offset, count, buf);
@@ -105,8 +123,11 @@ int64_t sys_write(int fd, const void *buf, uint64_t count) {
     if (fd < 0 || fd >= MAX_OPEN_FILES) return -EBADF;
     if (!buf) return -EFAULT;
 
-    struct file *f = &open_files[fd];
-    if (f->ref_count == 0 || !f->node) return -EBADF;
+    struct file **fds = current_task_fds();
+    if (!fds) return -EBADF;
+
+    struct file *f = fds[fd];
+    if (!f) return -EBADF;
 
     // Very basic write protection check
     if ((f->flags & O_WRONLY) == 0 && (f->flags & O_RDWR) == 0) return -EACCES; // File not opened for writing
@@ -124,8 +145,11 @@ int64_t sys_write(int fd, const void *buf, uint64_t count) {
 int64_t sys_lseek(int fd, int64_t offset, int whence) {
     if (fd < 0 || fd >= MAX_OPEN_FILES) return -EBADF;
 
-    struct file *f = &open_files[fd];
-    if (f->ref_count == 0 || !f->node) return -EBADF;
+    struct file **fds = current_task_fds();
+    if (!fds) return -EBADF;
+
+    struct file *f = fds[fd];
+    if (!f) return -EBADF;
 
     switch (whence) {
         case SEEK_SET:

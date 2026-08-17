@@ -12,6 +12,4 @@ struct file {
     int ref_count;
 };
 
-void file_init(void);
-
 #endif //PROS_FILE_H

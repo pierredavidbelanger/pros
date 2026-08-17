@@ -133,7 +133,7 @@ int elf_load(const char *path, struct vmm_context *ctx, struct elf_load_result *
                     kprintf("ELF", "%s: OOM mapping 0x%016lx\n", path, page);
                     return -1;
                 }
-                kprintf("ELF", "phdr[%u] map page 0x%016lx (flags 0b%b)\n", i, phys, VMM_USER | VMM_WRITABLE);
+                // kprintf("ELF", "phdr[%u] map page 0x%016lx (flags 0b%b)\n", i, phys, VMM_USER | VMM_WRITABLE);
                 if (vmm_map_page(ctx, page, phys, VMM_USER | VMM_WRITABLE) != 0) {
                     kprintf("ELF", "%s: vmm_map_page failed at 0x%016lx\n", path, page);
                     return -1;
@@ -147,7 +147,7 @@ int elf_load(const char *path, struct vmm_context *ctx, struct elf_load_result *
             if (end > start) {
                 uint64_t file_off = phdr.p_offset + (start - phdr.p_vaddr);
                 void *dest = (uint8_t *) pmm_phys_to_virt(phys) + (start - page);
-                kprintf("ELF", "phdr[%u] read at file offset 0x%016lx\n", i, file_off);
+                // kprintf("ELF", "phdr[%u] read at file offset 0x%016lx\n", i, file_off);
                 if (node->ops->read(node, file_off, end - start, dest) != (int64_t)(end - start)) {
                     kprintf("ELF", "%s: short read on segment %u\n", path, i);
                     return -1;
@@ -174,7 +174,7 @@ int elf_load(const char *path, struct vmm_context *ctx, struct elf_load_result *
 
         for (uint64_t page = vaddr_lo; page < vaddr_hi; page += PAGE_SIZE) {
             uint64_t phys = vmm_virt_to_phys(ctx, page);
-            kprintf("ELF", "phdr[%u] map page 0x%016lx (flags 0b%b)\n", i, phys, flags);
+            // kprintf("ELF", "phdr[%u] map page 0x%016lx (flags 0b%b)\n", i, phys, flags);
             vmm_map_page(ctx, page, phys, flags);
         }
     }

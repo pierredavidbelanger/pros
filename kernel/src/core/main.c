@@ -68,15 +68,12 @@ void _start(void) {
     size_t pages = pmm_init(hhdm_request.response, memmap_request.response);
     kprintf("PMM", "Initialized PMM, ready to alloc/free physical pages\n");
     kprintf("PMM", "PMM manage %zu pages of %zu B for a total of %zu MB kernel heap available\n", pages, PAGE_SIZE, pages * PAGE_SIZE / 1024 / 1024);
-    if (tests_enabled) test_pmm();
 
     heap_init();
     kprintf("HEAP", "Initialized Heap, ready to kmalloc/kfree dynamic virtual memory block\n");
-    if (tests_enabled) test_heap();
 
     vmm_init();
     kprintf("VMM", "Initialized VMM, default context root at phys:%p virt:%p (kernel table root at phys:%p)\n", (void *)vmm_kernel_context->root_phys, vmm_kernel_context->root_virt, (void *)arch_vmm_get_kernel_root());
-    if (tests_enabled) test_vmm();
 
     if (framebuffer_request.response) {
         fb_init(framebuffer_request.response);
@@ -93,11 +90,6 @@ void _start(void) {
             }
         }
     }
-    // test_vfs even though ramfs may not have been correctly loaded or mounted
-    if (tests_enabled) test_vfs();
-
-    if (tests_enabled) test_kstack();
-    if (tests_enabled) test_task();
 
     sched_init();
     kprintf("SCHED", "Initialized scheduler, ready to switch context when timer will be up\n");
@@ -125,16 +117,17 @@ void _start(void) {
     kprintf("TIMER", "Starting timer at %d Hz\n", TIMER_HZ);
     arch_timer_init(TIMER_HZ);
 
+    // run all tests before we go preemptive
+    if (tests_enabled) test_all();
+
     kprintf("IRQ", "Enable IRQ\n");
     arch_irq_enable();
 
-    kprintf("K", "Count to 3:\n");
+    kprintf("K", "Run for 3 seconds\n");
     uint64_t last_seconds = 0;
     while (true) {
         uint64_t seconds = timer_get_ticks() / TIMER_HZ;
         if (seconds != last_seconds) {
-            kprintf("TIMER", "%zu\n", seconds);
-            task_dump_all();
             last_seconds = seconds;
             if (seconds >= 3) {
                 break;

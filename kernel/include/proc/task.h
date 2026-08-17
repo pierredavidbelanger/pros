@@ -2,6 +2,7 @@
 #define PROS_TASK_H
 
 #include "arch/arch.h"
+#include "fs/vfs/file.h"
 #include "mm/vmm.h"
 
 #include "stdc.h"
@@ -12,12 +13,13 @@
 struct task {
     uint64_t pid;
     int state;
-    char const *name;           // for the dump essentially
-    void *kernel_stack_base;    // base, for freeing and for the guard check
-    void *kernel_stack_top;     // what arch_set_kernel_stack() gets
-    struct trap_frame *frame;   // valid only while suspended
+    char const *name;                   // for the dump essentially
+    void *kernel_stack_base;            // base, for freeing and for the guard check
+    void *kernel_stack_top;             // what arch_set_kernel_stack() gets
+    struct trap_frame *frame;           // valid only while suspended
     struct vmm_context *ctx;
-    uint64_t switch_count;      // how many times this task has been switched to
+    uint64_t switch_count;              // how many times this task has been switched to
+    struct file *fds[MAX_OPEN_FILES];   // per process FDs, FD are shared and ref-counted
     struct task *next;
 };
 
