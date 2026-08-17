@@ -57,8 +57,8 @@ struct task *task_create(const char *name, void (*entry)(void)) {
     return task;
 }
 
-struct task *task_create_user(const char *name, uint64_t user_entry, uint64_t user_stack_top) {
-    struct task *task = task_inner_create(name, NULL, NULL);
+struct task *task_create_user(const char *name, struct vmm_context *ctx, uint64_t user_entry, uint64_t user_stack_top) {
+    struct task *task = task_inner_create(name, NULL, ctx);
     if (!task) return NULL;
     task->frame = arch_task_init_user_frame(task->kernel_stack_top, user_entry, user_stack_top);
     return task;

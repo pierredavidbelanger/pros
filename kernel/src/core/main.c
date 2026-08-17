@@ -15,12 +15,17 @@
 #include "fs/tar/tar.h"
 #include "proc/sched.h"
 #include "proc/task.h"
+#include "proc/elf.h"
 #include "asm/unistd.h"
 #include "syscall/syscall.h"
 
 // Tick frequency.
 // Fast enough for a responsive scheduler time slice later, slow enough that the handler's cost is irrelevant.
 #define TIMER_HZ 100
+
+// (1 GiB + 8 MiB)
+// so we have 8 MiB of empty space between where the programe segment ends and where the stack begin
+#define USER_STACK_TOP  0x0000000040800000ULL
 
 void task_entry(const char *name) {
     uint64_t last_ticks = 0;
@@ -102,59 +107,20 @@ void _start(void) {
     if (!boot_task) kpanic("cannot create boot task");
     sched_add_task(boot_task);
 
-    struct task *task1 = task_create("T1", task1_entry);
-    struct task *task2 = task_create("T2", task2_entry);
-    sched_add_task(task1);
-    sched_add_task(task2);
-
-    // throwaway to validate syscall_dispatch
-    /*
-    int64_t SYS_write_num = syscall_dispatch(SYS_write, 1, (uint64_t) "HelloWorld!\n", 12, 0, 0, 0);
-    kprintf("SCALL", "SYS_write_num %lld\n", SYS_write_num);
-    int64_t SYS_invalid_num = syscall_dispatch(NR_SYSCALLS + 1, 0, 0, 0, 0, 0, 0);
-    kprintf("SCALL", "SYS_invalid_num %lld\n", SYS_invalid_num);
-    */
-
-    // throwaway code that schedule a userland process (that do a write syscall!)
-    /*
-#ifdef __aarch64__
-    static const uint8_t user_blob[] = {
-        0x08, 0x08, 0x80, 0xd2, 0x20, 0x00, 0x80, 0xd2, 0xa1, 0x00, 0x00, 0x10,
-        0x42, 0x02, 0x80, 0xd2, 0x01, 0x00, 0x00, 0xd4, 0x00, 0x10, 0x38, 0xd5,
-        0x00, 0x00, 0x00, 0x14, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x66, 0x72,
-        0x6f, 0x6d, 0x20, 0x72, 0x69, 0x6e, 0x67, 0x20, 0x33, 0x0a
-    };
-#else
-    static const uint8_t user_blob[] = {
-        0x48, 0xc7, 0xc0, 0x01, 0x00, 0x00, 0x00, 0x48, 0xc7, 0xc7, 0x01, 0x00,
-        0x00, 0x00, 0x48, 0x8d, 0x35, 0x0c, 0x00, 0x00, 0x00, 0x48, 0xc7, 0xc2,
-        0x12, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xf4, 0xeb, 0xfe, 0x68, 0x65, 0x6c,
-        0x6c, 0x6f, 0x20, 0x66, 0x72, 0x6f, 0x6d, 0x20, 0x72, 0x69, 0x6e, 0x67,
-        0x20, 0x33, 0x0a
-    };
-#endif
-#define USER_BASE       0x0000000040000000ULL
-#define USER_CODE_ADDR  USER_BASE
-#define USER_STACK_ADDR (USER_BASE + PAGE_SIZE)
-#define USER_STACK_TOP  (USER_STACK_ADDR + PAGE_SIZE)
-    uint64_t code_phys = pmm_alloc(1);
-    uint64_t stack_phys = pmm_alloc(1);
-    if (!code_phys || !stack_phys) kpanic("user page alloc failed");
-    // code page: user + executable (VMM_NO_EXECUTE absent means executable)
-    vmm_map_page(vmm_kernel_context, USER_CODE_ADDR, code_phys, VMM_USER);
-    // stack page: user + writable, never executable
-    vmm_map_page(vmm_kernel_context, USER_STACK_ADDR, stack_phys, VMM_USER | VMM_WRITABLE | VMM_NO_EXECUTE);
-    // write through the HHDM
-    memcpy(pmm_phys_to_virt(code_phys), user_blob, sizeof(user_blob));
-    uint64_t resolved = vmm_virt_to_phys(vmm_kernel_context, USER_CODE_ADDR);
-    kprintf("USER", "code page virt:%p phys:%p resolved:%p\n", (void *) USER_CODE_ADDR, (void *) code_phys, (void *) resolved);
-    uint8_t *readback = (uint8_t *) USER_CODE_ADDR;
-    kprintf("USER", "readback: %02x %02x %02x %02x\n", readback[0], readback[1], readback[2], readback[3]);
-    struct task *user = task_create_user("user", USER_CODE_ADDR, USER_STACK_TOP);
-    if (!user) kpanic("task_create_user failed");
-    sched_add_task(user);
-    task_dump_all();
-    */
+    // in this block we hand build the /bin/init process by
+    // creating a context,
+    // loading the ELF (that will give us the entry point)
+    // building the process stack
+    // and adding the process to the scheduler
+    struct vmm_context *init_ctx = vmm_create_context();
+    if (!init_ctx) kpanic("cannot create context for /bin/init");
+    struct elf_load_result elf;
+    if (elf_load("/bin/init", init_ctx, &elf) != 0) kpanic("cannot load /bin/init");
+    uint64_t sp = elf_build_user_stack(init_ctx, USER_STACK_TOP, 0, NULL, NULL);  // C3
+    if (!sp) kpanic("cannot create user stack");
+    struct task *init = task_create_user("/bin/init", init_ctx, elf.entry, sp);
+    if (!init) kpanic("cannot create /bin/init task");
+    sched_add_task(init);
 
     kprintf("TIMER", "Starting timer at %d Hz\n", TIMER_HZ);
     arch_timer_init(TIMER_HZ);
