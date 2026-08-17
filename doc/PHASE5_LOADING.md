@@ -1,9 +1,11 @@
 # Working Document: Phase 5 — Loading: The ELF Loader and a Real `/bin/init` [STATUS: IN PROGRESS 🚧]
 
 > [!NOTE]
-> **Where this stands.** Step 1 underway — D0 (a real `/bin/init` binary) is done; the loader
-> itself (C0-C4) is not yet started. Phase 4 is complete on both architectures — ring 3 / EL0
-> and the syscall boundary both exist — so this Phase was unblocked to begin with.
+> **Where this stands.** Step 1 is **done**, verified on both architectures — `/bin/init` loads,
+> runs unprivileged, prints via the real `write` syscall, and coexists with `BOOT` under
+> preemptive scheduling. Step 2 (the real syscall surface) has not started. Phase 4 is complete
+> on both architectures — ring 3 / EL0 and the syscall boundary both exist — so this Phase was
+> unblocked to begin with.
 >
 > This design was written as part of the original single-document Phase 3 plan and split out
 > when that phase was broken into three along the capability boundaries it had already
@@ -201,12 +203,11 @@ an internal helper, but the ABI-facing syscall will need to be `getdents64` befo
 
 ## 🪜 Chapter 3: The Steps
 
-**🚧 Step 1 — The ELF loader and a freestanding `/bin/init`.**
+**✅ Step 1 — The ELF loader and a freestanding `/bin/init`.**
 Loader per Chapter 1, plus an `init.c` built by `zig cc` and packed into the per-arch `initrd`
 archive. Acceptance: `/bin/init` loads from the ramfs and prints from ring 3 using only `write`
-— the one syscall Phase 4 wired. Broken into individually verifiable Parts in
-[`PHASE5_STEP1_ELF_LOADER.md`](PHASE5_STEP1_ELF_LOADER.md), where D0 (the binary itself) is
-done and C0-C4 (the actual loader) are not yet started.
+— the one syscall Phase 4 wired. Done and verified on both architectures — all six Parts
+(D0, C0-C4) in [`PHASE5_STEP1_ELF_LOADER.md`](PHASE5_STEP1_ELF_LOADER.md) are complete.
 
 **⬜ Step 2 — The real syscall surface.**
 Per-process fd tables, `copy_from_user`/`copy_to_user`, the `-errno` conversion, and
@@ -247,12 +248,14 @@ Existing, to be modified:
 
 - ⬜ `kernel/src/fs/vfs/file.c` + `kernel/include/fs/vfs/file.h` — fd table into `struct task`,
   `-errno` throughout
-- ⬜ `kernel/src/proc/task.c` — the per-process fd array
-- ⬜ `kernel/src/core/main.c` — load and start `/bin/init` instead of shutting down
+- ⬜ `kernel/src/proc/task.c` — the per-process fd array (Step 2; the `ctx`/stack ownership
+  rework Step 1 needed is done, see [`PHASE5_STEP1_ELF_LOADER.md`](PHASE5_STEP1_ELF_LOADER.md))
+- ✅ `kernel/src/core/main.c` — loads and schedules `/bin/init` (Step 1). Still shuts down after
+  the countdown; `init` just spins at ring 3 alongside it — Step 2's `exit` doesn't exist yet
 
 New:
 
-- ⬜ `kernel/src/proc/elf.c` — the loader and the initial-stack builder
+- ✅ `kernel/src/proc/elf.c` — the loader and the initial-stack builder (Step 1)
 - ⬜ `kernel/include/errno.h`
 - ✅ `user/src/init/init.c` — freestanding, inline-asm syscall wrappers, no libc. Built
   automatically per-arch by `user/Makefile` and packed by `initrd/Makefile` — no dedicated

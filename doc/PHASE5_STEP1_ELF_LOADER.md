@@ -1,4 +1,4 @@
-# Working Document: Phase 5 Step 1 — The ELF64 Loader and a Freestanding `/bin/init` [STATUS: IN PROGRESS 🚧 — D0 done]
+# Working Document: Phase 5 Step 1 — The ELF64 Loader and a Freestanding `/bin/init` [STATUS: COMPLETE ✅]
 
 > [!NOTE]
 > **Phase 5 Step 1**, from [`PHASE5_LOADING.md`](PHASE5_LOADING.md) Chapter 3, expanded into
@@ -10,6 +10,49 @@
 > Mentor-mode reminder (see the note at the top of [`../README.md`](../README.md)): this is a
 > design reference to code from by hand, not code to paste in. Signatures, struct fields and
 > constants are given exactly; the bodies are yours.
+
+---
+
+## ✅ What actually got built
+
+All six Parts (D0, C0-C4) are done, verified on both architectures. `/bin/init` — a real ELF64
+binary compiled by this repo's own `zig cc` — loads from the ramfs, its `PT_LOAD` segments land in
+a private `vmm_context`, it calls the real `write` syscall (`hello from /bin/init` prints), and it
+spins forever at ring 3 / EL0 alongside `BOOT`, switch counts climbing on both — genuine preemptive
+multitasking with a real, unprivileged, userland process, not a one-shot demo.
+
+Two things diverged from the plan above, both worth keeping:
+
+- **`task_create_user()` gained a `struct vmm_context *ctx` parameter**, resolving the open
+  question C4 posed ("whether it takes `ctx` as a fourth parameter... is a small call worth
+  making deliberately"). It has to — `elf_load()`/`elf_build_user_stack()` need `ctx` to map into
+  *before* the task (and its frame, built from `user_entry`/`user_stack_top`) can exist, so
+  `task_create_user()` can no longer create its own context internally. Landed alongside a merge
+  of `task_create()`/`task_create_user()`/`task_init_boot()` onto one internal
+  `task_inner_create()` (a caller-supplied, possibly-borrowed stack pointer and `ctx`), which also
+  caught and fixed a real hazard: `task_destroy()` unconditionally called `vmm_destroy_context()`
+  on whatever `ctx` a task had, which would have freed the *shared* `vmm_kernel_context` — and the
+  live paging root under every other task — the first time a kernel thread was ever destroyed.
+  Fixed by skipping destruction when `ctx == vmm_kernel_context`.
+- **C0's "does `vmm_switch_context()` really flip CR3/TTBR0" question got a real proof, not just
+  the soft one the Part originally settled for.** On x86_64, `init` faulted with `RIP == CR2 ==
+  0x400011f0` — its own entry point — the first time it was scheduled with no stack yet. That
+  address is mapped *only* in `init`'s own private context, never in `vmm_kernel_context`, so
+  successfully fetching and executing it is only possible if the context switch is genuinely live.
+  Same evidence independently on AArch64 (`ELR_EL1` at its own entry point).
+
+One real bug, worth remembering as an example of a fault that was easy to misdiagnose without
+reading the error code carefully: **x86_64 only**, `init` faulted on its very first instruction
+(`RIP == CR2`, error code `0x15` — present, user, instruction-fetch protection violation, i.e.
+"this exact page is marked non-executable," not "unmapped"). Cause: `main.c` still had the old
+Phase 4 blob-era macro `USER_STACK_TOP = USER_BASE + PAGE_SIZE*2` (`0x40002000`) after C3 landed.
+x86_64's `init` entry point (`0x400011f0`) happens to live on virtual page `0x40001000` — the same
+page that stale macro put the stack on — so `elf_build_user_stack()`, which runs after
+`elf_load()`, silently overwrote the code page's executable PTE with the stack's non-executable
+one. AArch64 never hit it only because its entry point (`0x400101dc`) doesn't land on that same
+stale-macro page — same latent bug, arch-dependent whether it actually collides. Fixed by deleting
+the leftover macro block and using a real landmark clear of any segment
+(`USER_STACK_TOP = 0x40800000`, per decision 2 below).
 
 ---
 
@@ -131,7 +174,7 @@ that doesn't touch ELF at all and can be proven with tools that already exist (`
 a hand-mapped page, same as Phase 4 Step 1 C0's verify step). C2 and C3 both depend on C0 (a
 `ctx` to map into) and can be built in either order once it lands.
 
-**Status: D0 done, C0 next.** C1-C4 are all unstarted.
+**Status: D0-C4 all done, verified on both architectures.**
 
 ---
 
@@ -199,7 +242,7 @@ verified against the toolchain's own output, never a listing.
 
 ---
 
-## 🧩 C0 — Every task owns a context, and the scheduler finally switches it
+## 🧩 C0 — Every task owns a context, and the scheduler finally switches it ✅ DONE (2026-08-16)
 
 **Goal:** `task->ctx` is populated for every task, kernel threads included, and
 `sched_on_trap_exit()` calls `vmm_switch_context()` on every switch. **No user code involved —
@@ -237,7 +280,7 @@ just present in the source.
 
 ---
 
-## 🧩 C1 — Parse and validate the ELF header and program headers
+## 🧩 C1 — Parse and validate the ELF header and program headers ✅ DONE (2026-08-16)
 
 **Goal:** `elf_load()` can read `Elf64_Ehdr` and walk `Elf64_Phdr[]` out of a file, rejecting
 anything that isn't a static, non-PIE, this-architecture ET_EXEC — proven against D0's real
@@ -273,7 +316,7 @@ reachable, not just the first one.
 
 ---
 
-## 🧩 C2 — Map `PT_LOAD` segments through the HHDM, zero `.bss`
+## 🧩 C2 — Map `PT_LOAD` segments through the HHDM, zero `.bss` ✅ DONE (2026-08-16)
 
 **Goal:** every `PT_LOAD` segment lands in `ctx` at its own `p_vaddr`, content copied, `.bss`
 zeroed, permissions applied last — the algorithm [`PHASE5_LOADING.md`](PHASE5_LOADING.md)
@@ -305,7 +348,7 @@ entirely from kernel code, same as Phase 4 Step 1 C0's readback.
 
 ---
 
-## 🧩 C3 — The initial user stack: `argc`, `argv`, `envp`, `auxv`
+## 🧩 C3 — The initial user stack: `argc`, `argv`, `envp`, `auxv` ✅ DONE (2026-08-16)
 
 **Goal:** a stack built at `USER_STACK_TOP` in `ctx`, laid out per
 [`PHASE5_LOADING.md`](PHASE5_LOADING.md) Chapter 1's diagram, 16-byte aligned, terminated with
@@ -348,7 +391,7 @@ retrofitting alignment logic under time pressure is how Phase 4 Step 1's frame b
 
 ---
 
-## 🧩 C4 — Wire it together: `main.c` loads and schedules `/bin/init`
+## 🧩 C4 — Wire it together: `main.c` loads and schedules `/bin/init` ✅ DONE (2026-08-16)
 
 **Goal:** the throwaway blob-scheduling code in `main.c` (currently block-commented, per
 [[project_phase4_step1_status]]) is replaced by real loading — this is where Step 1's stated
@@ -419,6 +462,14 @@ it).
 - **Stack pointer 16-byte misalignment.** Same failure Phase 4 Step 1's design doc already
   flags for the general case — invisible here since `init` never calls anything, but wrong
   code shipped now is a debugging session in Phase 9, far from its cause.
+- **A stale landmark constant silently overlapping the code it's supposed to sit clear of.**
+  Real bug hit on x86_64: leftover Phase 4 blob-era macros left `USER_STACK_TOP` at
+  `USER_BASE + PAGE_SIZE*2`, which happened to land the stack on the exact same page as `init`'s
+  entry point. `elf_build_user_stack()` runs after `elf_load()`, so its mapping call silently won,
+  turning the code page non-executable. Fault signature: `RIP == CR2`, x86_64 error code with
+  `P=1,U=1,I/D=1` set (present, user, instruction fetch) — "this page exists but isn't
+  executable," not "unmapped." Whether this bites at all is arch- and binary-layout-dependent
+  (AArch64 didn't, here), which is exactly why decision 2's 8 MiB gap exists — don't shrink it.
 
 ---
 
@@ -426,18 +477,19 @@ it).
 
 New:
 
-- ⬜ `kernel/src/proc/elf.c`, `kernel/include/proc/elf.h` — `elf_load()`, `elf_build_user_stack()`
+- ✅ `kernel/src/proc/elf.c`, `kernel/include/proc/elf.h` — `elf_load()`, `elf_build_user_stack()`
 - ✅ `user/src/init/init.c` — freestanding, inline-asm `write`, no libc (D0)
 - ✅ `kernel/`, `user/`, `initrd/` build system — restructured into three ARCH-parametrized
   subprojects during D0, superseding the "two Makefile rules" plan this section originally
   described; see D0 below for the shape it took
 
-Existing, to be modified:
+Existing, modified:
 
-- ⬜ `kernel/src/proc/task.c` — `task_create()` assigns `task->ctx = vmm_kernel_context`;
-  `task_create_user()` assigns a fresh one (C0)
-- ⬜ `kernel/src/proc/sched.c` — `sched_on_trap_exit()` calls `vmm_switch_context()` (C0)
-- ⬜ `kernel/src/core/main.c` — the commented-out blob block replaced by `elf_load()` +
+- ✅ `kernel/src/proc/task.c` — merged onto one internal `task_inner_create()`; kernel threads and
+  the boot task borrow `vmm_kernel_context`, `task_create_user()` takes an already-built `ctx`
+  (C0, C4 — see "What actually got built" above)
+- ✅ `kernel/src/proc/sched.c` — `sched_on_trap_exit()` calls `vmm_switch_context()` (C0)
+- ✅ `kernel/src/core/main.c` — the commented-out blob block replaced by `elf_load()` +
   `elf_build_user_stack()` + `task_create_user()` (C4)
 
 ---
