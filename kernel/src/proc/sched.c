@@ -11,7 +11,12 @@ static struct task *run_queue_head;
 static struct task *current;
 
 static struct task *sched_pick_next(void) {
-    return current->next;
+    struct task *next = current->next;
+    while (next->state == TASK_DEAD) {
+        if (next == current) kpanic("no runnable tasks");
+        next = next->next;
+    }
+    return next;
 }
 
 void sched_init(void) {
@@ -57,7 +62,7 @@ struct trap_frame *sched_on_trap_exit(struct trap_frame *frame) {
     if (!task_stack_intact(current)) kpanic("kernel stack overflow on the current task");
     if (!task_stack_intact(next)) kpanic("kernel stack overflow on the next task");
 
-    current->state = TASK_READY;
+    if (current->state != TASK_DEAD) current->state = TASK_READY;
     next->state = TASK_RUNNING;
     next->switch_count++;
     current = next;
@@ -68,5 +73,12 @@ struct trap_frame *sched_on_trap_exit(struct trap_frame *frame) {
 }
 
 void sched_on_timer_tick(void) {
+    need_resched = true;
+}
+
+void sched_exit_current(void) {
+    // current is flagged dead
+    current->state = TASK_DEAD;
+    // but we need a resched for it to happen for real
     need_resched = true;
 }

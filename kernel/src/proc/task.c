@@ -10,7 +10,7 @@
 
 static uint64_t next_pid = 0;
 
-static const char *task_state_names[] = {"READY", "RUNNING"};
+static const char *task_state_names[] = {"DEAD", "READY", "RUNNING"};
 
 static struct task *task_inner_create(char const *name, void *kernel_stack_top, struct vmm_context *ctx) {
     struct task *task = kcalloc(1, sizeof(struct task));
@@ -134,4 +134,9 @@ void task_dump_all(void) {
 
 pid_t sys_getpid(void) {
     return (pid_t) sched_get_current_task()->pid;
+}
+
+int sys_exit(int status) {
+    sched_exit_current();
+    return 0;
 }

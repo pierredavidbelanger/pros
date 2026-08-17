@@ -128,6 +128,7 @@ void _start(void) {
     while (true) {
         uint64_t seconds = timer_get_ticks() / TIMER_HZ;
         if (seconds != last_seconds) {
+            task_dump_all();
             last_seconds = seconds;
             if (seconds >= 3) {
                 break;

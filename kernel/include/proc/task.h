@@ -7,8 +7,9 @@
 
 #include "stdc.h"
 
-#define TASK_READY   0
-#define TASK_RUNNING 1
+#define TASK_DEAD       0
+#define TASK_READY      1
+#define TASK_RUNNING    2
 
 struct task {
     uint64_t pid;

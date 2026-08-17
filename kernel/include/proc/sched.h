@@ -14,4 +14,6 @@ struct trap_frame *sched_on_trap_exit(struct trap_frame *frame);
 
 void sched_on_timer_tick(void);
 
+void sched_exit_current(void);
+
 #endif //PROS_SCHED_H

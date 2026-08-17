@@ -18,6 +18,7 @@
 
 typedef int pid_t;
 
+// impl in file.c
 int sys_openat(int dirfd, const char *path, int flags, int mode);
 int sys_open(const char *path, int flags);
 int sys_close(int fd);
@@ -27,6 +28,8 @@ int64_t sys_read(int fd, void *buf, uint64_t count);
 int64_t sys_write(int fd, const void *buf, uint64_t count);
 int64_t sys_lseek(int fd, int64_t offset, int whence);
 
+// impl in task.c
 pid_t sys_getpid(void);
+int sys_exit(int status);
 
 #endif //PROS_SYSCALLS_H

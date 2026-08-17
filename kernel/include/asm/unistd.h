@@ -9,6 +9,7 @@
 #define SYS_openat  56
 #define SYS_close   57
 #define SYS_getpid 172
+#define SYS_exit    93
 
 #else
 
@@ -18,6 +19,7 @@
 #define SYS_openat 257
 #define SYS_close    3
 #define SYS_getpid  39
+#define SYS_exit    60
 
 #endif
 
