@@ -8,6 +8,7 @@
 #include "mm/pmm.h"
 #include "core/memory.h"
 #include "proc/task.h"
+#include "proc/elf.h"
 
 void arch_init(void) {
     // Enable FPU & SIMD access at EL1 (and EL0, once user space exists).
@@ -223,4 +224,10 @@ struct trap_frame *arch_task_init_user_frame(void *kernel_stack_top, uint64_t us
     frame->spsr = AARCH64_SPSR_M_EL0T;
     frame->vector_type = AARCH64_VECTOR_LOWER_EL_IRQ; // exit path installs sp into SP_EL0
     return frame;
+}
+
+// ELF
+
+uint16_t arch_wanted_elf_machine() {
+    return EM_AARCH64;
 }

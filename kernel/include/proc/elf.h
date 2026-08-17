@@ -5,6 +5,10 @@
 
 #include "stdc.h"
 
+// e_machine, only these two ever match this kernel
+#define EM_X86_64  62
+#define EM_AARCH64 183
+
 struct elf_load_result {
     uint64_t entry;
 };

@@ -1,5 +1,6 @@
 #include "proc/elf.h"
 
+#include "arch/arch.h"
 #include "core/kprintf.h"
 #include "core/memory.h"
 #include "fs/vfs/vfs.h"
@@ -27,10 +28,6 @@
 // e_type
 #define ET_EXEC 2 // what we load
 #define ET_DYN  3 // PIE, rejected explicitly
-
-// e_machine, only these two ever match this kernel
-#define EM_X86_64  62
-#define EM_AARCH64 183
 
 #define PT_LOAD 1
 
@@ -94,12 +91,7 @@ int elf_load(const char *path, struct vmm_context *ctx, struct elf_load_result *
         return -1;
     }
 
-    // TODO: move somewhere in an arch_ specific function
-#ifdef __x86_64__
-    uint16_t want_machine = EM_X86_64;
-#else
-    uint16_t want_machine = EM_AARCH64;
-#endif
+    uint16_t want_machine = arch_wanted_elf_machine();
     if (ehdr.e_machine != want_machine) {
         kprintf("ELF", "%s: wrong e_machine: got %u, want %u\n", path, ehdr.e_machine, want_machine);
         return -1;

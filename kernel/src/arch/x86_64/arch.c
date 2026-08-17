@@ -10,6 +10,7 @@
 #include "core/memory.h"
 #include "core/kprintf.h"
 #include "proc/task.h"
+#include "proc/elf.h"
 
 void syscall_init(void);
 
@@ -226,4 +227,10 @@ struct trap_frame *arch_task_init_user_frame(void *kernel_stack_top, uint64_t us
     frame->rsp = user_stack_top;
     frame->int_no = 0xFF;
     return frame;
+}
+
+// ELF
+
+uint16_t arch_wanted_elf_machine() {
+    return EM_X86_64;
 }
