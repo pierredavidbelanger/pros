@@ -4,6 +4,8 @@
 #include "core/memory.h"
 #include "core/kprintf.h"
 
+#include "errno.h"
+
 static struct file open_files[MAX_OPEN_FILES];
 
 void file_init(void) {
@@ -17,30 +19,24 @@ static int allocate_fd(void) {
             return i;
         }
     }
-    return -1; // No free file descriptors
+    return -EAGAIN;
 }
 
 int sys_open(const char *path, int flags) {
-    if (!path) {
-        return -1;
-    }
+    if (!path) return -ENOENT;
 
     // vfs_lookup will get the mount point and search each path segment with target->ops->finddir
     struct vfs_node *target_node = vfs_lookup(path);
-    if (!target_node) {
-        return -1; // File not found
-    }
+    if (!target_node) return -ENOENT;
 
     // If the node has an open callback, give the driver a chance to initialize it
     if (target_node->ops && target_node->ops->open) {
-        if (target_node->ops->open(target_node) != 0) {
-            return -1; // Driver rejected the open
-        }
+        if (target_node->ops->open(target_node) != 0) return -EAGAIN;
     }
 
     int fd = allocate_fd();
     if (fd < 0) {
-        return -1;
+        return fd;
     }
 
     open_files[fd].node = target_node;
@@ -52,14 +48,10 @@ int sys_open(const char *path, int flags) {
 }
 
 int sys_close(int fd) {
-    if (fd < 0 || fd >= MAX_OPEN_FILES) {
-        return -1;
-    }
+    if (fd < 0 || fd >= MAX_OPEN_FILES) return -EBADF;
 
     struct file *f = &open_files[fd];
-    if (f->ref_count == 0) {
-        return -1; // Already closed
-    }
+    if (f->ref_count == 0) return -EBADF; // Already closed
 
     f->ref_count--;
     if (f->ref_count == 0) {
@@ -74,11 +66,12 @@ int sys_close(int fd) {
 }
 
 int sys_readdir(int fd, struct vfs_dirent *out) {
-    if (fd < 0 || fd >= MAX_OPEN_FILES || !out) return -1;
+    if (fd < 0 || fd >= MAX_OPEN_FILES) return -EBADF;
+    if (!out) return -EFAULT;
 
     struct file *f = &open_files[fd];
-    if (f->ref_count == 0 || !f->node) return -1;
-    if (!f->node->ops || !f->node->ops->readdir) return -1;
+    if (f->ref_count == 0 || !f->node) return -EBADF;
+    if (!f->node->ops || !f->node->ops->readdir) return -ENOSYS;
     // Use f->offset as the directory index
     int res = f->node->ops->readdir(f->node, f->offset, out);
 
@@ -92,18 +85,13 @@ int sys_readdir(int fd, struct vfs_dirent *out) {
 }
 
 int64_t sys_read(int fd, void *buf, uint64_t count) {
-    if (fd < 0 || fd >= MAX_OPEN_FILES || !buf) {
-        return -1;
-    }
+    if (fd < 0 || fd >= MAX_OPEN_FILES) return -EBADF;
+    if (!buf) return -EFAULT;
 
     struct file *f = &open_files[fd];
-    if (f->ref_count == 0 || !f->node) {
-        return -1;
-    }
+    if (f->ref_count == 0 || !f->node) return -EBADF;
 
-    if (!f->node->ops || !f->node->ops->read) {
-        return -1; // Filesystem doesn't support reading
-    }
+    if (!f->node->ops || !f->node->ops->read) return -ENOSYS; // Filesystem doesn't support reading
 
     int64_t bytes_read = f->node->ops->read(f->node, f->offset, count, buf);
     if (bytes_read > 0) {
@@ -114,23 +102,16 @@ int64_t sys_read(int fd, void *buf, uint64_t count) {
 }
 
 int64_t sys_write(int fd, const void *buf, uint64_t count) {
-    if (fd < 0 || fd >= MAX_OPEN_FILES || !buf) {
-        return -1;
-    }
+    if (fd < 0 || fd >= MAX_OPEN_FILES) return -EBADF;
+    if (!buf) return -EFAULT;
 
     struct file *f = &open_files[fd];
-    if (f->ref_count == 0 || !f->node) {
-        return -1;
-    }
+    if (f->ref_count == 0 || !f->node) return -EBADF;
 
     // Very basic write protection check
-    if ((f->flags & O_WRONLY) == 0 && (f->flags & O_RDWR) == 0) {
-        return -1; // File not opened for writing
-    }
+    if ((f->flags & O_WRONLY) == 0 && (f->flags & O_RDWR) == 0) return -EACCES; // File not opened for writing
 
-    if (!f->node->ops || !f->node->ops->write) {
-        return -1; // Filesystem doesn't support writing
-    }
+    if (!f->node->ops || !f->node->ops->write) return -ENOSYS; // Filesystem doesn't support writing
 
     int64_t bytes_written = f->node->ops->write(f->node, f->offset, count, buf);
     if (bytes_written > 0) {
@@ -141,14 +122,10 @@ int64_t sys_write(int fd, const void *buf, uint64_t count) {
 }
 
 int64_t sys_lseek(int fd, int64_t offset, int whence) {
-    if (fd < 0 || fd >= MAX_OPEN_FILES) {
-        return -1;
-    }
+    if (fd < 0 || fd >= MAX_OPEN_FILES) return -EBADF;
 
     struct file *f = &open_files[fd];
-    if (f->ref_count == 0 || !f->node) {
-        return -1;
-    }
+    if (f->ref_count == 0 || !f->node) return -EBADF;
 
     switch (whence) {
         case SEEK_SET:
@@ -161,7 +138,7 @@ int64_t sys_lseek(int fd, int64_t offset, int whence) {
             f->offset = f->node->size + offset;
             break;
         default:
-            return -1;
+            return -EINVAL;
     }
 
     return f->offset;

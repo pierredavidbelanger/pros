@@ -23,7 +23,7 @@ void test_task(void) {
     task_destroy(task);
     test_report(TEST_TASK_TAG, "destroy returns every page", pmm_get_free_page_count() == free_before);
 
-    // Task 0's situation: no kernel_stack_base, because it never called kstack_alloc().
+    // Boot task situation: no kernel_stack_base, because it never called kstack_alloc().
     // task_stack_intact() must call that "nothing to check", not "corrupt" - the C0 bug, pinned here.
     struct task *boot = task_init_boot();
     test_report(TEST_TASK_TAG, "boot returns a task", boot != NULL);

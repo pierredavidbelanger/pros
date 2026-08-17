@@ -5,6 +5,8 @@
 #include "mm/heap.h"
 #include "mm/pmm.h"
 
+#include "errno.h"
+
 struct ramfs_node_data {
     struct vfs_node *first_child;
     struct vfs_node *next_sibling;
@@ -135,7 +137,7 @@ static uint64_t ramfs_get_chunk_info(uint64_t offset, const uint64_t remaining, 
 }
 
 int64_t ramfs_ops_read(struct vfs_node *node, uint64_t offset, uint64_t size, void *buffer) {
-    if (!node || !(node->flags & VFS_FILE) || !buffer) return -1;
+    if (!node || !(node->flags & VFS_FILE) || !buffer) return -EINVAL;
 
     // cant read pass the end
     if (offset >= node->size) return 0;
@@ -180,7 +182,7 @@ int64_t ramfs_ops_read(struct vfs_node *node, uint64_t offset, uint64_t size, vo
 }
 
 int64_t ramfs_ops_write(struct vfs_node *node, uint64_t offset, uint64_t size, const void *buffer) {
-    if (!node || !(node->flags & VFS_FILE) || !buffer) return -1;
+    if (!node || !(node->flags & VFS_FILE) || !buffer) return -EINVAL;
 
     struct ramfs_node_data *node_data = node->priv_data;
 
