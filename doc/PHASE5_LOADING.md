@@ -213,7 +213,8 @@ archive. Acceptance: `/bin/init` loads from the ramfs and prints from ring 3 usi
 Per-process fd tables, `copy_from_user`/`copy_to_user`, the `-errno` conversion, and
 `open`/`read`/`close`/`exit`/`getpid` reachable from userland. Acceptance: an init that opens
 `/root/hello.txt` and prints its contents — the whole stack, ring 3 to ramfs and back.
-**Phase 5's stated goal is met here.**
+**Phase 5's stated goal is met here.** Individually verifiable Parts in
+[`PHASE5_STEP2_SYSCALL_SURFACE.md`](PHASE5_STEP2_SYSCALL_SURFACE.md).
 
 ---
 
@@ -256,7 +257,8 @@ Existing, to be modified:
 New:
 
 - ✅ `kernel/src/proc/elf.c` — the loader and the initial-stack builder (Step 1)
-- ⬜ `kernel/include/errno.h`
+- ⬜ `kernel/include/errno.h`, `kernel/include/mm/uaccess.h` — Parts in
+  [`PHASE5_STEP2_SYSCALL_SURFACE.md`](PHASE5_STEP2_SYSCALL_SURFACE.md)
 - ✅ `user/src/init/init.c` — freestanding, inline-asm syscall wrappers, no libc. Built
   automatically per-arch by `user/Makefile` and packed by `initrd/Makefile` — no dedicated
   top-level `Makefile` rule needed; see [`PHASE5_STEP1_ELF_LOADER.md`](PHASE5_STEP1_ELF_LOADER.md)

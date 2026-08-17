@@ -233,7 +233,8 @@ Two consequences worth stating, because each prevents a specific mistake:
     [`PHASE5_STEP1_ELF_LOADER.md`](PHASE5_STEP1_ELF_LOADER.md).
   - ⬜ **Step 2 — The real syscall surface** — per-process fd tables (they're kernel-global
     today), `copy_from_user` validation, `-errno` returns replacing `-1`, and
-    `open`/`read`/`close`/`exit`/`getpid` reachable from ring 3.
+    `open`/`read`/`close`/`exit`/`getpid` reachable from ring 3. Working doc:
+    [`PHASE5_STEP2_SYSCALL_SURFACE.md`](PHASE5_STEP2_SYSCALL_SURFACE.md).
 
 ---
 
