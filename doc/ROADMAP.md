@@ -95,28 +95,27 @@ phase) and [`SIDEQUEST.md`](SIDEQUEST.md) (detours that aren't on the phase list
 
 Each phase below carries a list, and the list changes meaning as the phase matures — it always
 has. Naming the lifecycle beats pretending the result is drift. **The heading is a function of
-two yes/no facts** — is the phase complete, and does it have a working document — so there is
-no judgement call:
+one fact** — does the phase have a working document — so there is no judgement call:
 
 | State | Heading | What the list is | How much to trust it |
 |---|---|---|---|
-| ✅ complete | **What shipped** | a thematic retrospective of what survives | descriptive; **not** numbered as Steps |
-| has a working document | **Steps** | the ordered plan; item *n* **is** Step *n* | authoritative; mirrors that document |
+| has a working document | **Steps** | the ordered plan; item *n* **is** Step *n* | authoritative; mirrors that document, whether the phase is complete or not |
 | no working document | **Planned scope** | a wish list for an undesigned phase | none — not a commitment |
 
-Note the middle row keys off the *document*, not the ⬜/🚧 marker: a phase that is designed but
-not started still has real, numbered, authoritative Steps. That's exactly the state Phases 4
-and 5 are in.
+A phase keeps its numbered **Steps** heading permanently once it has a working document —
+completing the phase doesn't change the heading. An earlier version of this convention rewrote a
+completed phase's list into a separate, non-numbered **What shipped** retrospective; Phase 4 and
+Phase 5's closeouts are why that was dropped — the churn wasn't worth it, and a numbered list that
+already mirrors the archived Step documents is just as authoritative after completion as before
+it. A completed phase may still drop the list entirely when the Status prose covers it —
+Phase 1 does.
 
-Two consequences worth stating, because each prevents a specific mistake:
-
-- **A completed phase's list is not a Step list.** Phase 2's items summarize what survives — its
-  item 1 was really Step 11, item 3 was Step 14, and Steps 1-9 were built then deleted.
-  Renumbering it as Steps would contradict the archive and make a worse summary.
-- **When a phase completes, its list gets rewritten** from Steps to What shipped. Nothing is
-  lost: the numbering survives in the archived step documents and in the phase document's
-  order-of-work chapter. A completed phase may drop the list entirely when the Status prose
-  covers it — Phase 1 does.
+Phase 2 and Phase 3 still carry the older **What shipped** heading, written before this
+simplified — left as-is rather than rewritten to match. Phase 2's in particular is a genuine
+retrospective, not just an old-style Steps list: its items summarize what survives, not what was
+built in order — item 1 was really Step 11, item 3 was Step 14, and Steps 1-9 were built then
+ripped out. Renumbering it as Steps would contradict the archive and make a worse summary, so it
+stays a retrospective on its own merits, independent of which convention version wrote it.
 
 ---
 
@@ -219,8 +218,8 @@ Two consequences worth stating, because each prevents a specific mistake:
 ---
 
 ### Phase 5: Loading — The ELF Loader and a Real `/bin/init`
-* **Status**: **IN PROGRESS** 🚧 — Step 1 done and verified on both architectures; Step 2 not
-  started. Working doc: [`PHASE5_LOADING.md`](PHASE5_LOADING.md).
+* **Status**: **COMPLETE** ✅ — both Steps done and verified on both architectures. Working doc:
+  [`PHASE5_LOADING.md`](archive/PHASE5_LOADING.md).
 * **Payoff**: `/bin/init` — a real ELF you compiled, living in the initrd — loads, runs
   unprivileged, opens `/root/hello.txt` and prints it. The first moment PrOS runs *software*
   rather than running itself.
@@ -230,28 +229,42 @@ Two consequences worth stating, because each prevents a specific mistake:
     `auxv`). `init.c` built with the existing `zig cc` toolchain, no libc needed. `/bin/init`
     loads, calls the real `write` syscall, and runs unprivileged alongside `BOOT` under
     preemptive scheduling — on both x86_64 and AArch64. Individually verifiable Parts in
-    [`PHASE5_STEP1_ELF_LOADER.md`](PHASE5_STEP1_ELF_LOADER.md).
-  - ⬜ **Step 2 — The real syscall surface** — per-process fd tables (they're kernel-global
-    today), `copy_from_user` validation, `-errno` returns replacing `-1`, and
-    `open`/`read`/`close`/`exit`/`getpid` reachable from ring 3. Working doc:
-    [`PHASE5_STEP2_SYSCALL_SURFACE.md`](PHASE5_STEP2_SYSCALL_SURFACE.md).
+    [`PHASE5_STEP1_ELF_LOADER.md`](archive/PHASE5_STEP1_ELF_LOADER.md).
+  - ✅ **Step 2 — The real syscall surface** — per-process fd tables (were kernel-global before),
+    `copy_from_user`/`copy_to_user` validation, `-errno` returns replacing `-1`, and
+    `open`/`openat`/`read`/`close`/`exit`/`getpid` reachable from ring 3. `/bin/init` opens
+    `/root/hello.txt`, reads it, writes the real contents to stdout, and exits — staying
+    genuinely dead afterward. Surfaced a real x86_64-only bug: `syscall_entry.S` always used
+    `sysretq` (return-to-ring-3-only) on the way out, which broke the moment `exit` caused a
+    switch to the kernel-thread `BOOT` instead of back to `init`'s own userspace — fixed by
+    switching to `iretq` (general-purpose, reads the target ring off the frame), same instruction
+    the timer-interrupt path already used. Individually verifiable Parts in
+    [`PHASE5_STEP2_SYSCALL_SURFACE.md`](archive/PHASE5_STEP2_SYSCALL_SURFACE.md).
 
 ---
 
 ### Phase 6: Talk Back — Serial Input, TTY & a Shell You Wrote
-* **Status**: **NOT STARTED** ⬜ — undesigned; the scope below is a wish list, not a plan.
+* **Status**: **NOT STARTED** ⬜ — Steps 1-2 designed, Step 3 deliberately not yet. Working doc:
+  [`PHASE6_TALK_BACK.md`](PHASE6_TALK_BACK.md).
 * **Payoff**: **you type at your OS and it answers.** Over `-serial stdio`, which is fully
-  interactive. No libc, no keyboard driver, no VirtIO required.
-* **Planned scope**:
-  - **UART receive interrupt** on both architectures (PL011 on `virt`, 16550 on `q35`) feeding
-    a byte queue. Deliberately *not* a PS/2 keyboard: QEMU `virt` has no i8042 at all, so PS/2
-    isn't portable and VirtIO-input would mean rebuilding the VirtIO transport first.
-  - **TTY line discipline** — canonical vs raw mode, echo, backspace, line buffering — behind
-    `/dev/console`.
-  - **`getdents64`**, replacing the internal `sys_readdir` at the ABI boundary.
-  - **`psh`** — a freestanding shell, no libc, builtins only (`echo`, `ls`, `cat`, `help`).
-    Builtins only because `fork`/`exec` don't exist yet, and an interactive prompt is worth
-    having a phase early.
+  interactive. No libc, no keyboard driver, no VirtIO required. Only the phase as a whole needs
+  to end there — an individual Step doesn't need its own standalone demo, as long as every Step
+  is actually used by the final payoff.
+* **Steps**:
+  - **Step 1 — UART receive interrupt + byte queue** on both architectures (PL011 on `virt`,
+    16550 on `q35`). Deliberately *not* a PS/2 keyboard: QEMU `virt` has no i8042 at all, so PS/2
+    isn't portable and VirtIO-input would mean rebuilding the VirtIO transport first. Individually
+    designed in [`PHASE6_STEP1_UART_INPUT.md`](PHASE6_STEP1_UART_INPUT.md).
+  - **Step 2 — TTY line discipline + `/dev/console`** — canonical vs raw mode, echo, backspace,
+    line buffering, exposed as a real VFS node. Also where Phase 5 Step 2's deferred decision 2(b)
+    finally lands: retiring `sys_write_console_or_vfs`'s fd `1`/`2` special-case shim now that a
+    real console device exists. Individually designed in
+    [`PHASE6_STEP2_TTY_CONSOLE.md`](PHASE6_STEP2_TTY_CONSOLE.md).
+  - **Step 3 — `getdents64` and `psh`** — the internal `sys_readdir` becomes the real,
+    Linux-ABI-shaped syscall (packed variable-length `struct linux_dirent64`), in service of a
+    freestanding shell with builtins only (`echo`, `ls`, `cat`, `help`). Builtins only because
+    `fork`/`exec` don't exist yet, and an interactive prompt is worth having this early. Not yet
+    designed — deliberately deferred until Steps 1-2 are built, may reshape along the way.
 
 ---
 

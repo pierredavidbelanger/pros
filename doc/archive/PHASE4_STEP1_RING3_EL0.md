@@ -6,12 +6,12 @@
 > entering userland) and Chapter 5 (the traps). Read those for the *why*; this document is the
 > *how*, in order.
 >
-> It also leans hard on [`archive/PHASE3_PREEMPTION.md`](archive/PHASE3_PREEMPTION.md) Chapter 1:
+> It also leans hard on [`PHASE3_PREEMPTION.md`](PHASE3_PREEMPTION.md) Chapter 1:
 > **the trap frame is the process.** If that idea isn't comfortable yet, this step will not make
 > sense — every single thing here is "fabricate a frame and let the existing stub restore it".
 
 > [!NOTE]
-> Mentor-mode reminder (see the note at the top of [`../README.md`](../README.md)): this is a
+> Mentor-mode reminder (see the note at the top of [`../README.md`](../../README.md)): this is a
 > design reference to code from by hand, not code to paste in. Signatures, struct fields and
 > constants are given exactly, because guessing those wastes time without teaching anything —
 > but the bodies are yours. Where a register value or a hardware behaviour is stated, confirm it
@@ -40,7 +40,7 @@ in ring 0 and nothing was proven. The crash is the evidence.
 > bit Phase 3 Step 3's deliberate-break test and cost real time.
 >
 > `ansifilter` has since been removed from all four QEMU targets (see the closed entry in
-> [`SIDEQUEST.md`](SIDEQUEST.md)), so `logs/qemu-<arch>.log` now keeps everything up to the
+> [`SIDEQUEST.md`](../SIDEQUEST.md)), so `logs/qemu-<arch>.log` now keeps everything up to the
 > halt. Worth knowing anyway: **if you ever put a filter back in that pipe, this step is where
 > it will hurt first.**
 

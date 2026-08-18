@@ -11,10 +11,10 @@
 > This design was written as part of the original single-document Phase 3 plan and split out
 > when that phase was broken into three along the capability boundaries it had already
 > identified. The starting-line inventory, the trap-frame model it depends on, and the
-> scheduler live in [`PHASE3_PREEMPTION.md`](archive/PHASE3_PREEMPTION.md).
+> scheduler live in [`PHASE3_PREEMPTION.md`](PHASE3_PREEMPTION.md).
 
 > [!NOTE]
-> Mentor-mode reminder (see the note at the top of [`../README.md`](../README.md)): this is a
+> Mentor-mode reminder (see the note at the top of [`../README.md`](../../README.md)): this is a
 > design reference to code from by hand, not code to paste in. Snippets are illustrative and
 > deliberately incomplete.
 
@@ -83,7 +83,7 @@ dereferencing a kernel address takes a page fault rather than reading kernel mem
 
 ### Entering ring 3 / EL0
 
-Per [`PHASE3_PREEMPTION.md`](archive/PHASE3_PREEMPTION.md) Chapter 1: fabricate a trap frame and return
+Per [`PHASE3_PREEMPTION.md`](PHASE3_PREEMPTION.md) Chapter 1: fabricate a trap frame and return
 from it. No special instruction.
 
 **x86_64** — build a stack that `iretq` will consume. `iretq` pops, in order:
@@ -112,7 +112,7 @@ itself with a ring-0 `cs` and promoting itself? (It's not that `iretq` is privil
 
 `int 0x80` / a software-generated exception works and would reuse the stubs verbatim. It's
 also slow, and — more importantly — it isn't what a Linux-ABI userland emits.
-[`SYSCALL_DESIGN.md`](SYSCALL_DESIGN.md) §3 already commits to `syscall`/`sysret` and `svc`,
+[`SYSCALL_DESIGN.md`](../SYSCALL_DESIGN.md) §3 already commits to `syscall`/`sysret` and `svc`,
 which is the right call: a compiled BusyBox will emit `syscall` whether or not the kernel
 supports it.
 
@@ -196,7 +196,7 @@ advance.
 
 ### Dispatch
 
-Per [`SYSCALL_DESIGN.md`](SYSCALL_DESIGN.md) §2, a flat table indexed by number. Worth noting:
+Per [`SYSCALL_DESIGN.md`](../SYSCALL_DESIGN.md) §2, a flat table indexed by number. Worth noting:
 the syscall numbers **differ between the two architectures** (x86_64 `write` is 1; AArch64
 `write` is 64), so the table is per-arch even though every handler is shared. Generating both
 from one list of `(name, handler)` pairs plus two number headers avoids the two tables

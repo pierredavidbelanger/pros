@@ -4,7 +4,7 @@
 > **Phase 4 Step 2**, from [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) Chapter 3, expanded into
 > individually verifiable Parts. It draws on Chapter 2 (the entry path itself) and Chapter 5 (the
 > traps). Read those for the *why*; this document is the *how*, in order. It also leans on
-> [`SYSCALL_DESIGN.md`](SYSCALL_DESIGN.md) for the numbering/calling-convention/dispatch
+> [`SYSCALL_DESIGN.md`](../SYSCALL_DESIGN.md) for the numbering/calling-convention/dispatch
 > conventions this and every later syscall must follow.
 >
 > This Step **must stay married to Step 1** — [`PHASE4_STEP1_RING3_EL0.md`](PHASE4_STEP1_RING3_EL0.md)
@@ -14,7 +14,7 @@
 > Nothing here changes it.
 
 > [!NOTE]
-> Mentor-mode reminder (see the note at the top of [`../README.md`](../README.md)): this is a
+> Mentor-mode reminder (see the note at the top of [`../README.md`](../../README.md)): this is a
 > design reference to code from by hand, not code to paste in. Signatures, struct fields and
 > constants are given exactly; the bodies are yours. Where a register value or MSR behaviour is
 > stated, confirm it against the manual.
@@ -47,8 +47,8 @@ cleaner, honestly-scoped acceptance criterion than an "exit" this Step has no me
   serial/framebuffer with no VFS node behind it — there is no file descriptor 0/1/2 pre-opened
   anywhere today (`open_files[]` starts fully closed). This Step needs `fd 1` to *mean* something;
   see Decision 2 below. A real device node with TTY behavior is
-  [`PHASE6...`](ROADMAP.md)'s job (`/dev/console`, line discipline).
-- ❌ **No `-errno` convention.** [`SYSCALL_DESIGN.md`](SYSCALL_DESIGN.md) §4 wants `-errno`
+  [`PHASE6...`](../ROADMAP.md)'s job (`/dev/console`, line discipline).
+- ❌ **No `-errno` convention.** [`SYSCALL_DESIGN.md`](../SYSCALL_DESIGN.md) §4 wants `-errno`
   returns; `sys_write()` today returns bare `-1`. Pass whatever it returns straight through — the
   blob doesn't inspect it. Fixing every syscall's return convention is Phase 5 Step 2's job, along
   with the `-errno` values living in `errno.h`.
@@ -89,7 +89,7 @@ next timer tick with zero special-casing in `sched.c`.
 
 ### 1. Syscall numbers and the dispatch table
 
-Per [`SYSCALL_DESIGN.md`](SYSCALL_DESIGN.md) §2: Linux numbers, not invented ones. Only `write`
+Per [`SYSCALL_DESIGN.md`](../SYSCALL_DESIGN.md) §2: Linux numbers, not invented ones. Only `write`
 is required, but build the table shape Phase 5 will grow into, not a one-off:
 
 ```c

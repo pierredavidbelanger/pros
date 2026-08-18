@@ -1,20 +1,21 @@
-# Working Document: Phase 5 — Loading: The ELF Loader and a Real `/bin/init` [STATUS: IN PROGRESS 🚧]
+# Working Document: Phase 5 — Loading: The ELF Loader and a Real `/bin/init` [STATUS: COMPLETE ✅]
 
 > [!NOTE]
-> **Where this stands.** Step 1 is **done**, verified on both architectures — `/bin/init` loads,
-> runs unprivileged, prints via the real `write` syscall, and coexists with `BOOT` under
-> preemptive scheduling. Step 2 (the real syscall surface) has not started. Phase 4 is complete
-> on both architectures — ring 3 / EL0 and the syscall boundary both exist — so this Phase was
-> unblocked to begin with.
+> **Where this stands.** Both Steps are **done**, verified on both architectures. `/bin/init`
+> loads, runs unprivileged, opens `/root/hello.txt`, reads it, writes the real contents to
+> stdout, and exits — staying genuinely dead afterward. This is the sentence this document opens
+> with, and Phase 5's stated goal is met. Full write-ups in
+> [`PHASE5_STEP1_ELF_LOADER.md`](PHASE5_STEP1_ELF_LOADER.md) and
+> [`PHASE5_STEP2_SYSCALL_SURFACE.md`](PHASE5_STEP2_SYSCALL_SURFACE.md).
 >
 > This design was written as part of the original single-document Phase 3 plan and split out
 > when that phase was broken into three along the capability boundaries it had already
 > identified. The starting-line inventory lives in
-> [`PHASE3_PREEMPTION.md`](archive/PHASE3_PREEMPTION.md) Chapter 0; the privilege drop and the syscall
-> entry path are [`PHASE4_PRIVILEGE.md`](archive/PHASE4_PRIVILEGE.md).
+> [`PHASE3_PREEMPTION.md`](PHASE3_PREEMPTION.md) Chapter 0; the privilege drop and the syscall
+> entry path are [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md).
 
 > [!NOTE]
-> Mentor-mode reminder (see the note at the top of [`../README.md`](../README.md)): this is a
+> Mentor-mode reminder (see the note at the top of [`../README.md`](../../README.md)): this is a
 > design reference to code from by hand, not code to paste in. Snippets are illustrative and
 > deliberately incomplete.
 
@@ -189,7 +190,7 @@ right when they get smarter.
 
 ### 3. Error returns become `-errno`
 
-[`SYSCALL_DESIGN.md`](SYSCALL_DESIGN.md) §4 commits to it, current code returns `-1`
+[`SYSCALL_DESIGN.md`](../SYSCALL_DESIGN.md) §4 commits to it, current code returns `-1`
 everywhere. This is mechanical but touches every function in `file.c`, and it needs
 `include/errno.h` to exist. Do it in one pass rather than mixing conventions — a
 half-converted error space is worse than either convention alone.
@@ -209,12 +210,14 @@ archive. Acceptance: `/bin/init` loads from the ramfs and prints from ring 3 usi
 — the one syscall Phase 4 wired. Done and verified on both architectures — all six Parts
 (D0, C0-C4) in [`PHASE5_STEP1_ELF_LOADER.md`](PHASE5_STEP1_ELF_LOADER.md) are complete.
 
-**⬜ Step 2 — The real syscall surface.**
+**✅ Step 2 — The real syscall surface.**
 Per-process fd tables, `copy_from_user`/`copy_to_user`, the `-errno` conversion, and
 `open`/`read`/`close`/`exit`/`getpid` reachable from userland. Acceptance: an init that opens
 `/root/hello.txt` and prints its contents — the whole stack, ring 3 to ramfs and back.
-**Phase 5's stated goal is met here.** Individually verifiable Parts in
-[`PHASE5_STEP2_SYSCALL_SURFACE.md`](PHASE5_STEP2_SYSCALL_SURFACE.md).
+**Phase 5's stated goal is met here.** Done and verified on both architectures — all six Parts
+(C0-C5) in [`PHASE5_STEP2_SYSCALL_SURFACE.md`](PHASE5_STEP2_SYSCALL_SURFACE.md) are complete,
+including a real x86_64-only bug found along the way (`sysretq` assuming every syscall return
+targets ring 3, which broke the moment `exit` switched to the kernel-thread `BOOT`).
 
 ---
 
@@ -247,18 +250,21 @@ Per-process fd tables, `copy_from_user`/`copy_to_user`, the `-errno` conversion,
 
 Existing, to be modified:
 
-- ⬜ `kernel/src/fs/vfs/file.c` + `kernel/include/fs/vfs/file.h` — fd table into `struct task`,
-  `-errno` throughout
-- ⬜ `kernel/src/proc/task.c` — the per-process fd array (Step 2; the `ctx`/stack ownership
-  rework Step 1 needed is done, see [`PHASE5_STEP1_ELF_LOADER.md`](PHASE5_STEP1_ELF_LOADER.md))
-- ✅ `kernel/src/core/main.c` — loads and schedules `/bin/init` (Step 1). Still shuts down after
-  the countdown; `init` just spins at ring 3 alongside it — Step 2's `exit` doesn't exist yet
+- ✅ `kernel/src/fs/vfs/file.c` + `kernel/include/fs/vfs/file.h` — fd table into `struct task`,
+  `-errno` throughout (Step 2)
+- ✅ `kernel/src/proc/task.c` — the per-process fd array, `TASK_DEAD` (Step 2)
+- ✅ `kernel/src/core/main.c` — loads and schedules `/bin/init` (Step 1). No longer just spins —
+  `init` reaches its own `exit` and stays dead; `main.c` shuts down once BOOT's countdown ends
+- ✅ `kernel/src/arch/x86_64/syscall_entry.S` — `sysretq` → `iretq`, see
+  [`PHASE5_STEP2_SYSCALL_SURFACE.md`](PHASE5_STEP2_SYSCALL_SURFACE.md)'s "What actually got built"
 
 New:
 
 - ✅ `kernel/src/proc/elf.c` — the loader and the initial-stack builder (Step 1)
-- ⬜ `kernel/include/errno.h`, `kernel/include/mm/uaccess.h` — Parts in
+- ✅ `kernel/include/errno.h`, `kernel/include/mm/uaccess.h` — Step 2, Parts in
   [`PHASE5_STEP2_SYSCALL_SURFACE.md`](PHASE5_STEP2_SYSCALL_SURFACE.md)
+- ✅ `user/include/syscall.h` — shared syscall wrappers, added during Step 2 once a second
+  program's worth of duplication was worth avoiding; not in this document's original scope
 - ✅ `user/src/init/init.c` — freestanding, inline-asm syscall wrappers, no libc. Built
   automatically per-arch by `user/Makefile` and packed by `initrd/Makefile` — no dedicated
   top-level `Makefile` rule needed; see [`PHASE5_STEP1_ELF_LOADER.md`](PHASE5_STEP1_ELF_LOADER.md)

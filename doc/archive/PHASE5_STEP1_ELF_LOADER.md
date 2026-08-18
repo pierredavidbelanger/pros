@@ -7,7 +7,7 @@
 > (per-process fd tables, `copy_from_user`, `-errno`) is Step 2, not here.
 
 > [!NOTE]
-> Mentor-mode reminder (see the note at the top of [`../README.md`](../README.md)): this is a
+> Mentor-mode reminder (see the note at the top of [`../README.md`](../../README.md)): this is a
 > design reference to code from by hand, not code to paste in. Signatures, struct fields and
 > constants are given exactly; the bodies are yours.
 
@@ -237,7 +237,7 @@ $ readelf -h user/bin/aarch64/init | grep -i "Type\|Machine\|Entry"
 Both `Type: EXEC`, correct `Machine` each, entry near the linked `0x40000000`, two `LOAD`
 segments each (a `.text`/`.rodata` split — no `.bss` to speak of yet, matches expectations for
 this ~15-line program). Same discipline
-[`PHASE4_STEP1_RING3_EL0.md`](archive/PHASE4_STEP1_RING3_EL0.md) used on hand-assembled bytes —
+[`PHASE4_STEP1_RING3_EL0.md`](PHASE4_STEP1_RING3_EL0.md) used on hand-assembled bytes —
 verified against the toolchain's own output, never a listing.
 
 ---

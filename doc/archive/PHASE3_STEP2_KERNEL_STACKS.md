@@ -101,7 +101,7 @@ purely so the step has something to *observe*. They are worth the effort:
 - ❌ No `switch_to` in assembly. The whole argument of Chapter 5 is that the frame-swap makes it
   unnecessary until Phase 7.
 - ❌ No FPU/SIMD save/restore. Nothing to corrupt with one task.
-- ❌ No fd tables moving into `struct task` — that's [`PHASE5_LOADING.md`](../PHASE5_LOADING.md) Step 2, and moving them now means writing
+- ❌ No fd tables moving into `struct task` — that's [`PHASE5_LOADING.md`](PHASE5_LOADING.md) Step 2, and moving them now means writing
   `fork`'s hardest field before `fork` exists.
 
 ---

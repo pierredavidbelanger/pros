@@ -39,7 +39,7 @@
 > |---|---|---|
 > | **Phase 3 — this document** | interruption + multiplicity | two kernel threads interleave |
 > | [**Phase 4 — Privilege**](PHASE4_PRIVILEGE.md) | distrust | ring-3 code calls `write` |
-> | [**Phase 5 — Loading**](../PHASE5_LOADING.md) | loading | `/bin/init` runs from the filesystem |
+> | [**Phase 5 — Loading**](PHASE5_LOADING.md) | loading | `/bin/init` runs from the filesystem |
 >
 > Chapter 0's inventory of what already exists still covers all three, because it's the
 > starting line for all of them.
@@ -74,7 +74,7 @@ The rest of the userland vocabulary moved out with the phase split, and is index
 document that now owns it: **Ring 3 / EL0**, **`iretq`/`eret`**, **`syscall`/`sysret`/`svc`**
 and **`swapgs`** in [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md); **`PT_LOAD`**,
 **`p_filesz` vs `p_memsz`**, **auxv**, **`copy_from_user`** and **`-errno`** in
-[`PHASE5_LOADING.md`](../PHASE5_LOADING.md).
+[`PHASE5_LOADING.md`](PHASE5_LOADING.md).
 
 ---
 
@@ -99,7 +99,7 @@ independent:
 **This phase takes the first two, and stops.** Not because the rest is harder, but because a
 bug in a scheduler and a bug in a privilege transition look *identical* from the outside — the
 machine resets — and debugging both at once is genuinely miserable. Distrust is
-[Phase 4](PHASE4_PRIVILEGE.md); loading is [Phase 5](../PHASE5_LOADING.md).
+[Phase 4](PHASE4_PRIVILEGE.md); loading is [Phase 5](PHASE5_LOADING.md).
 
 The pleasant consequence: **everything in this phase happens in ring 0**, where a mistake
 prints a register dump instead of triple-faulting. Preemption gets proven with *kernel* threads
@@ -156,7 +156,7 @@ several Phase 3 "tasks" are really "finish and fix" rather than "write".
   vector range so the two can't silently disagree.
 - **`struct file open_files[MAX_OPEN_FILES]` is a single kernel-global table**
   (`fs/vfs/file.c:7`). File descriptors are per-*process* in POSIX. This must move into the
-  task structure ([`PHASE5_LOADING.md`](../PHASE5_LOADING.md) Chapter 2).
+  task structure ([`PHASE5_LOADING.md`](PHASE5_LOADING.md) Chapter 2).
 - **Syscalls return `-1`, not `-errno`** (all of `fs/vfs/file.c`), contradicting
   [`SYSCALL_DESIGN.md`](../SYSCALL_DESIGN.md) §4.
 
@@ -200,8 +200,8 @@ the phases that split off.
 | ✅ `#PF` routed to IST1, which does not nest | **Phase 3 Step 2** |
 | ✅ Kernel runs EL1t, so SP_EL0 is doing double duty | **Phase 3 Step 2** (new — found by Step 1) |
 | No user segments in the GDT | [**Phase 4**](PHASE4_PRIVILEGE.md) Step 1, constrained by its Step 2 ⚠️ |
-| `open_files[]` is kernel-global | [**Phase 5**](../PHASE5_LOADING.md) Step 2 |
-| Syscalls return `-1`, not `-errno` | [**Phase 5**](../PHASE5_LOADING.md) Step 2 |
+| `open_files[]` is kernel-global | [**Phase 5**](PHASE5_LOADING.md) Step 2 |
+| Syscalls return `-1`, not `-errno` | [**Phase 5**](PHASE5_LOADING.md) Step 2 |
 
 > [!NOTE]
 > **`tss.rsp0` is set, but not yet to a *safe* value.** Task 0 runs on the stack Limine handed
@@ -670,7 +670,7 @@ panic that appeared to be a hang because `ansifilter` buffered it away.
 
 Everything that used to follow moved out with the phase split: ring 3 and the syscall entry
 path are [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md); the ELF loader and the real syscall
-surface are [`PHASE5_LOADING.md`](../PHASE5_LOADING.md); `fork`/`execve`/`wait4` and the real
+surface are [`PHASE5_LOADING.md`](PHASE5_LOADING.md); `fork`/`execve`/`wait4` and the real
 `switch_to` are Phase 7, which will earn its own document once Steps here have taught what
 `struct task` actually needs to hold.
 
@@ -697,7 +697,7 @@ default. Several of these are the "open decisions" in `SYSCALL_DESIGN.md` §13.
 
 The decisions that moved out with their chapters are recorded where they now apply:
 `syscall`/`sysret` and `swapgs` in [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) Chapter 4; the
-ELF segment copy and user-pointer validation in [`PHASE5_LOADING.md`](../PHASE5_LOADING.md)
+ELF segment copy and user-pointer validation in [`PHASE5_LOADING.md`](PHASE5_LOADING.md)
 Chapter 4.
 
 ---
@@ -721,7 +721,7 @@ Collected because each one has a symptom that points somewhere other than the ca
 
 The traps that only fire once a lower privilege level exists — `sysret`'s GDT constraint,
 `IA32_FMASK`, the fabricated `rflags` — are in [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md)
-Chapter 5. The loader's are in [`PHASE5_LOADING.md`](../PHASE5_LOADING.md) Chapter 5.
+Chapter 5. The loader's are in [`PHASE5_LOADING.md`](PHASE5_LOADING.md) Chapter 5.
 
 ---
 
@@ -762,7 +762,7 @@ New:
 
 The files owned by the phases that split off are listed in their own documents:
 [`PHASE4_PRIVILEGE.md`](PHASE4_PRIVILEGE.md) (user GDT entries, the MSRs, `syscall_entry.S`,
-the dispatch table) and [`PHASE5_LOADING.md`](../PHASE5_LOADING.md) (`elf.c`, the fd table,
+the dispatch table) and [`PHASE5_LOADING.md`](PHASE5_LOADING.md) (`elf.c`, the fd table,
 `errno.h`, `initrd/bin/init.c`).
 
 ## 📝 Docs to keep in step

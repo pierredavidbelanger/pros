@@ -1,4 +1,4 @@
-# Working Document: Phase 5 Step 2 — The Real Syscall Surface [STATUS: NOT STARTED ⬜]
+# Working Document: Phase 5 Step 2 — The Real Syscall Surface [STATUS: COMPLETE ✅]
 
 > [!NOTE]
 > **Phase 5 Step 2**, from [`PHASE5_LOADING.md`](PHASE5_LOADING.md) Chapter 2. Read that chapter
@@ -8,10 +8,87 @@
 > / EL0, and can call `write`, nothing else).
 
 > [!NOTE]
-> Mentor-mode reminder (see the note at the top of [`../README.md`](../README.md)): this is a
+> Mentor-mode reminder (see the note at the top of [`../README.md`](../../README.md)): this is a
 > design reference to code from by hand, not code to paste in. Signatures are given where the
 > shape is settled; several decisions below are genuinely open and want your judgment call before
 > anything is written.
+
+---
+
+## ✅ What actually got built
+
+All six Parts (C0-C5) are done, verified on both architectures. `/bin/init` opens
+`/root/hello.txt`, reads it, writes the real contents to stdout, and calls `exit` — the whole
+stack, ring 3 → syscall → per-process fd → VFS → ramfs and back, with the task staying genuinely
+dead afterward rather than getting resumed. **Phase 5's stated goal is met.**
+
+Several things diverged from the plan above, worth keeping:
+
+- **`open` needed a real split, not just a signature.** AArch64 Linux has no bare `open` syscall
+  at all — only `openat`, added after AArch64 joined the kernel. `sys_openat(dirfd, path, flags,
+  mode)` is the one real implementation; `sys_open(path, flags)` is a thin wrapper calling it with
+  a hardcoded `AT_FDCWD`, rejecting any other `dirfd` with `-ENOSYS` since PrOS has no per-task cwd
+  to resolve one against yet. `unistd.h` deliberately breaks from "always use real Linux numbers"
+  in one place to keep this clean: AArch64 gets a genuine, real `SYS_openat = 56` *and* an invented,
+  PrOS-only `SYS_open = 511` (chosen clear of the real, densely-packed AArch64 syscall range) so
+  `init.c`'s 2-argument `open()` wrapper stays identical in shape on both architectures instead of
+  being forced into `openat`'s 4-argument form on AArch64 alone.
+- **`copy_from_user`/`copy_to_user` route through a bounded kernel-side chunk buffer
+  (`COPY_BUFFER_SIZE` 512 bytes), not a `kmalloc(count)` sized to the whole request** — avoiding an
+  unbounded kernel allocation driven directly by a user-supplied length. `sys_read`/`sys_write`
+  loop over it, and a real design question came out of that loop: what happens when a later chunk
+  fails after earlier chunks already succeeded? Resolved the same way for both directions — partial
+  progress is preserved and returned; the error only propagates directly when nothing has
+  succeeded yet (`total_count == 0`).
+- **A second bug in `sched_on_trap_exit()`, found only by tracing the full switch path.**
+  `sched_pick_next()` correctly skips `TASK_DEAD` tasks, and `sched_exit_current()` correctly sets
+  `need_resched` alongside the state change — but the pre-existing switch-out line,
+  `current->state = TASK_READY`, predates `TASK_DEAD` and ran unconditionally, silently
+  resurrecting a just-exited task back to `READY` the moment the scheduler switched away from it.
+  It would then get rescheduled and resume mid-syscall as if `exit()` had simply returned — the
+  exact "dead task resumed" trap Chapter 4 warned about, just arriving through a different line
+  than expected. Fixed with `if (current->state != TASK_DEAD) current->state = TASK_READY;`.
+- **A shared `user/include/syscall.h` header**, not originally scoped here, added once a second
+  reason to duplicate syscall wrappers per program arrived. Every `static inline` wrapper
+  (`sys_read`/`sys_write`/`sys_open`/`sys_openat`/`sys_close`/`sys_getpid`/`sys_exit`) lives there
+  once, `#ifdef __x86_64__`/`#else` *inside* each function body rather than duplicating the whole
+  signature per architecture. `user/Makefile` grew a plain `-Iinclude`. Still zero `#include`s of
+  `kernel/include/` — the ABI numbers are still hand-copied on purpose, just de-duplicated across
+  `user/`'s own programs instead of duplicated across them.
+
+**One real bug, the standout one of this Step — x86_64 only, found by reading the fault, not
+guessing:** `init` calling `exit()` faulted the instant the scheduler switched away to `BOOT`,
+with `RIP == RCX == CR2` and an error code decoding to *present, user-mode, instruction-fetch* —
+the CPU, still in ring 3, tried to execute a real kernel address. Cause: `syscall_entry.S`'s
+return path always executed `sysretq`, which is a fast, return-*to-userspace*-only instruction —
+it unconditionally drops to `CPL 3` no matter what `RCX` holds, with zero validation. Every syscall
+before `exit` only ever resumed *the same task, back into its own userspace* (`write`/`read`/
+`open`/`close`/`getpid` never force `need_resched` themselves — only the timer tick does, and
+timer-triggered switches always went through `isr.S`'s `iretq`, which is a genuinely general
+return that reads the target `cs` off the stack and stays in ring 0 or drops to ring 3
+accordingly). `exit` is the first syscall that forces an *immediate*, syscall-triggered switch —
+and the only other task around to switch to is `BOOT`, a kernel thread that should resume in ring
+0. `RCX` held `BOOT`'s own valid, saved `rip` — `sysretq` just wasn't the right instruction to
+resume it with. AArch64 never hit this: ARM64 has one unified `eret` that always reads the target
+privilege level out of `SPSR_EL1`, no fast-path/general-path split at the ISA level the way x86_64
+splits `sysretq` from `iretq`. Fixed by dropping `sysretq` entirely in favor of `iretq` — reading
+`cs`/`rflags`/`rsp`/`ss` straight off the stack instead of manually loading `rcx`/`r11` — with the
+`swapgs` before it made conditional on the target `cs` actually being the user selector, since a
+kernel thread needs to keep running with the kernel's `GS` base active. Real Linux does the same
+kind of fast-path/slow-path split in `entry_64.S`; the reason PrOS needs it in a place Linux never
+would is a deliberate simplification worth keeping, not a mistake — every task here, kernel thread
+or user process, gets resumed through the *same* trap-frame-return code path, where Linux keeps a
+separate `switch_to()` for kernel threads that never touches `sysret`/`iret` at all.
+
+Also worth remembering: **`core/test/test_vfs.c`'s self-test buffers broke the moment
+`copy_to_user`/`copy_from_user` started actually validating.** They were kernel stack arrays —
+legitimate kernel addresses, correctly rejected by the new bounds check, since the syscalls can no
+longer tell "trusted kernel test code" from "hostile ring-3 process" apart. Fixed by demand-mapping
+one real page below `VMM_ADDR_SPLIT` (`vmm_map_page(vmm_kernel_context, ...)`, same pattern
+`test_vmm.c` already used) and threading that pointer through every sub-test instead of a local
+array — which also surfaced a `sizeof(buf)` footgun (a pointer parameter's `sizeof` is `8`, not the
+array size it used to be) and a string-literal-as-syscall-buffer bug (`.rodata` is a kernel address
+too), both silent-wrong-behavior bugs rather than compile errors.
 
 ---
 
@@ -182,7 +259,7 @@ runs off the end the way Phase 4's blob and Step 1's `init` both still do.
 
 ---
 
-## 🧩 C0 — `errno.h` and the `-errno` conversion
+## 🧩 C0 — `errno.h` and the `-errno` conversion ✅ DONE (2026-08-17)
 
 `kernel/include/errno.h`, the values this step's own syscalls can actually produce (Linux's real
 numbers, per `SYSCALL_DESIGN.md` §4):
@@ -210,7 +287,7 @@ testability `PHASE5_LOADING.md`'s Verification chapter calls out for this whole 
 
 ---
 
-## 🧩 C1 — Per-task file descriptors
+## 🧩 C1 — Per-task file descriptors ✅ DONE (2026-08-17)
 
 - `task->fds` gains the array (decision 1's shape), still sized `MAX_OPEN_FILES` — worth
   reconsidering whether 256 *per task* is still the right number now that it's not global.
@@ -225,7 +302,7 @@ scheduling needed) and confirm the fds don't collide, and closing one doesn't af
 
 ---
 
-## 🧩 C2 — `copy_from_user` / `copy_to_user`
+## 🧩 C2 — `copy_from_user` / `copy_to_user` ✅ DONE (2026-08-17)
 
 ```c
 // include/mm/uaccess.h
@@ -246,7 +323,7 @@ arithmetic on addresses, no paging or mapping involved, so no boot required.
 
 ---
 
-## 🧩 C3 — `open`/`read`/`close`/`getpid` reachable from ring 3
+## 🧩 C3 — `open`/`read`/`close`/`getpid` reachable from ring 3 ✅ DONE (2026-08-17)
 
 - `unistd.h` grows `SYS_open`/`SYS_read`/`SYS_close`/`SYS_getpid` per architecture — Linux's real
   numbers, same source-of-truth discipline `SYSCALL_DESIGN.md` §2 already states
@@ -265,7 +342,7 @@ the right values to ring 0 and back," per `PHASE5_LOADING.md`'s Verification cha
 
 ---
 
-## 🧩 C4 — `sys_exit`, `TASK_DEAD`, and `sched_exit_current()`
+## 🧩 C4 — `sys_exit`, `TASK_DEAD`, and `sched_exit_current()` ✅ DONE (2026-08-17)
 
 Per decision 4: `TASK_DEAD` added to `task.h`, `sched_pick_next()` skips it, and `sys_exit()`
 calls `sched_exit_current()` rather than touching `current->state` directly — the whole point is
@@ -279,7 +356,7 @@ calls. Then, at boot: `init` calls `exit` instead of spinning forever, and the m
 
 ---
 
-## 🧩 C5 — Wire it: `init` opens, reads, writes, exits
+## 🧩 C5 — Wire it: `init` opens, reads, writes, exits ✅ DONE (2026-08-17)
 
 ```c
 // user/src/init/init.c — the actual acceptance test
@@ -311,13 +388,16 @@ the end the way Step 1 deliberately left it.
 
 ## 🕳️ Traps worth knowing about in advance
 
-- **A dead task resumed anyway.** The subtle half of decision 4: `sched_on_trap_exit()` only acts
-  on `need_resched`, which only the timer sets today. `sys_exit()` marking state without also
-  forcing a switch means the exited task's own code keeps running until the next tick — silent,
-  and looks like `exit` "worked" right up until something actually depends on the task being gone.
-- **fd `0`/`1`/`2` colliding with the console shim.** Skipping decision 2 entirely means the first
-  real `sys_open()` call hands back fd `0`, and something that assumes `0` means stdin — a test,
-  or Phase 6's shell — gets silently handed a real file instead.
+- **A dead task resumed anyway.** ✅ Hit for real, twice, via two different mechanisms — see
+  "What actually got built" above. The predicted half (`need_resched` never getting set) was
+  avoided by `sched_exit_current()` setting it atomically with the state change. The
+  *unpredicted* half — `sched_on_trap_exit()`'s pre-existing unconditional
+  `current->state = TASK_READY` silently un-killing the task on the very next switch-out — wasn't
+  in this doc at all, and needed the resurrection to actually happen at boot to be found.
+  x86_64 additionally resurrected a dead task's *execution*, not just its state, via the
+  `sysretq`/`iretq` bug — same trap category, a third mechanism, arrived at independently.
+- **fd `0`/`1`/`2` colliding with the console shim.** ✅ Avoided — decision 2(a) shipped as
+  planned, `allocate_fd()` scans from index `3`, the console shim never sees a real fd collision.
 - **A half-converted `-errno` space** (Chapter 5's warning, restated because C0 is exactly where
   it would happen): callers checking `< 0` and callers checking `== -1` disagreeing about what
   `-1` even means, mid-conversion.
@@ -335,23 +415,27 @@ the end the way Step 1 deliberately left it.
 
 New:
 
-- ⬜ `kernel/include/errno.h`
-- ⬜ `kernel/include/mm/uaccess.h`, `kernel/src/mm/uaccess.c` — `copy_from_user`/`copy_to_user`
+- ✅ `kernel/include/errno.h`
+- ✅ `kernel/include/mm/uaccess.h`, `kernel/src/mm/uaccess.c` — `copy_from_user`/`copy_to_user`
+- ✅ `user/include/syscall.h` — not originally scoped, see "What actually got built" above
 
 Existing, to be modified:
 
-- ⬜ `kernel/src/fs/vfs/file.c` + `kernel/include/fs/vfs/file.h` — `-errno` throughout, fd table
+- ✅ `kernel/src/fs/vfs/file.c` + `kernel/include/fs/vfs/file.h` — `-errno` throughout, fd table
   moves off the global `open_files[]` and onto `struct task`
-- ⬜ `kernel/src/proc/task.c` + `kernel/include/proc/task.h` — per-task `fds[]`, `TASK_DEAD`
-- ⬜ `kernel/src/proc/sched.c` + `kernel/include/proc/sched.h` — `sched_pick_next()` skips dead
-  tasks, new `sched_exit_current()`
-- ⬜ `kernel/src/syscall/syscall.c` + `kernel/include/core/syscalls.h` — `sys_exit`, `sys_getpid`,
-  `syscall_table` entries for `open`/`read`/`close`/`exit`/`getpid`, `copy_from_user` applied to
-  `write`'s `buf` too (both the VFS path and the console shim)
-- ⬜ `kernel/include/asm/unistd.h` — `SYS_open`/`SYS_read`/`SYS_close`/`SYS_exit`/`SYS_getpid` per
-  architecture
-- ⬜ `user/src/init/init.c` — matching syscall wrappers, and the real open/read/write/close/exit
-  body (C5)
+- ✅ `kernel/src/proc/task.c` + `kernel/include/proc/task.h` — per-task `fds[]`, `TASK_DEAD`
+- ✅ `kernel/src/proc/sched.c` + `kernel/include/proc/sched.h` — `sched_pick_next()` skips dead
+  tasks, new `sched_exit_current()`, the `TASK_READY` resurrection fix
+- ✅ `kernel/src/syscall/syscall.c` + `kernel/include/core/syscalls.h` — `sys_exit`, `sys_getpid`,
+  `syscall_table` entries for `read`/`write`/`open`/`openat`/`close`/`getpid`/`exit`
+- ✅ `kernel/include/asm/unistd.h` — `SYS_read`/`SYS_write`/`SYS_open`/`SYS_openat`/`SYS_close`/
+  `SYS_getpid`/`SYS_exit` per architecture, including the AArch64 `SYS_open` invention
+- ✅ `kernel/src/arch/x86_64/syscall_entry.S` — not originally scoped; `sysretq` → `iretq` +
+  conditional `swapgs`, see "One real bug" above
+- ✅ `kernel/src/core/test/test_vfs.c` — not originally scoped as a *rework*; buffers moved off
+  the kernel stack onto a real mapped page once `copy_to_user`/`copy_from_user` started validating
+- ✅ `user/src/init/init.c` — the real open/read/write/close/exit body (C5), now just
+  `#include "syscall.h"` plus program logic
 
 ---
 
@@ -360,7 +444,13 @@ Existing, to be modified:
 - **C0** is a pure function of inputs → error codes, testable without booting.
 - **C1**'s fd allocation/exhaustion and **C2**'s bounds check (including the wraparound case) are
   likewise pure-data testable, independent of scheduling or paging.
-- **C4**'s dead-task-skipped invariant is testable with fabricated tasks, no ELF or boot involved.
+- **C4**'s dead-task-skipped invariant was verifiable with fabricated tasks and no boot, as
+  planned — in practice it ended up verified at boot instead, which is exactly what surfaced the
+  `TASK_READY` resurrection bug ("What actually got built" above). A fabricated-task unit test
+  would have covered `sched_pick_next()` correctly but never exercised
+  `sched_on_trap_exit()`'s switch-out path, so it wouldn't have caught this one anyway — worth
+  remembering as a real example of "pure function of state" testing missing a bug that only
+  exists in the transition between states.
 - **C3 and C5** are only observable by booting, same as Step 1's C2/C4 — the loader and syscall
   path actually producing a process that opens a real file and prints its real contents. Expected
   output is in C5 above.
