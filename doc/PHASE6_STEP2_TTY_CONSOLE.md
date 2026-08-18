@@ -40,7 +40,7 @@ difference into one shared byte queue, so nothing here needs an A/B split.
 Confirmed by reading the tree, not assumed:
 
 - `console_putc()` (`kernel/src/core/console.c:19-26`) fans out unconditionally to
-  `earlycon_putc()` and `fb_terminal_print_char()` — no fd awareness, no buffering, works exactly
+  `serial_putc()` and `fb_terminal_print_char()` — no fd awareness, no buffering, works exactly
   as well for this Step's echo needs as it always has.
 - The shim being retired, exactly as it stands (`kernel/src/syscall/syscall.c:8-16`): fd `1`/`2`
   special-cased straight to `console_putc()`, bypassing `copy_from_user` entirely, with a comment

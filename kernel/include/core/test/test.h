@@ -13,5 +13,6 @@ void test_vmm(void);
 void test_vfs(void);
 void test_kstack(void);
 void test_task(void);
+void test_ring_buffer(void);
 
 #endif //PROS_TEST_H

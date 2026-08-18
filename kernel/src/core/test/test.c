@@ -14,4 +14,5 @@ void test_all(void) {
     test_vfs();
     test_kstack();
     test_task();
+    test_ring_buffer();
 }

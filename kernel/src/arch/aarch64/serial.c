@@ -1,4 +1,4 @@
-#include "core/earlycon.h"
+#include "core/serial.h"
 
 #include "core/boot.h"
 
@@ -9,7 +9,7 @@
 // Static L2 page table for early MMIO mapping (2MB granule, aligned to 4096 bytes)
 static uint64_t early_l2_table[512] __attribute__((aligned(4096)));
 
-void earlycon_init(void) {
+void serial_init(void) {
     // Map 2MB block at 0x08000000 (containing PL011 UART at 0x09000000) into HHDM
     if (hhdm_request.response != NULL && executable_address_request.response != NULL) {
         uint64_t ttbr1;
@@ -40,11 +40,16 @@ void earlycon_init(void) {
     }
 }
 
-void earlycon_putc(char c) {
+void serial_putc(char c) {
     uintptr_t base = PL011_UART_BASE_PHYS;
     if (hhdm_request.response != NULL) {
         base += hhdm_request.response->offset;
     }
     volatile uint32_t *uart_dr = (volatile uint32_t *)base;
     *uart_dr = (uint32_t)(unsigned char)c;
+}
+
+char serial_getc(void) {
+    // TODO actually read a chor from uart_dr or whatever, need to research that
+    return 0;
 }

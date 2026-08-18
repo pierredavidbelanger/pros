@@ -11,7 +11,7 @@ I really need to fix that stuff
 `GIC_CPU_PHYS_BASE 0x08010000`, taken from QEMU's `hw/arm/virt.c`. Everything *else* in that
 header (the register offsets, PPI 27) is architectural GICv2 and portable — only the two base
 addresses are a board decision. Same class of assumption already exists in
-`arch/aarch64/earlycon.c:7` (PL011 at `0x09000000`) and in `arch_shutdown()`, which hardcodes
+`arch/aarch64/serial.c:7` (PL011 at `0x09000000`) and in `arch_shutdown()`, which hardcodes
 `hvc` as the PSCI conduit when `hvc` vs `smc` is a firmware-described property.
 
 Unlike x86 — where `0x20`/`0x40`/`0x43` are a 1981 IBM PC contract every vendor still honours —

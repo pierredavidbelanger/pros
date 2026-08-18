@@ -7,6 +7,8 @@
 #include "mm/vmm.h"
 #include "core/memory.h"
 #include "core/timer.h"
+#include "core/console_input.h"
+#include "core/serial.h"
 #include "proc/sched.h"
 #include "proc/task.h"
 #include "syscall/syscall.h"
@@ -166,6 +168,8 @@ static void x86_64_dispatch(struct trap_frame *frame) {
         uint64_t irq_no = IDT_INT_TO_IRQ(frame->int_no);
         if (irq_no == 0) {
             timer_tick();
+        } else if (irq_no == 4) {
+            console_input_push(serial_getc());
         } else {
             kprintf("X8664", "HANDLED %zu: nothing\n", frame->int_no);
         }

@@ -58,9 +58,9 @@ Two problems that don't exist yet:
 ### Where this actually stands
 
 Confirmed by reading the tree, not assumed: **there is no RX code at all, on either
-architecture.** `kernel/src/arch/x86_64/earlycon.c` only ever polls the line-status register and
-transmits (`earlycon_putc`) — `earlycon_init()` explicitly writes `IER = 0x00`, disabling every
-UART interrupt including receive. `kernel/src/arch/aarch64/earlycon.c` only does a single raw MMIO
+architecture.** `kernel/src/arch/x86_64/serial.c` only ever polls the line-status register and
+transmits (`serial_putc`) — `serial_init()` explicitly writes `IER = 0x00`, disabling every
+UART interrupt including receive. `kernel/src/arch/aarch64/serial.c` only does a single raw MMIO
 write to the PL011 data register — no other register (flag, interrupt-mask, interrupt-clear) is
 even defined yet.
 
@@ -93,7 +93,7 @@ FIFO already does before software ever sees a byte.
 | Decision | Options | Leaning |
 |---|---|---|
 | Queue full policy | drop newest vs drop oldest vs block the ISR | Drop newest — an ISR must never block, and typed input losing its most recent keystroke on a already-overflowing queue is the least surprising failure |
-| TX interrupt-driven too? | yes vs stay polling | Stay polling — output already works via `earlycon_putc`, nothing in this Step needs it to change, and it's real scope this Step doesn't require |
+| TX interrupt-driven too? | yes vs stay polling | Stay polling — output already works via `serial_putc`, nothing in this Step needs it to change, and it's real scope this Step doesn't require |
 | Queue size | small vs generous | A human types far slower than a byte queue drains between timer ticks; a few dozen bytes is almost certainly enough, and oversizing it just hides a real overflow policy bug instead of exercising it |
 
 ---
@@ -103,7 +103,7 @@ FIFO already does before software ever sees a byte.
 ### Where this actually stands
 
 `console_putc()` (`kernel/src/core/console.c:19-26`) fans out unconditionally to
-`earlycon_putc()` then `fb_terminal_print_char()` — no buffering, no fd awareness, no notion of
+`serial_putc()` then `fb_terminal_print_char()` — no buffering, no fd awareness, no notion of
 "this byte belongs to task X's stdout." That's the *output* side, already working; this Step is
 mostly about input, plus giving both directions a real file behind them instead of a syscall-level
 special case.
@@ -185,7 +185,7 @@ the character visually disappears, Enter (`\r` or `\n`) delivers the completed l
   `gic_write(GICD_ISENABLER0, ...)` call verbatim with a different `intid` silently enables the
   wrong bit in the wrong register, or (if the offset math is missed entirely) the timer's own
   register, not a crash, just an interrupt that never fires and looks like dead hardware.
-- **`earlycon_init()` deliberately disables every UART interrupt today (`IER = 0x00`).** Step 1
+- **`serial_init()` deliberately disables every UART interrupt today (`IER = 0x00`).** Step 1
   needs to flip exactly the receive-data-available bit, not clear the whole register — writing a
   fresh `IER` value that only sets that one bit, rather than OR-ing it into whatever's already
   there, is the difference between "RX works" and "RX works but silently re-disables something
@@ -206,11 +206,11 @@ the character visually disappears, Enter (`\r` or `\n`) delivers the completed l
 Existing, to be modified:
 
 - ⬜ `kernel/src/arch/x86_64/idt.c` — new `irq_no == 4` branch in `x86_64_dispatch()`
-- ⬜ `kernel/src/arch/x86_64/earlycon.c` + `kernel/include/core/earlycon.h` — enable the UART RX
+- ⬜ `kernel/src/arch/x86_64/serial.c` + `kernel/include/core/serial.h` — enable the UART RX
   interrupt, read the received byte off the data register
 - ⬜ `kernel/src/arch/aarch64/gic.c` + `kernel/include/arch/aarch64/gic.h` — `GICD_ISENABLERn`
   for `n > 0`, a new `intid` branch in `aarch64_dispatch()`
-- ⬜ `kernel/src/arch/aarch64/earlycon.c` + `kernel/include/core/earlycon.h` — real PL011 register
+- ⬜ `kernel/src/arch/aarch64/serial.c` + `kernel/include/core/serial.h` — real PL011 register
   offsets (flag, interrupt-mask-set/clear, interrupt-clear), not just the raw data register
 - ⬜ `kernel/src/syscall/syscall.c` — `sys_write_console_or_vfs()` retired once `/dev/console` is
   real

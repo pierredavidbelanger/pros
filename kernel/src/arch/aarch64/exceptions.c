@@ -2,7 +2,7 @@
 
 #include "gic.h"
 #include "timer.h"
-#include "core/earlycon.h"
+#include "core/serial.h"
 #include "core/kprintf.h"
 #include "core/timer.h"
 #include "arch/arch.h"

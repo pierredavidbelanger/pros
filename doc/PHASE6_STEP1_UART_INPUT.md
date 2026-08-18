@@ -74,9 +74,16 @@ hardcode `33` on faith.
 ### 3. Where the byte queue itself lives
 
 Architecture-neutral code, `C` track — both `x86_64_dispatch()` and `aarch64_dispatch()` push
-into the *same* queue implementation, the same way both architectures already feed the same
-`timer_tick()`. One queue, not two, is the point: Step 2's consumer shouldn't need to know which
-architecture is running underneath it.
+into the *same instance* of the ring buffer, the same way both architectures already feed the
+same `timer_tick()`. One instance, not two, is the point: Step 2's consumer shouldn't need to
+know which architecture is running underneath it. `C0` is now a reusable *type*, so this instance
+needs a home too.
+
+**Resolved:** `kernel/src/core/console_input.c` + `console_input.h`, same shape as `core/timer.c`
+— the `static struct ring_buffer` and its backing array stay private to the file, never `extern`;
+`console_input_init/push/pop()` are the only door in, mirroring `timer_tick()`/`timer_get_ticks()`.
+`serial` produces bytes (raw chip access), `console_input` holds them, `console` will eventually
+fan them out for real (Step 2) — three layers, one job each.
 
 ---
 
@@ -96,17 +103,37 @@ first moment either architecture's real hardware exercises `C0` for real.
 
 ---
 
-## 🧩 C0 — The ring buffer
+## 🧩 C0 — The ring buffer ✅ DONE (2026-08-17)
 
-**Goal:** a fixed-size, architecture-neutral byte queue — `push(byte)` called from interrupt
-context, `pop() -> optional byte` called from wherever Step 2 eventually drains it.
+**Goal:** an instantiable, architecture-neutral byte queue type — `push(byte)` called from
+interrupt context, `pop() -> optional byte` called from wherever Step 2 eventually drains it. Not
+a singleton: a `struct` the caller owns, so the UART path isn't the only thing that ever gets to
+have a ring buffer.
 
 ```c
-// include/core/input_queue.h
-// single-producer (either arch's ISR), single-consumer, drop-newest on overflow
-void input_queue_push(uint8_t byte);
-bool input_queue_pop(uint8_t *out);
+// include/core/ring_buffer.h
+// single-producer, single-consumer, drop-newest on overflow (decision 1)
+struct ring_buffer {
+    uint8_t *buf;    // caller-owned storage, we never alloc or free it
+    size_t capacity; // size of buf, fixed for the instance's life
+    size_t head;     // next slot to pop
+    size_t tail;     // next slot to push
+    size_t count;    // sidesteps the head==tail empty/full ambiguity
+};
+
+// zeroes head/tail/count, doesn't touch buf's contents
+void ring_buffer_init(struct ring_buffer *rb, uint8_t *buf, size_t capacity);
+
+// false and byte dropped if full
+bool ring_buffer_push(struct ring_buffer *rb, uint8_t byte);
+
+// false if empty, *out left untouched
+bool ring_buffer_pop(struct ring_buffer *rb, uint8_t *out);
 ```
+
+Storage is caller-owned on purpose — no heap involved, so a `static uint8_t` array plus a
+`static struct ring_buffer` next to it is enough for the UART instance, and the ISR's `push` call
+costs nothing extra over the old global version, just one more argument.
 
 No locking needed as long as pushes only ever happen from interrupt context on one core — IRQs
 don't preempt each other the way tasks do, so there's no concurrent-push case to guard against
@@ -114,19 +141,23 @@ yet. Worth a comment saying so explicitly, since it's an invariant a future SMP 
 silently rather than loudly.
 
 **Verify:** pure-data — push more bytes than the buffer holds, confirm the oldest surviving byte
-and the drop count behave per decision 1; pop from empty returns nothing rather than garbage.
+behaves per decision 1; pop from empty returns `false` rather than garbage; two independently
+`init`'d instances don't share state. Landed as `kernel/src/core/test/test_ring_buffer.c`,
+registered in `test.h`/`test.c` alongside `test_pmm`/`test_kstack`/etc — 11 assertions, including
+10 rounds of push-3/pop-3 to cycle `head`/`tail` past the array boundary repeatedly, not just fill
+it once. Passes on both architectures without booting into hardware.
 
 ---
 
 # 🅰️ Track A — x86_64: COM1 receive interrupt
 
-## A1 — Enable the interrupt, read the byte, feed the queue
+## A1 — Enable the interrupt, read the byte, feed the queue ✅ DONE (2026-08-17)
 
 **Goal:** a real keystroke over `-serial stdio` produces a byte in `C0`'s queue.
 
-Three pieces, all in `kernel/src/arch/x86_64/earlycon.c` / `idt.c`:
+Three pieces, all in `kernel/src/arch/x86_64/serial.c` / `idt.c`:
 
-- **`earlycon_init()`'s `IER` write changes.** Today: `outb(COM1 + 1, 0x00)` — every UART
+- **`serial_init()`'s `IER` write changes.** Today: `outb(COM1 + 1, 0x00)` — every UART
   interrupt disabled. Needs exactly the receive-data-available bit set (bit 0 of `IER`), and
   nothing else — write a fresh value with only that bit, don't accidentally leave a future second
   bit cleared by OR-ing carelessly.
@@ -134,13 +165,26 @@ Three pieces, all in `kernel/src/arch/x86_64/earlycon.c` / `idt.c`:
   already handles the cascade-line auto-unmask correctly.
 - **`x86_64_dispatch()`'s branch** (`idt.c:154-176`) — a new `else if (irq_no == 4)` next to the
   existing `irq_no == 0` timer check. Read the received byte off the data register (`inb(COM1)`
-  — same offset `earlycon_putc` transmits through, disambiguated by the UART's internal DLAB
+  — same offset `serial_putc` transmits through, disambiguated by the UART's internal DLAB
   state, not by address), push it into `C0`'s queue, then the existing EOI logic at the bottom of
   `x86_64_dispatch()` already handles both PIC chips correctly regardless of which `irq_no`
   triggered it.
 
+Landed slightly differently than sketched: `serial_init()` writes `IER` via read-modify-write
+(`inb(COM1 + 1) | 0x01`) from the start rather than the plain literal write, skipping straight to
+the "more honest pattern" the traps section below flags as only mattering later. `serial.h` also
+gained `serial_getc(void)` (reads `inb(COM1)`) as its own named function rather than an inline
+`inb(COM1)` call at the dispatch site — not originally scoped as a separate function, but keeps
+`x86_64_dispatch()`'s new branch a one-liner: `console_input_push(serial_getc())`.
+
 **Verify:** boot, type a character, confirm (via a temporary debug print inside the new branch,
-removed once C1 lands) that the byte value matches what was typed.
+removed once C1 lands) that the byte value matches what was typed. Confirmed via QEMU with
+`-serial stdio` — typed characters echo on both the serial console and the framebuffer terminal.
+The debug print actually landed one level deeper than sketched, inside `console_input_push()`
+itself rather than at the `idt.c` call site — proves A1 (push happens, value is right) but means
+it isn't the throwaway scaffolding C1 describes below; `console_input_pop()` still has zero
+callers anywhere, so the read side stays unexercised outside of `C0`'s own test until C1's real
+drain loop gets built.
 
 ---
 
@@ -150,7 +194,7 @@ removed once C1 lands) that the byte value matches what was typed.
 
 **Goal:** the same outcome as A1, on AArch64.
 
-`kernel/src/arch/aarch64/earlycon.c` today only defines the data register offset — everything
+`kernel/src/arch/aarch64/serial.c` today only defines the data register offset — everything
 else needed here is genuinely new:
 
 - **PL011 register offsets** (standard ARM PrimeCell layout, from `PL011_UART_BASE_PHYS`):
@@ -207,14 +251,19 @@ no dropped bytes under normal (human-speed) typing.
 
 New:
 
-- ⬜ `kernel/include/core/input_queue.h`, `kernel/src/core/input_queue.c` — the ring buffer (C0)
+- ✅ `kernel/include/core/ring_buffer.h`, `kernel/src/core/ring_buffer.c` — the ring buffer type (C0)
+- ✅ `kernel/src/core/console_input.c` + `kernel/include/core/console_input.h` — the concrete
+  instance (decision 3), private `static struct ring_buffer`, `timer.c`-style wrapper functions
+- ✅ `kernel/src/core/test/test_ring_buffer.c`, plus `test.h`/`test.c` registration — not
+  originally scoped as its own file; `C0`'s "pure-data self-test" verify bullet, made concrete
 
 Existing, to be modified:
 
-- ⬜ `kernel/src/arch/x86_64/earlycon.c` + `kernel/include/core/earlycon.h` — enable RX interrupt
-- ⬜ `kernel/src/arch/x86_64/idt.c` — new IRQ 4 branch in `x86_64_dispatch()`
-- ⬜ `kernel/src/arch/aarch64/earlycon.c` + `kernel/include/core/earlycon.h` — real PL011 register
-  offsets beyond the data register
+- ✅ `kernel/src/arch/x86_64/serial.c` + `kernel/include/core/serial.h` — RX interrupt enabled,
+  `serial_getc()` added (renamed from `earlycon` mid-Step, see decision 3 above)
+- ✅ `kernel/src/arch/x86_64/idt.c` — new IRQ 4 branch in `x86_64_dispatch()`
+- ⬜ `kernel/src/arch/aarch64/serial.c` + `kernel/include/core/serial.h` — real PL011 register
+  offsets beyond the data register; `serial_getc()` exists as a stub (`return 0`), not yet real
 - ⬜ `kernel/src/arch/aarch64/gic.h` + `gic.c` — `GICD_ISENABLERn` for `n > 0`
 - ⬜ `kernel/src/arch/aarch64/exceptions.c` — new `intid` branch in `aarch64_dispatch()`
 
