@@ -15,18 +15,18 @@ syscall_entry:
     movq %rsp, %gs:8            /* x86_64_percpu0.user_rsp - stash the user stack */
     movq %gs:0, %rsp            /* x86_64_percpu0.kernel_rsp - switch to this task's kernel stack */
 
-    pushq $0x33                        /* ss = X86_64_SELECTOR_USER_DATA */
-    pushq %gs:8                        /* rsp (the stashed user rsp) */
-    pushq %r11                         /* rflags, saved here by `syscall` itself */
-    pushq $0x3b                        /* cs = X86_64_SELECTOR_USER_CODE */
-    pushq %rcx                         /* rip, saved here by `syscall` itself */
-    pushq $0                           /* error_code slot, unused for a syscall */
-    pushq $0x80                        /* int_no slot: X86_64_SYSCALL_INT_NO_SENTINEL */
+    pushq $0x33                 /* ss = X86_64_SELECTOR_USER_DATA */
+    pushq %gs:8                 /* rsp (the stashed user rsp) */
+    pushq %r11                  /* rflags, saved here by `syscall` itself */
+    pushq $0x3b                 /* cs = X86_64_SELECTOR_USER_CODE */
+    pushq %rcx                  /* rip, saved here by `syscall` itself */
+    pushq $0                    /* error_code slot, unused for a syscall */
+    pushq $0x80                 /* int_no slot: X86_64_SYSCALL_INT_NO_SENTINEL */
 
     /* GPRs, same order/slots as isr_common_stub */
-    pushq %rax   /* still holds the syscall number here */
+    pushq %rax                  /* still holds the syscall number here */
     pushq %rbx
-    pushq %rcx   /* syscall already clobbered this with rip; same ABI cost as Linux's own r10 swap */
+    pushq %rcx                  /* syscall already clobbered this with rip; same ABI cost as Linux's own r10 swap */
     pushq %rdx
     pushq %rsi
     pushq %rdi
@@ -34,7 +34,7 @@ syscall_entry:
     pushq %r8
     pushq %r9
     pushq %r10
-    pushq %r11   /* syscall already clobbered this with rflags */
+    pushq %r11                  /* syscall already clobbered this with rflags */
     pushq %r12
     pushq %r13
     pushq %r14
@@ -60,11 +60,12 @@ syscall_entry:
     popq %rbx
     popq %rax                   /* return value, per the syscall ABI's use of rax */
 
-    addq $16, %rsp               /* drop int_no/error_code */
-    popq %rcx                    /* rip, back into rcx for sysretq */
-    addq $8, %rsp                /* drop cs, sysretq computes it */
-    popq %r11                    /* rflags, back into r11 for sysretq */
-    popq %rsp                    /* the (possibly new, if switched) task's user rsp - must be last */
+    addq $16, %rsp              /* drop int_no/error_code */
 
-    swapgs
-    sysretq
+    /* peek at cs without popping it, iretq needs it still on the stack.
+       might be resuming a kernel thread (BOOT) instead of this task own userspace */
+    cmpq $0x3b, 8(%rsp)
+    jne 1f
+    swapgs                      /* only swap back to user gs if we're actually headed to ring 3 */
+1:
+    iretq                       /* instead of sysretq, we may not return to ring 3 (like in sys_exit) */
