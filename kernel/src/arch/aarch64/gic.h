@@ -42,7 +42,11 @@
 #define GIC_INTID_VIRT_TIMER 27   // EL1 virtual timer PPI, the EL1 physical timer is 30
 #define GIC_INTID_SPURIOUS   1023 // GICC_IAR returns this when there was nothing to take, it must never be EOI'd
 
+#define GIC_INTID_PL011 33 // SPI 1 (32 + 1)
+
 void gic_init(void);
+
+void gic_enable_irq(uint32_t intid);
 
 // Acknowledge the pending interrupt and return its ID, which may be GIC_INTID_SPURIOUS.
 uint32_t gic_acknowledge(void);

@@ -1,22 +1,23 @@
-#include "core/boot.h"
-
 #include "arch/arch.h"
-#include "core/fb.h"
+#include "asm/unistd.h"
+#include "core/boot.h"
 #include "core/console.h"
+#include "core/fb.h"
+#include "core/hhdm.h"
 #include "core/kprintf.h"
 #include "core/memory.h"
+#include "core/serial.h"
 #include "core/timer.h"
 #include "core/test/test.h"
-#include "mm/pmm.h"
-#include "mm/heap.h"
-#include "mm/vmm.h"
-#include "fs/vfs/vfs.h"
 #include "fs/ramfs/ramfs.h"
 #include "fs/tar/tar.h"
+#include "fs/vfs/vfs.h"
+#include "mm/heap.h"
+#include "mm/pmm.h"
+#include "mm/vmm.h"
+#include "proc/elf.h"
 #include "proc/sched.h"
 #include "proc/task.h"
-#include "proc/elf.h"
-#include "asm/unistd.h"
 #include "syscall/syscall.h"
 
 // Tick frequency.
@@ -51,8 +52,14 @@ void _start(void) {
         arch_halt();
     }
 
+    hhdm_init();
+
     arch_init();
 
+    // enable sending output to serial
+    serial_init_put();
+    // enable the fanout console
+    // (will effectively fan out to the FB when its up later)
     console_init();
     kprintf("CON", "Initialized console, ready to kprintf on the serial console\n");
 
@@ -65,9 +72,10 @@ void _start(void) {
     bool tests_enabled = cmdline && strstr(cmdline, "pros.tests") != NULL;
     kprintf("K", "Self-tests %s (cmdline: \"%s\")\n", tests_enabled ? "enabled" : "disabled", cmdline ? cmdline : "");
 
-    size_t pages = pmm_init(hhdm_request.response, memmap_request.response);
+    pmm_init();
+    uint64_t pages = pmm_claim(LIMINE_MEMMAP_USABLE);
     kprintf("PMM", "Initialized PMM, ready to alloc/free physical pages\n");
-    kprintf("PMM", "PMM manage %zu pages of %zu B for a total of %zu MB kernel heap available\n", pages, PAGE_SIZE, pages * PAGE_SIZE / 1024 / 1024);
+    kprintf("PMM", "Claimed %zu pages of %zu B for a total of %zu MB kernel heap available\n", pages, PAGE_SIZE, pages * PAGE_SIZE / 1024 / 1024);
 
     heap_init();
     kprintf("HEAP", "Initialized Heap, ready to kmalloc/kfree dynamic virtual memory block\n");
@@ -119,6 +127,9 @@ void _start(void) {
 
     // run all tests before we go preemptive
     if (tests_enabled) test_all();
+
+    // enable capturing input from serial
+    serial_init_get();
 
     kprintf("IRQ", "Enable IRQ\n");
     arch_irq_enable();

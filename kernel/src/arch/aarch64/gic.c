@@ -29,13 +29,18 @@ void gic_init(void) {
     // nothing this CPU interface get would ever pass.
     gic_write(GIC_CPU_PHYS_BASE, GICC_PMR, GICC_PMR_ALLOW_ALL);
 
-    // One bit per interrupt ID, write-1-to-set.
-    // Zeros are ignored rather than clearing, so enabling one line needs no read-modify-write
-    gic_write(GIC_DIST_PHYS_BASE, GICD_ISENABLER0, 1u << GIC_INTID_VIRT_TIMER);
+    gic_enable_irq(GIC_INTID_VIRT_TIMER);
 
     // The distributor forwards to the CPU interfaces, then this CPU's interface accepts.
     gic_write(GIC_DIST_PHYS_BASE, GICD_CTLR, GICD_CTLR_ENABLE);
     gic_write(GIC_CPU_PHYS_BASE, GICC_CTLR, GICC_CTLR_ENABLE);
+}
+
+void gic_enable_irq(uint32_t intid) {
+    // One bit per interrupt ID, write-1-to-set.
+    // Zeros are ignored rather than clearing, so enabling one line needs no read-modify-write
+    uint64_t reg_offset = GICD_ISENABLER0 + (intid / 32) * 4; // which 32-line block
+    gic_write(GIC_DIST_PHYS_BASE, reg_offset, 1u << (intid % 32)); // which bit in it
 }
 
 uint32_t gic_acknowledge(void) {

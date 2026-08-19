@@ -3,17 +3,15 @@
 
 #include "stdc.h"
 
-#include <limine.h>
-
 #define PAGE_SIZE 4096ULL
 
-size_t pmm_init(struct limine_hhdm_response *hhdm_response, struct limine_memmap_response *memmap_response);
+void pmm_init();
+
+uint64_t pmm_claim(uint64_t memmap_type);
 
 void *pmm_phys_to_virt(uint64_t phys_addr);
 
 uint64_t pmm_virt_to_phys(void *virt_addr);
-
-uint64_t pmm_get_hhdm_offset(void);
 
 // Highest physical address (base + length) reported by any Limine memmap entry (no matter of type)
 uint64_t pmm_get_max_phys_addr(void);

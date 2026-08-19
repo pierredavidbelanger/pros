@@ -1,5 +1,7 @@
 #include "mm/pmm.h"
 
+#include "core/boot.h"
+#include "core/hhdm.h"
 #include "core/kprintf.h"
 
 #define PMM_ALIGN_UP(x, align) (((x) + (align) - 1) & ~((align) - 1))
@@ -10,34 +12,39 @@ struct pmm_node {
 };
 
 // TODO: having a prepend list (stack) here render the pointer maths somewhat hard to follow, we should have a real sorted list
-static struct pmm_node *free_list_head = NULL;
+static struct pmm_node *free_list_head;
 
-static uint64_t hhdm_offset = 0;
 static uint64_t max_phys_addr = 0;
 
-size_t pmm_init(struct limine_hhdm_response *hhdm_response, struct limine_memmap_response *memmap_response) {
-    if (hhdm_response == NULL) {
-        kpanic("Cannot map memory blocks without access to HHDM.");
-    }
-    if (memmap_response == NULL || memmap_response->entry_count < 1) {
+void pmm_init() {
+    struct limine_memmap_response *memmap_response = memmap_request.response;
+    if (!memmap_response || memmap_response->entry_count < 1) {
         kpanic("Cannot map memory blocks of zero length.");
     }
 
-    hhdm_offset = hhdm_response->offset;
+    free_list_head = NULL;
+
+    for (uint64_t i = 0; i < memmap_response->entry_count; i++) {
+        struct limine_memmap_entry *entry = memmap_response->entries[i];
+
+        // Track the highest physical address across every entry,
+        // so MMIO/reserved regions above RAM are still covered by the HHDM extent.
+        uint64_t entry_top = entry->base + entry->length;
+        if (entry_top > max_phys_addr) {
+            max_phys_addr = entry_top;
+        }
+    }
+}
+
+uint64_t pmm_claim(uint64_t memmap_type) {
+    struct limine_memmap_response *memmap_response = memmap_request.response;
 
     size_t count = 0;
 
     for (uint64_t i = 0; i < memmap_response->entry_count; i++) {
         struct limine_memmap_entry *entry = memmap_response->entries[i];
 
-        // Track the highest physical address across every entry type (not just USABLE),
-        // so MMIO/reserved regions above RAM are still covered by the HHDM extent.
-        uint64_t entry_top = entry->base + entry->length;
-        if (entry_top > max_phys_addr) {
-            max_phys_addr = entry_top;
-        }
-
-        if (entry->type != LIMINE_MEMMAP_USABLE) {
+        if (entry->type != memmap_type) {
             continue;
         }
 
@@ -57,15 +64,11 @@ size_t pmm_init(struct limine_hhdm_response *hhdm_response, struct limine_memmap
 }
 
 void *pmm_phys_to_virt(uint64_t phys_addr) {
-    return (void *) (phys_addr + hhdm_offset);
+    return (void *) (phys_addr + hhdm_get_offset());
 }
 
 uint64_t pmm_virt_to_phys(void *virt_addr) {
-    return (uint64_t) virt_addr - hhdm_offset;
-}
-
-uint64_t pmm_get_hhdm_offset(void) {
-    return hhdm_offset;
+    return (uint64_t) virt_addr - hhdm_get_offset();
 }
 
 uint64_t pmm_get_max_phys_addr(void) {

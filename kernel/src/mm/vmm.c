@@ -2,6 +2,7 @@
 
 #include "arch/arch.h"
 #include "core/boot.h"
+#include "core/hhdm.h"
 #include "mm/pmm.h"
 #include "mm/heap.h"
 #include "core/memory.h"
@@ -200,7 +201,7 @@ void vmm_switch_context(struct vmm_context *ctx) {
 }
 
 static bool try_handle_hhdm_mmio_fault(uint64_t fault_addr, uint64_t error_code) {
-    uint64_t hhdm_base = pmm_get_hhdm_offset();
+    uint64_t hhdm_base = hhdm_get_offset();
     uint64_t hhdm_top = hhdm_base + pmm_get_max_phys_addr();
 
     if (hhdm_base == 0 || fault_addr < hhdm_base || fault_addr >= hhdm_top) {

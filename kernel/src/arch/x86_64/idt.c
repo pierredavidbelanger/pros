@@ -169,7 +169,9 @@ static void x86_64_dispatch(struct trap_frame *frame) {
         if (irq_no == 0) {
             timer_tick();
         } else if (irq_no == 4) {
-            console_input_push(serial_getc());
+            while (serial_rx_ready()) {
+                console_input_push(serial_getc());
+            }
         } else {
             kprintf("X8664", "HANDLED %zu: nothing\n", frame->int_no);
         }

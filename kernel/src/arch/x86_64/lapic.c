@@ -1,5 +1,6 @@
 #include "lapic.h"
 
+#include "core/hhdm.h"
 #include "core/kprintf.h"
 #include "mm/pmm.h"
 #include "mm/vmm.h"
@@ -43,7 +44,7 @@ void lapic_init(void) {
     }
 
     uint64_t phys_addr = apic_base & LAPIC_BASE_ADDR_MASK;
-    uint64_t virt_addr = pmm_get_hhdm_offset() + phys_addr;
+    uint64_t virt_addr = hhdm_get_offset() + phys_addr;
 
     // The register is out of range of the HHDM MMIO and need to be mapped by hand
     if (vmm_map_page(vmm_kernel_context, virt_addr, phys_addr, VMM_WRITABLE | VMM_CACHE_DISABLE) != 0) {

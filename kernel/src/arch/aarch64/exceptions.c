@@ -5,6 +5,7 @@
 #include "core/serial.h"
 #include "core/kprintf.h"
 #include "core/timer.h"
+#include "core/console_input.h"
 #include "arch/arch.h"
 #include "mm/vmm.h"
 #include "proc/sched.h"
@@ -75,6 +76,11 @@ static void aarch64_dispatch(struct trap_frame *frame) {
             // Rearm before the EOI.
             arm_timer_rearm();
             timer_tick();
+        } else if (intid == GIC_INTID_PL011) {
+            // drain fully as one interrupt can represent more than one queued byte
+            while (serial_rx_ready()) {
+                console_input_push((uint8_t) serial_getc());
+            }
         } else {
             kprintf("ARM64", "HANDLED IRQ %u: nothing\n", intid);
         }

@@ -176,6 +176,7 @@ void arch_vmm_invlpg(void *virt_addr) {
 
 void arch_timer_init(uint32_t hz) {
     // The controller first: the timer's output must have somewhere to go before it is unmasked.
+    // TODO: this is NOT exclusively related to timer, must move somewhere else
     gic_init();
     arm_timer_init(hz);
 }
