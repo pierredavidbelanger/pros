@@ -18,7 +18,7 @@ distclean: clean
 bin/$(ARCH)/kernel: libs
 	mkdir -p bin/$(ARCH)
 	$(CC) \
-		-Wall -std=gnu11 -nostdinc -ffreestanding -fno-stack-protector -fno-PIC \
+		-Wall -Wextra -std=gnu11 -nostdinc -ffreestanding -fno-stack-protector -fno-PIC \
 		$(CFLAGS) \
 		-isystem libs/freestanding-c-hdrs/include \
 		-isystem libs/limine-protocol/include \

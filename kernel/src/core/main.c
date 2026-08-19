@@ -9,6 +9,7 @@
 #include "core/serial.h"
 #include "core/timer.h"
 #include "core/test/test.h"
+#include "drivers/console_dev.h"
 #include "fs/ramfs/ramfs.h"
 #include "fs/tar/tar.h"
 #include "fs/vfs/vfs.h"
@@ -89,15 +90,17 @@ void _start(void) {
     }
 
     struct vfs_node *ramfs = ramfs_create_root();
-    if (ramfs) {
-        if (vfs_mount("/", ramfs) == 0) {
-            if (module_request.response && module_request.response->modules && module_request.response->modules[0]) {
-                if (tar_load((uint64_t) module_request.response->modules[0]->address, module_request.response->modules[0]->size) != 0) {
-                    kpanic("tar_load failed");
-                }
-            }
+    if (!ramfs) kpanic("cannot create ramfs");
+    if (vfs_mount("/", ramfs)) kpanic("cannot mount ramfs on /");
+    if (module_request.response && module_request.response->modules && module_request.response->modules[0]) {
+        if (tar_load((uint64_t) module_request.response->modules[0]->address, module_request.response->modules[0]->size) != 0) {
+            kpanic("cannot load initrd into ramfs at /");
         }
     }
+
+    struct vfs_node *console_dev = console_dev_create();
+    if (!console_dev) kpanic("cannot create console dev");
+    if (vfs_mount("/dev/console", console_dev)) kpanic("cannot mount console dev on /dev/console");
 
     sched_init();
     kprintf("SCHED", "Initialized scheduler, ready to switch context when timer will be up\n");

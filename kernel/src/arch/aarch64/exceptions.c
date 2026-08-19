@@ -92,13 +92,13 @@ static void aarch64_dispatch(struct trap_frame *frame) {
 
     uint32_t esr_ec = (frame->esr >> 26) & 0x3F;
 
-    kprintf("ARM64", "frame->vector_type %zu esr_ec %u\n", frame->vector_type, esr_ec);
+    // kprintf("ARM64", "frame->vector_type %zu esr_ec %u\n", frame->vector_type, esr_ec);
 
     // Handle Lower EL AArch64 Synchronous SVC
     if (frame->vector_type == 8 && esr_ec == 0x15) {
-        kprintf("ARM64", "SVC: syscall_dispatch %zu ...\n", frame->x[8]);
+        // kprintf("ARM64", "SVC: syscall_dispatch %zu ...\n", frame->x[8]);
         int64_t ret = syscall_dispatch(frame->x[8], frame->x[0], frame->x[1], frame->x[2], frame->x[3], frame->x[4], frame->x[5]);
-        kprintf("ARM64", "SVC: syscall_dispatch %zu DONE ret %lld\n", frame->x[8], ret);
+        // kprintf("ARM64", "SVC: syscall_dispatch %zu DONE ret %lld\n", frame->x[8], ret);
         frame->x[0] = (uint64_t) ret;
         // Resolved: CPU will eret back and continue (syscall return is in x0)
         return;
