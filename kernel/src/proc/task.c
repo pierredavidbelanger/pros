@@ -132,11 +132,11 @@ void task_dump_all(void) {
     }
 }
 
-pid_t sys_getpid(void) {
-    return (pid_t) sched_get_current_task()->pid;
+int64_t sys_getpid(void) {
+    return sched_get_current_task()->pid;
 }
 
-int sys_exit(int status) {
+int64_t sys_exit(int status) {
     sched_exit_current();
     return 0;
 }

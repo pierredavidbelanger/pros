@@ -19,7 +19,7 @@ static struct file **current_task_fds() {
     return task->fds;
 }
 
-int sys_openat(int dirfd, const char *path, int flags, int mode) {
+int64_t sys_openat(int dirfd, const char *path, int flags, int mode) {
     if (dirfd != AT_FDCWD) return -ENOSYS; // do not support dirfd relative open for now
     if (!path) return -ENOENT;
 
@@ -59,11 +59,11 @@ int sys_openat(int dirfd, const char *path, int flags, int mode) {
     return fd;
 }
 
-int sys_open(const char *path, int flags) {
+int64_t sys_open(const char *path, int flags) {
     return sys_openat(AT_FDCWD, path, flags, 0);
 }
 
-int sys_close(int fd) {
+int64_t sys_close(int fd) {
     if (fd < 0 || fd >= MAX_OPEN_FILES) return -EBADF;
 
     struct file **fds = current_task_fds();
@@ -87,7 +87,7 @@ int sys_close(int fd) {
     return 0;
 }
 
-int sys_readdir(int fd, struct vfs_dirent *out) {
+int64_t sys_readdir(int fd, struct vfs_dirent *out) {
     if (fd < 0 || fd >= MAX_OPEN_FILES) return -EBADF;
     if (!out) return -EFAULT;
 
