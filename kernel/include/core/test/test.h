@@ -14,5 +14,6 @@ void test_vfs(void);
 void test_kstack(void);
 void test_task(void);
 void test_ring_buffer(void);
+void test_ldisc(void);
 
-#endif //PROS_TEST_H
+#endif  // PROS_TEST_H

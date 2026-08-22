@@ -4,7 +4,7 @@
 
 void test_report(const char *tag, const char *name, bool ok) {
     kprintf("TEST", "[%-*s] %-38s %s\n", KPRINTF_TAG_WIDTH, tag, name,
-        ok ? TERM_COLOR_GREEN "PASS" TERM_COLOR_RESET : TERM_COLOR_RED "FAIL" TERM_COLOR_RESET);
+            ok ? TERM_COLOR_GREEN "PASS" TERM_COLOR_RESET : TERM_COLOR_RED "FAIL" TERM_COLOR_RESET);
 }
 
 void test_all(void) {
@@ -15,4 +15,5 @@ void test_all(void) {
     test_kstack();
     test_task();
     test_ring_buffer();
+    test_ldisc();
 }
