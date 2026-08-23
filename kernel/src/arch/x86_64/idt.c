@@ -210,7 +210,9 @@ struct trap_frame *x86_64_exception_handler(struct trap_frame *frame) {
 // Not merged into x86_64_exception_handler(): a syscall didn't arrive through the IDT and has
 // no interrupt number, so int_no stays meaningful in every other crash dump.
 struct trap_frame *x86_64_syscall_handler(struct trap_frame *frame) {
+    arch_irq_enable();
     int64_t ret = syscall_dispatch(frame->rax, frame->rdi, frame->rsi, frame->rdx, 0, 0, 0);
+    arch_irq_disable();
     frame->rax = (uint64_t) ret;
     return sched_on_trap_exit(frame);
 }

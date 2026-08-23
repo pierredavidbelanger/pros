@@ -97,7 +97,9 @@ static void aarch64_dispatch(struct trap_frame *frame) {
     // Handle Lower EL AArch64 Synchronous SVC
     if (frame->vector_type == 8 && esr_ec == 0x15) {
         // kprintf("ARM64", "SVC: syscall_dispatch %zu ...\n", frame->x[8]);
+        arch_irq_enable();
         int64_t ret = syscall_dispatch(frame->x[8], frame->x[0], frame->x[1], frame->x[2], frame->x[3], frame->x[4], frame->x[5]);
+        arch_irq_disable();
         // kprintf("ARM64", "SVC: syscall_dispatch %zu DONE ret %lld\n", frame->x[8], ret);
         frame->x[0] = (uint64_t) ret;
         // Resolved: CPU will eret back and continue (syscall return is in x0)
