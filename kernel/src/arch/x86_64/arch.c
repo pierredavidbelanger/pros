@@ -20,6 +20,10 @@ void arch_init(void) {
     pic_init();
 }
 
+void arch_cpu_relax(void) {
+    asm volatile("pause");
+}
+
 void arch_halt(void) {
     for (;;) {
         asm volatile ("cli; hlt");
@@ -180,6 +184,16 @@ void arch_irq_enable(void) {
 
 void arch_irq_disable(void) {
     asm volatile ("cli" ::: "memory");
+}
+
+uint64_t arch_irq_save(void) {
+    uint64_t flags;
+    asm volatile("pushfq\n\tpopq %0\n\tcli" : "=r"(flags)::"memory");
+    return flags;
+}
+
+void arch_irq_restore(uint64_t flags) {
+    if (flags & X86_64_RFLAGS_IF) asm volatile("sti" ::: "memory");
 }
 
 // Stack

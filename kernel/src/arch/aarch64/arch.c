@@ -50,6 +50,10 @@ void arch_init(void) {
     asm volatile ("msr vbar_el1, %0\n\tisb" :: "r"(vector_table) : "memory");
 }
 
+void arch_cpu_relax(void) {
+    asm volatile("yield");
+}
+
 void arch_halt(void) {
     for (;;) {
         asm volatile ("msr daifset, #2\n\twfi");
@@ -187,6 +191,16 @@ void arch_irq_enable(void) {
 
 void arch_irq_disable(void) {
     asm volatile ("msr daifset, #2" ::: "memory");
+}
+
+uint64_t arch_irq_save(void) {
+    uint64_t daif;
+    asm volatile("mrs %0, daif\n\tmsr daifset, #2" : "=r"(daif)::"memory");
+    return daif;
+}
+
+void arch_irq_restore(uint64_t flags) {
+    asm volatile("msr daif, %0" ::"r"(flags) : "memory");
 }
 
 // Stack

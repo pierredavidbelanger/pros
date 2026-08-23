@@ -8,6 +8,8 @@ struct trap_frame;
 
 void arch_init(void);
 
+void arch_cpu_relax(void);
+
 void arch_halt(void);
 
 // Cleanly power off the machine
@@ -59,6 +61,9 @@ void arch_timer_init(uint32_t hz);
 
 void arch_irq_enable(void);
 void arch_irq_disable(void);
+
+uint64_t arch_irq_save(void);           // mask, return the previous state
+void arch_irq_restore(uint64_t flags);  // put it back exactly as it was
 
 // Stack
 
