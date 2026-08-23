@@ -1,6 +1,5 @@
 #include "core/console_input.h"
 
-#include "core/kprintf.h"
 #include "core/ring_buffer.h"
 
 #define CONSOLE_INPUT_CAPACITY 256
@@ -13,7 +12,6 @@ void console_input_init(void) {
 }
 
 void console_input_push(uint8_t byte) {
-    kprintf("CON", "%c\n", byte);
     ring_buffer_push(&queue, byte);
 }
 

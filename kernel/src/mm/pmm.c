@@ -121,7 +121,7 @@ void pmm_free(uint64_t phys_addr, size_t count) {
         return;
     }
     uint64_t next_addr = phys_addr;
-    for (int i = 0; i < count; i++) {
+    for (size_t i = 0; i < count; i++) {
         struct pmm_node *node = pmm_phys_to_virt(next_addr);
         node->next = free_list_head;
         free_list_head = node;

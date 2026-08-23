@@ -12,4 +12,9 @@ struct file {
     int ref_count;
 };
 
-#endif //PROS_FILE_H
+struct file *file_ref(struct file *f);
+void file_unref(struct file *f);
+
+struct file *file_open_node(struct vfs_node *node, int flags);
+
+#endif  // PROS_FILE_H

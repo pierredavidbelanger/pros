@@ -1,5 +1,6 @@
 #include "core/test/test.h"
 
+#include "fs/vfs/vfs.h"
 #include "proc/task.h"
 #include "mm/pmm.h"
 
@@ -19,6 +20,14 @@ void test_task(void) {
 
     test_report(TEST_TASK_TAG, "fresh frame lies inside its own kernel stack", task_owns_frame(task, task->frame));
     test_report(TEST_TASK_TAG, "fresh stack is intact", task_stack_intact(task));
+
+    // every task gets 0/1/2 on /dev/console without ever calling sys_open
+    test_report(TEST_TASK_TAG, "fresh task has its three std fds", task->fds[0] && task->fds[1] && task->fds[2]);
+    test_report(TEST_TASK_TAG, "the three std fds share one file",
+        task->fds[0] == task->fds[1] && task->fds[1] == task->fds[2]);
+    test_report(TEST_TASK_TAG, "std fds point at the console node", task->fds[0]->node == vfs_lookup("/dev/console"));
+    // one ref per fd, so destroy actually reaches zero
+    test_report(TEST_TASK_TAG, "one open file, three references", task->fds[0]->ref_count == 3);
 
     task_destroy(task);
     test_report(TEST_TASK_TAG, "destroy returns every page", pmm_get_free_page_count() == free_before);
