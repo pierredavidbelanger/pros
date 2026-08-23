@@ -1,4 +1,4 @@
-# Working Document: Phase 6 Step 2 — TTY Line Discipline and a Real `/dev/console` [STATUS: NOT STARTED ⬜]
+# Working Document: Phase 6 Step 2 — TTY Line Discipline and a Real `/dev/console` [STATUS: COMPLETE ✅]
 
 > [!NOTE]
 > **Phase 6 Step 2**, from [`PHASE6_TALK_BACK.md`](PHASE6_TALK_BACK.md) Chapter 2. Read that
@@ -78,8 +78,16 @@ goes away entirely once `sys_write(1, ...)` reaches a real, valid fd through the
 
 ### 3. The line buffer's home
 
-**Recommendation:** per-open, via the `struct file`'s `priv_data` (already exists in
-`vfs_ops`-adjacent design, confirm the exact field name against `vfs.h`) — not one global buffer.
+**Landed as per-*node*, not per-open** — the `struct ldisc` lives in the console node's
+`priv_data`, so all three of a task's fds and every future opener share one line buffer. That is
+better than a file-scope global (the state belongs to the device, not to the translation unit) and
+worse than the recommendation below, and it is a **known, deliberate gap**: the moment a second
+task can read `/dev/console`, the two racing readers this decision existed to prevent are back.
+Phase 7 is where it has to be fixed, alongside the wait queue that replaces decision 4's spin.
+
+**Original recommendation, unchanged:** per-open, via the `struct file`'s `priv_data` (already
+exists in `vfs_ops`-adjacent design, confirm the exact field name against `vfs.h`) — not one
+global buffer.
 A global buffer works with exactly one reader, which happens to be true the moment this lands,
 but a second task ever opening `/dev/console` (a second shell, someday) would silently corrupt
 the first one's in-progress line. Per-open costs one small allocation per `open()` and removes
@@ -93,9 +101,28 @@ yet. So `sys_read(0, buf, n)` calling into `/dev/console`'s `read` op with no co
 the queue has exactly one honest option today: **spin inside the syscall handler**, checking for
 a completed line, until one exists — not sleep, because nothing exists to sleep on.
 
-This is sound, not just tolerable, given how this project's scheduler already works: interrupts
-stay enabled during the spin, so Step 1's UART ISR keeps firing and filling the queue while the
-syscall handler loops. And because PrOS is *preempted at trap exit* rather than cooperatively
+> [!WARNING]
+> **The paragraph below was wrong when it was written, and it was the expensive kind of wrong.**
+> Interrupts do *not* stay enabled during a syscall — not by default, on either architecture.
+> `syscall` clears `IF` via `MSR_IA32_FMASK` (`arch/x86_64/arch.c:63`), and taking any exception
+> to EL1 sets `DAIF.I` in hardware. So the first version of this Step's spin loop ran with the
+> timer *and* the UART both masked: the queue could not be filled and the task could not be
+> preempted, and the machine wedged on the first `read()`. The reasoning was assumed from how the
+> scheduler works rather than checked against the entry paths — exactly what this document's own
+> "confirmed by reading the tree, not assumed" habit exists to prevent.
+>
+> **What it took to make it true.** `arch_irq_enable()`/`arch_irq_disable()` now bracket
+> `syscall_dispatch()` in `x86_64_syscall_handler()` (`idt.c:212`) and in `aarch64_dispatch()`'s
+> SVC branch (`exceptions.c:98`) — masked again *before* `sched_on_trap_exit()`, which rewrites
+> `current->frame` and swaps address spaces and must not be re-entered. Nesting is bounded at two
+> frames per task (one sync trap plus at most one IRQ, since ISRs stay masked), each task already
+> owns its kernel stack, and `task_owns_frame()` is a range check that accepts a nested frame — so
+> nothing else had to change. **Every syscall in PrOS is now preemptible**, which is a new property
+> of the kernel, not a local fix.
+
+With that made true, the rest of the argument holds. Interrupts stay enabled during the spin, so
+Step 1's UART ISR keeps firing and filling the queue while the syscall handler loops. And because
+PrOS is *preempted at trap exit* rather than cooperatively
 preemptible (`README.md`'s own framing), a timer tick firing *while* a task is mid-spin, deep
 inside this syscall's C call stack, switches away from it exactly the same way it already switches
 away from `BOOT`'s own main loop — the hardware interrupt mechanism captures the full machine
@@ -130,7 +157,7 @@ for real before the special case can safely disappear). `C4` is the acceptance t
 
 ---
 
-## 🧩 C0 — The `/dev/console` node
+## 🧩 C0 — The `/dev/console` node ✅ DONE (2026-08-19)
 
 **Goal:** a `struct vfs_node` with `VFS_CHARDEVICE` set, backed by `vfs_ops` whose `write` calls
 `console_putc()` per byte and whose `open`/`close` are trivial (nothing to allocate at the node
@@ -148,7 +175,7 @@ tolerate a non-`ramfs` node, not assumed from reading the code alone.
 
 ---
 
-## 🧩 C1 — The line discipline
+## 🧩 C1 — The line discipline ✅ DONE (2026-08-21)
 
 **Goal:** `read()` on an open `/dev/console` file drains Step 1's byte queue one byte at a time,
 echoing each one back through `console_putc()`, until a complete line exists, then returns it.
@@ -167,7 +194,7 @@ queue or hardware involved for this part.
 
 ---
 
-## 🧩 C2 — Pre-open fds `0`/`1`/`2`
+## 🧩 C2 — Pre-open fds `0`/`1`/`2` ✅ DONE (2026-08-22)
 
 **Goal:** every task, from `task_inner_create()` onward, starts with `fds[0]`, `fds[1]`,
 `fds[2]` already pointing at a real, open `/dev/console`. Decision 2's `ref_count` bump (or
@@ -179,7 +206,7 @@ having called `sys_open` itself.
 
 ---
 
-## 🧩 C3 — Retire the shim
+## 🧩 C3 — Retire the shim ✅ DONE (2026-08-23)
 
 **Goal:** `sys_write_console_or_vfs()` (`syscall.c:8-16`) goes away. `syscall_table[SYS_write]`
 points straight at `sys_write()` — the same function every other fd already uses, now genuinely
@@ -191,7 +218,7 @@ tree once this lands.
 
 ---
 
-## 🧩 C4 — Wire it: a real edited line, read back
+## 🧩 C4 — Wire it: a real edited line, read back ✅ DONE (2026-08-23)
 
 **Goal:** the actual acceptance test. A test program (or a throwaway addition to `init`, or a
 dedicated new one — worth deciding which, same kind of call Phase 5 Step 2 made for its own C5)
@@ -234,18 +261,32 @@ typo, not just the raw bytes sent.
 
 New:
 
-- ⬜ the `/dev/console` `vfs_node`/`vfs_ops` implementation (C0) — exact file location TBD
-- ⬜ the line-discipline state machine (C1) — architecture-neutral, no hardware dependency
+- ✅ `kernel/src/drivers/console_dev.c` + `kernel/include/drivers/console_dev.h` — the
+  `/dev/console` node (C0). Landed under `drivers/`, not `fs/`: it is a device that speaks VFS,
+  not a filesystem
+- ✅ `kernel/src/core/ldisc.c` + `kernel/include/core/ldisc.h` — the line-discipline state machine
+  (C1), architecture-neutral, no hardware dependency
+- ✅ `kernel/src/core/test/test_ldisc.c` — 26 pure-data assertions, not originally scoped as its
+  own file; C1's "pure-data verify" bullet made concrete
+- ✅ `kernel/include/core/spinlock.h` + `kernel/src/core/spinlock.c` — not in this Step's design
+  at all, see the retrospective
 
-Existing, to be modified:
+Existing, modified:
 
-- ⬜ `kernel/src/proc/task.c` — pre-open `fds[0..2]` in `task_inner_create()` (C2)
-- ⬜ `kernel/src/syscall/syscall.c` — `sys_write_console_or_vfs()` removed, `syscall_table`
+- ✅ `kernel/src/proc/task.c` — pre-open `fds[0..2]` in `task_inner_create()` (C2), one
+  `file_open_node()` plus two `file_ref()` rather than three opens
+- ✅ `kernel/src/syscall/syscall.c` — `sys_write_console_or_vfs()` removed, `syscall_table`
   entry repointed (C3)
-- ⬜ `kernel/src/fs/vfs/file.h` / `file.c` — `-ESPIPE` on `sys_lseek` for a `VFS_CHARDEVICE` node
+- ✅ `kernel/src/fs/vfs/file.c` — `-ESPIPE` on `sys_lseek` for a `VFS_CHARDEVICE` node
   (decision 1)
-- ⬜ `kernel/src/core/main.c` or `user/src/init/init.c` — wherever C4's acceptance test actually
-  runs
+- ✅ `kernel/src/core/main.c` — `console_input_init()` + `console_dev_create()` +
+  `vfs_mount("/dev/console", …)`
+- ✅ `user/src/init/init.c` — C4's acceptance test
+- ✅ `kernel/src/arch/x86_64/idt.c`, `kernel/src/arch/aarch64/exceptions.c`,
+  `kernel/src/arch/x86_64/arch.c`, `kernel/src/arch/aarch64/arch.c`,
+  `kernel/include/arch/arch.h` — interrupts enabled across `syscall_dispatch()`, and the new
+  `arch_irq_save`/`arch_irq_restore`/`arch_cpu_relax` trio (decision 4's correction)
+- ✅ `kernel/src/core/console_input.c` — `spinlock_lock_irqsave()` around both queue sides
 
 ---
 
@@ -260,3 +301,45 @@ Existing, to be modified:
 One thing worth carrying forward, not fixed here: **the spin-instead-of-sleep in C1 is a named,
 deliberate stopgap, not an oversight** — same spirit as Phase 5's `TASK_DEAD` leak or `init` never
 having a parent to report to. Phase 7's wait queues are what replace it for real.
+
+---
+
+## 🔍 Retrospective — what this Step actually cost
+
+C0 through C3 went in close to the design. **C4 did not**, and the debugging is the part worth
+recording, because almost none of it was about this Step's own code.
+
+**The bug: `console_input_init()` was never called.** Step 1 wrote it, declared it, and never
+called it from anywhere. `capacity == 0` makes `ring_buffer_push()` and `ring_buffer_pop()` both
+return false forever, silently — see Step 1's retrospective for why its own C1 scaffolding
+couldn't catch it. Two lines in `main.c` fixed it.
+
+**Everything before that fix was misdiagnosis, and the shape of it is the lesson.** Both
+architectures failed *identically* — no echo, no line, nothing. That was read as "two completely
+different UARTs and interrupt controllers can't both be broken, so it must be the host," and the
+investigation went to QEMU: four chardev backends, pipe versus pty, two machine types, FIFO
+trigger levels, timing windows, OVMF's own boot menu. All of it clean, none of it the problem.
+
+The inversion worth keeping: **identical failure across two independent drivers is evidence the
+bug is in the code they share, not evidence that both drivers are fine.** `console_input.c` sits
+above both. That was the strongest available signal and it was read backwards.
+
+What actually broke the deadlock was a known-good guest — booting an Arch-based live ISO on the
+same QEMU and running `cat /dev/ttyS0` — which received serial input immediately and put the ball
+back in PrOS's court within one command. **Reach for the known-good comparison earlier**; it cost
+one boot and was worth more than every register probe that preceded it.
+
+The probe that finally located it was `LSR=61 IIR=c4 IRR=10`: byte present at the UART, RX
+interrupt pending, IRQ4 requested at the PIC and nothing in service. That proves the hardware path
+end to end, which leaves only the software below it.
+
+**Two things landed that this Step never designed**, both consequences of decision 4's correction:
+
+- `arch_irq_save()` / `arch_irq_restore()` — the unconditional `arch_irq_enable()`/`disable()`
+  pair turns interrupts *on*, not *back*, which is wrong anywhere the prior state isn't known.
+- `struct spinlock` with `spinlock_lock_irqsave()` / `spinlock_unlock_irqrestore()`, PrOS's first
+  synchronization primitive. Preemptible syscalls broke the unstated half of Step 1's
+  no-locking-needed argument (see its retrospective). The lock deliberately exposes *only* the
+  irqsave form: a plain `spin_lock()` taken by a task would deadlock against the UART ISR on a
+  single core, so masking-before-acquiring is enforced by the API rather than by comment.
+  It buys nothing today beyond what bare masking would — it is Phase 7 groundwork taken early.

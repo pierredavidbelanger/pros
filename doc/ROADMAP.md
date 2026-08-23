@@ -244,27 +244,43 @@ stays a retrospective on its own merits, independent of which convention version
 ---
 
 ### Phase 6: Talk Back — Serial Input, TTY & a Shell You Wrote
-* **Status**: **NOT STARTED** ⬜ — Steps 1-2 designed, Step 3 deliberately not yet. Working doc:
+* **Status**: **IN PROGRESS** 🚧 — Steps 1 and 2 complete on both architectures, Step 3 remains
+  and is still undesigned. **A keystroke now makes it all the way in**: interrupt → shared byte
+  queue → line discipline → `/dev/console` → a userland `read()`. `/bin/init` reads a line you
+  typed, backspace and all, and prints it back. Two things landed that no Step designed, both
+  fallout from Step 2's decision 4 being wrong about interrupt state: **every syscall is now
+  preemptible**, and PrOS has its **first synchronization primitive** (`struct spinlock`,
+  irqsave-only) — both Phase 7 groundwork arriving early. Working doc:
   [`PHASE6_TALK_BACK.md`](PHASE6_TALK_BACK.md).
 * **Payoff**: **you type at your OS and it answers.** Over `-serial stdio`, which is fully
   interactive. No libc, no keyboard driver, no VirtIO required. Only the phase as a whole needs
   to end there — an individual Step doesn't need its own standalone demo, as long as every Step
   is actually used by the final payoff.
 * **Steps**:
-  - **Step 1 — UART receive interrupt + byte queue** on both architectures (PL011 on `virt`,
-    16550 on `q35`). Deliberately *not* a PS/2 keyboard: QEMU `virt` has no i8042 at all, so PS/2
-    isn't portable and VirtIO-input would mean rebuilding the VirtIO transport first. Individually
-    designed in [`PHASE6_STEP1_UART_INPUT.md`](PHASE6_STEP1_UART_INPUT.md).
-  - **Step 2 — TTY line discipline + `/dev/console`** — canonical vs raw mode, echo, backspace,
-    line buffering, exposed as a real VFS node. Also where Phase 5 Step 2's deferred decision 2(b)
-    finally lands: retiring `sys_write_console_or_vfs`'s fd `1`/`2` special-case shim now that a
-    real console device exists. Individually designed in
-    [`PHASE6_STEP2_TTY_CONSOLE.md`](PHASE6_STEP2_TTY_CONSOLE.md).
-  - **Step 3 — `getdents64` and `psh`** — the internal `sys_readdir` becomes the real,
+  - ✅ **Step 1 — UART receive interrupt + byte queue** on both architectures (PL011 SPI 33 on
+    `virt`, 16550 IRQ 4 on `q35`), feeding one shared, architecture-neutral 256-byte ring buffer.
+    Deliberately *not* a PS/2 keyboard: QEMU `virt` has no i8042 at all, so PS/2 isn't portable and
+    VirtIO-input would mean rebuilding the VirtIO transport first. `gic_enable_irq()` generalized
+    to any `GICD_ISENABLERn` rather than duplicated for the SPI, and the ISR drains in a loop —
+    one interrupt can stand for several queued bytes. Individually designed in
+    [`PHASE6_STEP1_UART_INPUT.md`](PHASE6_STEP1_UART_INPUT.md), whose retrospective records the
+    Step's own latent defect: `console_input_init()` was written and never called, which made the
+    queue silently drop everything and cost most of Step 2's debugging.
+  - ✅ **Step 2 — TTY line discipline + `/dev/console`** — canonical mode, echo, destructive
+    backspace, line buffering, exposed as a real `VFS_CHARDEVICE` node mounted at `/dev/console`
+    and pre-opened onto every task's fds `0`/`1`/`2`. Phase 5 Step 2's deferred decision 2(b)
+    lands here too: `sys_write_console_or_vfs`'s fd `1`/`2` shim is gone, so `write(1, …)` is now
+    an ordinary `copy_from_user`-validated path to a real file descriptor. Its design was wrong
+    about one load-bearing fact — that interrupts stay enabled during a syscall — which wedged the
+    machine on the first `read()` and is corrected in place in
+    [`PHASE6_STEP2_TTY_CONSOLE.md`](PHASE6_STEP2_TTY_CONSOLE.md), along with a retrospective on
+    why identical failure across two independent drivers was read backwards.
+  - ⬜ **Step 3 — `getdents64` and `psh`** — the internal `sys_readdir` becomes the real,
     Linux-ABI-shaped syscall (packed variable-length `struct linux_dirent64`), in service of a
     freestanding shell with builtins only (`echo`, `ls`, `cat`, `help`). Builtins only because
     `fork`/`exec` don't exist yet, and an interactive prompt is worth having this early. Not yet
-    designed — deliberately deferred until Steps 1-2 are built, may reshape along the way.
+    designed — deliberately deferred until Steps 1-2 were built, and it now inherits a real
+    console, a preemptible syscall path and a spinlock that none of the original planning assumed.
 
 ---
 
@@ -273,7 +289,10 @@ stays a retrospective on its own merits, independent of which convention version
 * **Payoff**: `psh` launches separate programs and pipes them together. `Ctrl+C` works.
 * **Planned scope**:
   - **`switch_to` and blocking** — wait queues and voluntary switching, which the frame-swap
-    scheduler of Phase 3 deliberately doesn't cover.
+    scheduler of Phase 3 deliberately doesn't cover. Two prerequisites already landed early in
+    Phase 6 Step 2: syscalls are preemptible, and `struct spinlock` exists. Two known stopgaps are
+    waiting on this: `/dev/console`'s `read()` spins instead of sleeping, and its line buffer is
+    per-node rather than per-open, so a second reader would race.
   - **`fork`** — eager copy first, copy-on-write once it works.
   - **`execve`, `wait4`, zombie reaping.**
   - **`pipe` + `dup2`**, and `|` in `psh`.

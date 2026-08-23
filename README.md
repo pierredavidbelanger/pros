@@ -28,10 +28,12 @@ Everything below is built and boots on **both** architectures. Sources are in `k
 | **Kernel stacks** | One 16 KiB stack per task with a guard value at the base, so an overflow panics instead of quietly eating a neighbour. Per-task rather than one global exception stack, because sharing a stack across tasks corrupts memory in proportion to how *well* the scheduler is working. `task_dump()` reports each stack's extent, guard status and high-water mark. |
 | **Virtual filesystem (VFS)** | Mount table with longest-prefix matching, a `vfs_ops` vtable any filesystem can implement, one shared path resolver behind `vfs_lookup`/`vfs_create`/`vfs_mkdir_parents`, and a file-descriptor table under Linux-shaped syscalls (`sys_open`, `sys_read`, `sys_lseek`, …). |
 | **ramfs + initrd loader** | `ramfs` owns storage and is mounted at `/`; `tar_load()` is *only* a ustar parser that fills it through the public VFS API — the same separation as Linux's `rootfs` + `unpack_to_rootfs()`, so the archive format never touches filesystem internals. Files are read/write, stored as a sparse page list where an unallocated page reads back as zeros, so seeking past the end and writing produces a real hole rather than megabytes of stored nothing. |
-| **Console** | Output fans out to the serial port (live from the very first line of boot) and to the framebuffer terminal once it exists, so the boot log reads identically on screen and over `-serial stdio`. |
+| **Console** | Output fans out to the serial port (live from the very first line of boot) and to the framebuffer terminal once it exists, so the boot log reads identically on screen and over `-serial stdio`. Input arrives the other way: a UART receive interrupt (16550 IRQ 4 on `q35`, PL011 SPI 33 on `virt`) pushes bytes into one shared, architecture-neutral ring buffer, drained later by whoever asked to read. The ISR drains the hardware FIFO in a loop, because one interrupt can stand for several queued bytes. |
+| **TTY line discipline & `/dev/console`** | Canonical mode — bytes accumulate into a line, each echoes as it arrives, backspace both removes the byte *and* emits `\b \b` so the character visually disappears, Enter delivers the line with its newline. Exposed as a real `VFS_CHARDEVICE` node mounted at `/dev/console`, not a special case in the syscall dispatcher: every task is born with fds `0`/`1`/`2` already open onto it, so `write(1, …)` is an ordinary validated path through the fd table, and `lseek` on it honestly returns `-ESPIPE`. With no wait queue yet, `read()` spins rather than sleeps — a named stopgap Phase 7 replaces, sound today only because enabling interrupts across syscalls made the spin preemptible. |
+| **Synchronization** | `arch_irq_save()`/`arch_irq_restore()` save and *restore* interrupt state rather than unconditionally enabling it, and `struct spinlock` sits on top with an irqsave-only API. Deliberately no plain `spin_lock()`: on one core, a task holding a lock the UART ISR wants deadlocks outright, so masking-before-acquiring is enforced by the API instead of by comment. |
 | **Framebuffer terminal** | Direct 32-bit pixel drawing plus an 8x16 bitmap font renderer with line wrapping and scrolling. UEFI leaves no hardware text mode behind, so the terminal is drawn by hand, pixel by pixel. |
 | **Logging** | `kprintf(tag, ...)` stamps every line with a padded `[SUBSYS]` prefix, keeping the boot log aligned in one column and greppable by subsystem. `kpanic` reports and halts. |
-| **Self-tests** | One file per subsystem under `core/test/`, gated behind a `pros.tests` kernel command line so a normal boot stays quiet. Each check prints a single `PASS`/`FAIL` line — 75 of them today, across PMM, heap, VMM, VFS, kernel stacks and tasks, including the sparse-file and page-boundary paths the initrd loader can never reach on its own. |
+| **Self-tests** | One file per subsystem under `core/test/`, gated behind a `pros.tests` kernel command line so a normal boot stays quiet. Each check prints a single `PASS`/`FAIL` line — 116 of them today, across PMM, heap, VMM, VFS, kernel stacks, tasks, the input ring buffer and the line discipline, including the sparse-file and page-boundary paths the initrd loader can never reach on its own, and the backspace/overflow edges of the line editor that no amount of typing reaches reliably. |
 | **Freestanding runtime** | Cross-compiled with `zig cc`, no libc, no host headers. Bundles the `mem*`/`str*` routines the kernel actually uses — `strcpy`/`strncpy` are deliberately absent, since neither guarantees a terminated result. |
 
 > [!NOTE]
@@ -59,7 +61,8 @@ Every build artifact, from every subproject, lands under `bin/`.
 │   ├── include/           # Kernel headers (arch, asm, core, fs, mm, proc, syscall)
 │   └── src/               # Kernel sources
 │       ├── arch/          # Architecture-specific code (aarch64, x86_64), linker scripts, exceptions, interrupts
-│       ├── core/          # Core kernel subsystems (boot, fb, console, kprintf, main) and test/ (one self-test file per subsystem)
+│       ├── core/          # Core kernel subsystems (boot, fb, console, console_input, ldisc, ring_buffer, spinlock, kprintf, main) and test/ (one self-test file per subsystem)
+│       ├── drivers/       # Device nodes that speak VFS (console_dev — /dev/console)
 │       ├── fs/            # Filesystems: vfs/ (core + fd table), ramfs/ (in-memory root), tar/ (initrd loader)
 │       ├── mm/            # Memory Management (pmm, vmm, heap)
 │       ├── proc/          # Tasks & scheduling (task, sched, kstack)
@@ -85,9 +88,11 @@ Development happens in iterative phases, each sized to end in something demonstr
 merely correct. **[`doc/ROADMAP.md`](doc/ROADMAP.md) is the source of truth** for the phase
 breakdown, status, and payoff of everything — done, in progress, and planned — not this README.
 
-Phases 1 through 5 are complete on both architectures, most recently: `/bin/init` opens a real
-file, reads it, writes the contents back out, and exits — the whole ring-3-to-filesystem-and-back
-syscall surface, working end to end. Each phase gets its own working document while it's being
+Phases 1 through 5 are complete on both architectures, and Phase 6 is two Steps in. Most
+recently: **PrOS talks back.** Type a line over `-serial stdio` — backspacing over your typos —
+and `/bin/init` reads it through `/dev/console` as an ordinary file descriptor and prints it
+back. The whole path is real: hardware interrupt → byte queue → line discipline → VFS node →
+syscall → an unprivileged program. Each phase gets its own working document while it's being
 designed or built, then moves to [`doc/archive/`](doc/archive/) once it closes, kept for the
 reasoning trail rather than deleted.
 
@@ -129,8 +134,8 @@ make qemu-x86_64-nographic
 make qemu-aarch64-nographic
 ```
 
-The kernel shuts itself down at the end of boot, so QEMU exits on its own. To bail out early:
-`Ctrl+A` then `X`.
+The kernel shuts itself down at the end of boot, so QEMU exits on its own — but `/bin/init` now
+waits for you to type a line first, so give it one. To bail out early: `Ctrl+A` then `X`.
 
 ```bash
 make clean       # remove build output

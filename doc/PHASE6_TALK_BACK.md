@@ -1,11 +1,16 @@
-# Working Document: Phase 6 — Talk Back: Serial Input, TTY & a Shell You Wrote [STATUS: NOT STARTED ⬜]
+# Working Document: Phase 6 — Talk Back: Serial Input, TTY & a Shell You Wrote [STATUS: IN PROGRESS 🚧]
 
 > [!NOTE]
-> **Where this stands.** Not started. Phase 5 is complete on both architectures — `init` opens,
-> reads, writes, and exits for real — so this Phase is unblocked. Only **Steps 1 and 2** are
-> designed here; **Step 3** (`getdents64` + `psh`) is deliberately left undesigned. It depends on
-> how Steps 1-2 actually land, and gets its own Chapter and document when it starts, same as every
-> other Step in this project.
+> **Where this stands.** Steps 1 and 2 are **complete on both architectures** — a keystroke over
+> `-serial stdio` fires a real interrupt, lands in a shared byte queue, is edited by a real line
+> discipline, and reaches a userland program through `/dev/console` as a normal file descriptor.
+> `init` reads an edited line and prints it back. **Step 3** (`getdents64` + `psh`) remains, and
+> gets its own document when it starts.
+>
+> Two things landed that no Step designed, both fallout from Step 2's decision 4 being wrong:
+> **every syscall is now preemptible** (interrupts are explicitly enabled across
+> `syscall_dispatch()` on both architectures), and PrOS has its **first synchronization
+> primitive** (`struct spinlock`, irqsave-only). Both are Phase 7 groundwork arriving early.
 
 > [!NOTE]
 > Mentor-mode reminder (see the note at the top of [`../README.md`](../README.md)): this is a
@@ -90,11 +95,16 @@ FIFO already does before software ever sees a byte.
 
 ### Decisions worth naming before writing anything
 
-| Decision | Options | Leaning |
+| Decision | Options | Landed |
 |---|---|---|
-| Queue full policy | drop newest vs drop oldest vs block the ISR | Drop newest — an ISR must never block, and typed input losing its most recent keystroke on a already-overflowing queue is the least surprising failure |
-| TX interrupt-driven too? | yes vs stay polling | Stay polling — output already works via `serial_putc`, nothing in this Step needs it to change, and it's real scope this Step doesn't require |
-| Queue size | small vs generous | A human types far slower than a byte queue drains between timer ticks; a few dozen bytes is almost certainly enough, and oversizing it just hides a real overflow policy bug instead of exercising it |
+| Queue full policy | drop newest vs drop oldest vs block the ISR | **Drop newest** — an ISR must never block, and typed input losing its most recent keystroke on an already-overflowing queue is the least surprising failure |
+| TX interrupt-driven too? | yes vs stay polling | **Stay polling** — output already works via `serial_putc`, nothing here needs it to change |
+| Queue size | small vs generous | **256 bytes**, in `console_input.c`. A human types far slower than the queue drains between timer ticks |
+
+The one thing this chapter got wrong is recorded in Step 1's retrospective: *"no locking needed as
+long as pushes only ever happen from interrupt context"* was true, and depended on a second
+condition it never named — that the **consumer** also ran with interrupts masked. Step 2 stopped
+that being true.
 
 ---
 
@@ -108,7 +118,7 @@ FIFO already does before software ever sees a byte.
 mostly about input, plus giving both directions a real file behind them instead of a syscall-level
 special case.
 
-The special case, exactly as it stands today (`kernel/src/syscall/syscall.c:8-16`):
+The special case, as it stood before Step 2 retired it (`kernel/src/syscall/syscall.c:8-16`):
 
 ```c
 // special case for now
@@ -120,7 +130,9 @@ static int64_t sys_write_console_or_vfs(int fd, const void *buf, uint64_t count)
 }
 ```
 
-That comment is this Step's actual acceptance criterion — retire the shim.
+That comment was this Step's actual acceptance criterion — and the shim is **gone**.
+`syscall_table[SYS_write]` points straight at `sys_write()`, which resolves fd `1` through the
+normal per-process fd table to a real `/dev/console` node, `copy_from_user` validation included.
 
 **The VFS already anticipates this.** `struct vfs_ops` (`kernel/include/fs/vfs/vfs.h:18-33`)
 supports a fully custom node — `open`/`close`/`read`/`write`/`finddir`/`readdir`/`create` function
@@ -154,26 +166,26 @@ the character visually disappears, Enter (`\r` or `\n`) delivers the completed l
 
 | Decision | Options | Leaning |
 |---|---|---|
-| fd 0/1/2 at task creation | pre-open onto `/dev/console` for real vs keep a lighter fd-number special case | Pre-open for real — that's what retiring the shim actually means, and it's what every later program will expect to already be true |
-| `struct file`'s `offset` for a character device | ignore it vs repurpose vs error if seeked | Ignore — POSIX character devices conventionally don't support seeking; `sys_lseek` on `/dev/console` returning an error is more honest than a number that means nothing |
-| Where does the line buffer live | one global buffer vs per-open `struct file` | Per-open, via `priv_data` — a global buffer works with exactly one reader, which happens to be true today, but ties the design to that being permanently true |
+| fd 0/1/2 at task creation | pre-open onto `/dev/console` for real vs keep a lighter fd-number special case | **Pre-opened for real** in `task_inner_create()` — one `file_open_node()` and two `file_ref()`, so `close(1)` can't tear the node out from under fds `0` and `2` |
+| `struct file`'s `offset` for a character device | ignore it vs repurpose vs error if seeked | **Ignored, and `sys_lseek` returns `-ESPIPE`** on a `VFS_CHARDEVICE` node — the real Linux errno for exactly this |
+| Where does the line buffer live | one global buffer vs per-open `struct file` | **Per-node, not per-open** — the `struct ldisc` lives in the console node's `priv_data`. Better than a file-scope global, short of the goal, and a named gap: two tasks reading `/dev/console` would still race. Phase 7, with the wait queue |
 
 ---
 
 ## 🗺️ Chapter 3: The Steps
 
-- **⬜ Step 1 — UART receive interrupt + byte queue.** Chapter 1 above. No user-visible behavior
+- **✅ Step 1 — UART receive interrupt + byte queue.** Chapter 1 above. No user-visible behavior
   of its own — verified by a kernel-internal debug loop that drains the queue and echoes it back
   through the existing `console_putc()`, proving the interrupt fires and bytes flow, before
   anything downstream exists to consume them for real. Individually designed in
   [`PHASE6_STEP1_UART_INPUT.md`](PHASE6_STEP1_UART_INPUT.md).
-- **⬜ Step 2 — TTY line discipline + `/dev/console`.** Chapter 2 above. A test program can
+- **✅ Step 2 — TTY line discipline + `/dev/console`.** Chapter 2 above. A test program can
   `read()` a real, edited line typed at the keyboard from a real VFS node, and
   `sys_write_console_or_vfs`'s special case is gone. Individually designed in
   [`PHASE6_STEP2_TTY_CONSOLE.md`](PHASE6_STEP2_TTY_CONSOLE.md).
-- **Step 3 — `getdents64` + `psh`.** Not designed here on purpose. Depends on Step 2's
-  `/dev/console` being real, and may reshape once Steps 1-2 are actually built rather than just
-  planned.
+- **⬜ Step 3 — `getdents64` + `psh`.** Not designed here on purpose. Steps 1-2 are now built
+  rather than planned, so this is the one left to design — and it inherits a real `/dev/console`,
+  a preemptible syscall path, and a spinlock that none of the original planning assumed.
 
 ---
 

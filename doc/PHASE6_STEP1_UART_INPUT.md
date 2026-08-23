@@ -1,4 +1,4 @@
-# Working Document: Phase 6 Step 1 — The UART Receive Interrupt and Its Byte Queue [STATUS: NOT STARTED ⬜]
+# Working Document: Phase 6 Step 1 — The UART Receive Interrupt and Its Byte Queue [STATUS: COMPLETE ✅]
 
 > [!NOTE]
 > **Phase 6 Step 1**, from [`PHASE6_TALK_BACK.md`](PHASE6_TALK_BACK.md) Chapter 1, expanded into
@@ -190,7 +190,7 @@ drain loop gets built.
 
 # 🅱️ Track B — AArch64: PL011 receive interrupt
 
-## B1 — Real PL011 registers, GIC enable, feed the queue
+## B1 — Real PL011 registers, GIC enable, feed the queue ✅ DONE (2026-08-18)
 
 **Goal:** the same outcome as A1, on AArch64.
 
@@ -213,11 +213,25 @@ else needed here is genuinely new:
   after the branch handles the GIC side; `UARTICR` is a separate, PL011-internal acknowledgment
   and both are needed).
 
+Landed as designed, with decision 2 resolved by verification rather than faith: the PL011 is
+**SPI 1, GIC INTID 33**, now named `GIC_INTID_PL011` in `gic.h:45`. `gic_enable_irq(uint32_t
+intid)` was generalized rather than duplicated — one function computing `GICD_ISENABLER0 + (intid
+/ 32) * 4` and bit `intid % 32`, so the timer's PPI 27 and the PL011's SPI 33 go through the same
+call and `gic_init()` no longer writes `GICD_ISENABLER0` directly.
+
+Two things landed beyond the sketch. `serial_rx_ready()` was added on both architectures (PL011
+`UARTFR` bit 4, 16550 `LSR` bit 0) so the ISR **drains in a loop** rather than reading exactly
+one byte — one interrupt can stand for several queued bytes, and reading only one leaves the rest
+in the hardware FIFO. And `serial_init()` was split into `serial_init_put()` / `serial_init_get()`,
+because transmit has to work from the first line of boot while receive can only be armed once the
+interrupt controller is up — the same call could no longer serve both.
+
 **Verify:** same as A1 — boot, type, confirm the byte value matches, via a temporary debug print.
+Confirmed on AArch64 via QEMU `-serial stdio`.
 
 ---
 
-## 🧩 C1 — Prove both: the echo loop
+## 🧩 C1 — Prove both: the echo loop ✅ DONE (2026-08-18)
 
 **Goal:** a temporary debug loop — drain `C0`'s queue (polled from the boot loop, or on every
 timer tick) and echo each byte straight back out through the existing `console_putc()`. Typing
@@ -226,8 +240,16 @@ deleted once Step 2's real consumer exists — its only job is proving the whole
 interrupt → queue) works end to end, on both architectures, before Step 2 builds anything on top
 of it.
 
+Built exactly as throwaway scaffolding and deleted once Step 2's `/dev/console` became the real
+consumer — which is what it was for. It did its job: it proved hardware → interrupt → queue on
+both architectures before anything was built on top.
+
+What it did **not** prove, and could not have, is the read side. The echo loop and the ISR both
+lived in kernel context, so `console_input_pop()`'s only real caller arrived in Step 2 — see the
+retrospective below for what that hid.
+
 **Verify:** boot both architectures, type at each, confirm the echo. No unhandled-exception dump,
-no dropped bytes under normal (human-speed) typing.
+no dropped bytes under normal (human-speed) typing. Confirmed on both.
 
 ---
 
@@ -262,10 +284,12 @@ Existing, to be modified:
 - ✅ `kernel/src/arch/x86_64/serial.c` + `kernel/include/core/serial.h` — RX interrupt enabled,
   `serial_getc()` added (renamed from `earlycon` mid-Step, see decision 3 above)
 - ✅ `kernel/src/arch/x86_64/idt.c` — new IRQ 4 branch in `x86_64_dispatch()`
-- ⬜ `kernel/src/arch/aarch64/serial.c` + `kernel/include/core/serial.h` — real PL011 register
-  offsets beyond the data register; `serial_getc()` exists as a stub (`return 0`), not yet real
-- ⬜ `kernel/src/arch/aarch64/gic.h` + `gic.c` — `GICD_ISENABLERn` for `n > 0`
-- ⬜ `kernel/src/arch/aarch64/exceptions.c` — new `intid` branch in `aarch64_dispatch()`
+- ✅ `kernel/src/arch/aarch64/serial.c` + `kernel/include/core/serial.h` — real PL011 register
+  offsets (`UARTFR`/`UARTIMSC`/`UARTICR`), `serial_getc()`/`serial_rx_ready()` real on both arches,
+  `serial_init()` split into `serial_init_put()`/`serial_init_get()`
+- ✅ `kernel/src/arch/aarch64/gic.h` + `gic.c` — `gic_enable_irq(intid)` generalized to any
+  `GICD_ISENABLERn`, `GIC_INTID_PL011` (33) named and verified
+- ✅ `kernel/src/arch/aarch64/exceptions.c` — new `intid` branch in `aarch64_dispatch()`
 
 ---
 
@@ -274,3 +298,32 @@ Existing, to be modified:
 - **C0** is pure data — push/pop/overflow behavior, no hardware or boot involved.
 - **A1, B1, C1** are only observable by booting — a real interrupt firing from real (emulated)
   hardware, on real register state, is the actual thing being proven.
+
+---
+
+## 🔍 Retrospective — two things this Step got wrong, both found in Step 2
+
+Written after the fact, because both cost real debugging time and neither was visible from inside
+this Step.
+
+**`console_input_init()` was never called.** It was written, declared, exported — and no caller
+existed anywhere in the tree. `queue` stayed a zeroed static with `capacity == 0`, which makes
+`ring_buffer_push()` take its `count == capacity` branch (`0 == 0`) and drop every byte, while
+`ring_buffer_pop()` takes its `count == 0` branch and returns nothing. Both silent, no fault: the
+capacity check short-circuits before anything dereferences the NULL `buf`.
+
+C1's echo loop should have caught this and didn't — which is the lesson worth keeping. It echoed
+from *inside* `console_input_push()` (see A1's note above) rather than by draining through
+`console_input_pop()`, so it proved the ISR fired and the byte was right, and proved nothing about
+the queue actually storing anything. **Scaffolding that taps the producer instead of exercising
+the consumer isn't an end-to-end test**, it just looks like one. Fixed in Step 2 by calling
+`console_input_init()` from `main()` before `serial_init_get()`.
+
+**Decision 1's `count` field is a shared read-modify-write.** Choosing `count` over the
+one-wasted-slot scheme did remove the `head == tail` ambiguity, and the "no locking needed as long
+as pushes only ever happen from interrupt context" comment was right at the time — but only
+because the *consumer* also happened to run with interrupts masked. Step 2 made syscalls
+preemptible, which broke that unstated half of the invariant: `count++` in the ISR can now land
+between the reader's load and store of `count--`, losing the increment. Fixed in Step 2 with a
+real `spinlock_lock_irqsave()` around both sides. The comment was accurate and still misleading,
+because it named one of the two conditions it depended on.
