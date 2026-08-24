@@ -18,6 +18,7 @@ static syscall_handler_t syscall_table[NR_SYSCALLS] = {
     [SYS_close] = (syscall_handler_t)sys_close,
     [SYS_getpid] = (syscall_handler_t)sys_getpid,
     [SYS_exit] = (syscall_handler_t)sys_exit,
+    [SYS_getdents64] = (syscall_handler_t)sys_getdents64,
 };
 #pragma clang diagnostic pop
 

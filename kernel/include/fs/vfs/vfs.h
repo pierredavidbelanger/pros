@@ -4,12 +4,12 @@
 #include "stdc.h"
 
 #define VFS_NAME_SIZE 128
-#define VFS_PATH_MAX  256
+#define VFS_PATH_MAX 256
 
 // Node flags to distinguish between file types
-#define VFS_FILE        0x01
-#define VFS_DIRECTORY   0x02
-#define VFS_CHARDEVICE  0x04
+#define VFS_FILE 0x01
+#define VFS_DIRECTORY 0x02
+#define VFS_CHARDEVICE 0x04
 #define VFS_BLOCKDEVICE 0x08
 
 struct vfs_node;
@@ -26,7 +26,7 @@ struct vfs_ops {
     // IO
     int64_t (*read)(struct vfs_node *node, uint64_t offset, uint64_t size, void *buffer);
     int64_t (*write)(struct vfs_node *node, uint64_t offset, uint64_t size, const void *buffer);
-    
+
     // Directory specific operations
     struct vfs_node *(*finddir)(struct vfs_node *node, const char *name);
     int (*readdir)(struct vfs_node *node, uint32_t index, struct vfs_dirent *out);
@@ -35,16 +35,17 @@ struct vfs_ops {
 struct vfs_node {
     char name[VFS_NAME_SIZE];
     uint32_t flags;
-    uint64_t inode;        // Unique ID for the file on disk
-    uint64_t size;         // Size in bytes
-    
-    struct vfs_ops *ops;   // Pointer to the functions that implement this node
-    void *priv_data;       // A driver-specific pointer (e.g., FAT cluster info)
+    uint64_t inode;  // Unique ID for the file on disk
+    uint64_t size;   // Size in bytes
+
+    struct vfs_ops *ops;  // Pointer to the functions that implement this node
+    void *priv_data;      // A driver-specific pointer (e.g., FAT cluster info)
 };
 
 struct vfs_dirent {
     char name[VFS_NAME_SIZE];
-    uint32_t flags; // E.g., VFS_FILE or VFS_DIRECTORY
+    uint32_t flags;  // E.g., VFS_FILE or VFS_DIRECTORY
+    uint64_t inode;
 };
 
 struct vfs_mount {
@@ -60,4 +61,4 @@ struct vfs_node *vfs_lookup(const char *path);
 struct vfs_node *vfs_create(const char *path, uint32_t flags);
 struct vfs_node *vfs_mkdir_parents(const char *path);
 
-#endif //PROS_VFS_H
+#endif  // PROS_VFS_H

@@ -2,17 +2,16 @@
 
 #include "core/kprintf.h"
 #include "core/memory.h"
+#include "errno.h"
 #include "mm/heap.h"
 #include "mm/pmm.h"
-
-#include "errno.h"
 
 struct ramfs_node_data {
     struct vfs_node *first_child;
     struct vfs_node *next_sibling;
     // struct vfs_node *parent;
-    void **pages; // virtual addrs (pmm_phys_to_virt of pmm_alloc(1))
-    uint64_t page_count; // number of entries in `pages`, NOT a byte count
+    void **pages;         // virtual addrs (pmm_phys_to_virt of pmm_alloc(1))
+    uint64_t page_count;  // number of entries in `pages`, NOT a byte count
 };
 
 int ramfs_ops_create(struct vfs_node *dir, const char *name, uint32_t flags, struct vfs_node **out);
@@ -153,7 +152,6 @@ int64_t ramfs_ops_read(struct vfs_node *node, uint64_t offset, uint64_t size, vo
     // at the start remaining is the requested size
     uint64_t remaining = size;
     while (remaining > 0) {
-
         // the page index and offset and chunk size
         uint64_t page_index = 0;
         uint64_t page_offset = 0;
@@ -163,7 +161,7 @@ int64_t ramfs_ops_read(struct vfs_node *node, uint64_t offset, uint64_t size, vo
         void *page_addr = ramfs_walk_page(node_data, page_index, false);
         if (page_addr) {
             // we got a page, transfer
-            memcpy(buffer, (uint8_t *) page_addr + page_offset, chunk_size);
+            memcpy(buffer, (uint8_t *)page_addr + page_offset, chunk_size);
         } else {
             // we did not get a page
             // write zeros to the caller buffer
@@ -172,7 +170,7 @@ int64_t ramfs_ops_read(struct vfs_node *node, uint64_t offset, uint64_t size, vo
 
         // move ahead the offset and the caller buffer pointer
         offset += chunk_size;
-        buffer = (uint8_t *) buffer + chunk_size;
+        buffer = (uint8_t *)buffer + chunk_size;
 
         // what we need to read in the next loop
         remaining -= chunk_size;
@@ -192,7 +190,6 @@ int64_t ramfs_ops_write(struct vfs_node *node, uint64_t offset, uint64_t size, c
     // at the start remaining is the requested size
     uint64_t remaining = size;
     while (remaining > 0) {
-
         // the page index and offset and chunk size
         uint64_t page_index = 0;
         uint64_t page_offset = 0;
@@ -202,7 +199,7 @@ int64_t ramfs_ops_write(struct vfs_node *node, uint64_t offset, uint64_t size, c
         void *page_addr = ramfs_walk_page(node_data, page_index, true);
         if (page_addr) {
             // we got a page, transfer
-            memcpy((uint8_t *) page_addr + page_offset, buffer, chunk_size);
+            memcpy((uint8_t *)page_addr + page_offset, buffer, chunk_size);
             actual_size += chunk_size;
         } else {
             // we did not get a page
@@ -212,7 +209,7 @@ int64_t ramfs_ops_write(struct vfs_node *node, uint64_t offset, uint64_t size, c
 
         // move ahead the offset and the caller buffer pointer
         offset += chunk_size;
-        buffer = (const uint8_t *) buffer + chunk_size;
+        buffer = (const uint8_t *)buffer + chunk_size;
 
         // what we need to read in the next loop
         remaining -= chunk_size;
@@ -255,6 +252,7 @@ int ramfs_ops_readdir(struct vfs_node *node, uint32_t index, struct vfs_dirent *
         if (i == index) {
             snprintf(out->name, VFS_NAME_SIZE, "%s", child->name);
             out->flags = child->flags;
+            out->inode = child->inode;
             return 1;
         }
         struct ramfs_node_data *child_data = child->priv_data;

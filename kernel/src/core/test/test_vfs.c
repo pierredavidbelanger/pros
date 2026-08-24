@@ -1,7 +1,9 @@
-#include "core/test/test.h"
-
+#include "core/kprintf.h"
 #include "core/memory.h"
 #include "core/syscalls.h"
+#include "core/test/test.h"
+#include "errno.h"
+#include "fs/vfs/file.h"
 #include "fs/vfs/vfs.h"
 #include "mm/pmm.h"
 #include "mm/vmm.h"
@@ -9,13 +11,20 @@
 #define TEST_VFS_TAG "VFS"
 
 // what the root Makefile puts in initrd.tar
-#define TEST_VFS_INITRD_DIR  "/root"
+#define TEST_VFS_INITRD_DIR "/root"
 #define TEST_VFS_INITRD_FILE "/root/hello.txt"
 #define TEST_VFS_INITRD_TEXT "HelloWorld\n"
 #define TEST_VFS_INITRD_SIZE 11
 
 // scratch area the write tests build for themselves, so they never depend on the archive
 #define TEST_VFS_SCRATCH_DIR "/test/scratch"
+
+// a directory the getdents64 tests own, so the entry count and the names are known
+#define TEST_VFS_DENTS_DIR TEST_VFS_SCRATCH_DIR "/dents"
+
+// where d_name starts in a packed record, and the biggest record the kernel can ever build
+#define TEST_VFS_DENT_NAME_OFFSET (offsetof(struct linux_dirent64, d_name))
+#define TEST_VFS_DENT_MAX_RECLEN ((TEST_VFS_DENT_NAME_OFFSET + VFS_NAME_SIZE + 7) & ~7ULL)
 
 #define TEST_VFS_BUF_SIZE 512
 
@@ -43,6 +52,44 @@ static struct vfs_node *test_vfs_make_file(const char *path) {
     return vfs_create(path, VFS_FILE);
 }
 
+// walks a packed getdents64 buffer end to end, counting entries and looking for `name`.
+// well_formed stays true only if every record is 8 aligned, stays inside len, holds its own
+// name, and the walk lands exactly on len -- landing anywhere else means a d_reclen lied
+static uint32_t test_vfs_walk_dents(const uint8_t *buf, int64_t len, const char *name, bool *found, bool *well_formed) {
+    *found = false;
+    *well_formed = true;
+
+    uint32_t count = 0;
+    int64_t pos = 0;
+    while (pos < len) {
+        const struct linux_dirent64 *dent = (const struct linux_dirent64 *)(buf + pos);
+        // not 8 aligned means the next record starts misaligned
+        if (dent->d_reclen == 0 || dent->d_reclen % 8 != 0) break;
+        // and a record must not claim more than the kernel said it wrote
+        if (pos + dent->d_reclen > len) break;
+        // the name plus its NUL has to fit in the record holding it
+        if (TEST_VFS_DENT_NAME_OFFSET + strlen(dent->d_name) + 1 > dent->d_reclen) break;
+        if (name && strncmp(dent->d_name, name, VFS_NAME_SIZE) == 0) *found = true;
+        pos += dent->d_reclen;
+        count++;
+    }
+
+    if (pos != len) *well_formed = false;
+    return count;
+}
+
+// finds one entry by name, NULL if this buffer does not hold it
+static const struct linux_dirent64 *test_vfs_find_dent(const uint8_t *buf, int64_t len, const char *name) {
+    int64_t pos = 0;
+    while (pos < len) {
+        const struct linux_dirent64 *dent = (const struct linux_dirent64 *)(buf + pos);
+        if (dent->d_reclen == 0 || pos + dent->d_reclen > len) return NULL;
+        if (strncmp(dent->d_name, name, VFS_NAME_SIZE) == 0) return dent;
+        pos += dent->d_reclen;
+    }
+    return NULL;
+}
+
 // seeks then reads, returning whatever sys_read reported
 static int64_t test_vfs_read_at(int fd, uint64_t offset, void *buf, uint64_t size) {
     if (sys_lseek(fd, offset, SEEK_SET) < 0) return -1;
@@ -56,17 +103,23 @@ static void test_vfs_initrd(uint8_t *buf) {
     if (fd < 0) return;
 
     // look for a specific name rather than a fixed count, so adding entries to initrd.tar
-    // does not break this test
-    struct vfs_dirent entry;
+    // does not break this test. the loop also covers the multi call path if it ever grows
     bool found_hello = false;
+    bool well_formed = true;
     uint32_t entry_count = 0;
-    while (sys_readdir(fd, &entry) == 1) {
-        entry_count++;
-        if (strncmp(entry.name, "hello.txt", VFS_NAME_SIZE) == 0) found_hello = true;
+    int64_t len;
+    while ((len = sys_getdents64(fd, buf, TEST_VFS_BUF_SIZE)) > 0) {
+        bool found, ok;
+        entry_count += test_vfs_walk_dents(buf, len, "hello.txt", &found, &ok);
+        found_hello = found_hello || found;
+        well_formed = well_formed && ok;
     }
     sys_close(fd);
-    test_report(TEST_VFS_TAG, "readdir enumerates entries", entry_count > 0);
-    test_report(TEST_VFS_TAG, "readdir finds hello.txt", found_hello);
+    test_report(TEST_VFS_TAG, "getdents64 enumerates entries", entry_count > 0);
+    test_report(TEST_VFS_TAG, "getdents64 records are well formed", well_formed);
+    test_report(TEST_VFS_TAG, "getdents64 finds hello.txt", found_hello);
+    // draining a directory ends on a clean zero, not an error
+    test_report(TEST_VFS_TAG, "getdents64 stops at the end", len == 0);
 
     // resolving a path that was never created must fail rather than inventing a node
     test_report(TEST_VFS_TAG, "open of a missing path fails", sys_open("/root/nope.txt", O_RDONLY) < 0);
@@ -186,7 +239,7 @@ static void test_vfs_sparse(uint8_t *buf) {
     if (fd < 0) return;
 
     sys_lseek(fd, 2 * PAGE_SIZE, SEEK_SET);
-    memcpy(buf, "DATA", 4); // sys_write needs a real user buffer, not a rodata pointer
+    memcpy(buf, "DATA", 4);  // sys_write needs a real user buffer, not a rodata pointer
     test_report(TEST_VFS_TAG, "write past EOF", sys_write(fd, buf, 4) == 4);
     test_report(TEST_VFS_TAG, "sparse write sets the size", node->size == 2 * PAGE_SIZE + 4);
 
@@ -208,6 +261,81 @@ static void test_vfs_sparse(uint8_t *buf) {
     sys_close(fd);
 }
 
+static void test_vfs_getdents(uint8_t *buf) {
+    // a directory this test owns, so the entry count and every name are known.
+    // mkdir_parents leaves the leaf alone, so this builds .../dents and .../dents/sub
+    if (!vfs_mkdir_parents(TEST_VFS_DENTS_DIR "/sub/leaf")) return;
+    if (!test_vfs_make_file(TEST_VFS_DENTS_DIR "/short.txt")) return;
+
+    // 127 chars plus the NUL is the longest name a vfs_dirent can carry, and the record it packs
+    // into is the largest sys_getdents64 ever builds -- the one that overflows a buffer sized
+    // without the round up
+    char long_name[VFS_NAME_SIZE];
+    memset(long_name, 'L', VFS_NAME_SIZE - 1);
+    long_name[VFS_NAME_SIZE - 1] = '\0';
+
+    char long_path[VFS_PATH_MAX];
+    snprintf(long_path, VFS_PATH_MAX, "%s/%s", TEST_VFS_DENTS_DIR, long_name);
+    if (!test_vfs_make_file(long_path)) return;
+
+    int fd = sys_open(TEST_VFS_DENTS_DIR, O_RDONLY);
+    test_report(TEST_VFS_TAG, "open the getdents64 directory", fd >= 0);
+    if (fd < 0) return;
+
+    // 24 + 32 + 152 fits well inside the scratch buffer, so one call takes all three
+    int64_t len = sys_getdents64(fd, buf, TEST_VFS_BUF_SIZE);
+    bool found, well_formed;
+    uint32_t count = test_vfs_walk_dents(buf, len, NULL, &found, &well_formed);
+    test_report(TEST_VFS_TAG, "getdents64 returns every entry", count == 3);
+    test_report(TEST_VFS_TAG, "getdents64 walk lands exactly on the length", well_formed);
+
+    // d_type has to survive the repack, not just the names
+    const struct linux_dirent64 *sub = test_vfs_find_dent(buf, len, "sub");
+    test_report(TEST_VFS_TAG, "getdents64 types a directory DT_DIR", sub != NULL && sub->d_type == DT_DIR);
+    const struct linux_dirent64 *reg = test_vfs_find_dent(buf, len, "short.txt");
+    test_report(TEST_VFS_TAG, "getdents64 types a file DT_REG", reg != NULL && reg->d_type == DT_REG);
+
+    // the longest name must round up to exactly the max record, 152 bytes today
+    const struct linux_dirent64 *longest = test_vfs_find_dent(buf, len, long_name);
+    test_report(TEST_VFS_TAG, "getdents64 packs the longest name", longest != NULL);
+    test_report(TEST_VFS_TAG, "longest record is the rounded up max", longest != NULL && longest->d_reclen == TEST_VFS_DENT_MAX_RECLEN);
+
+    // the directory is drained now
+    test_report(TEST_VFS_TAG, "getdents64 at the end returns zero", sys_getdents64(fd, buf, TEST_VFS_BUF_SIZE) == 0);
+
+    // d_off is where lseek has to go to land on the entry AFTER this one,
+    // so resuming from the first one must return the other two and never repeat it
+    sys_lseek(fd, 0, SEEK_SET);
+    len = sys_getdents64(fd, buf, TEST_VFS_BUF_SIZE);
+    if (len > 0) {
+        const struct linux_dirent64 *first = (const struct linux_dirent64 *)buf;
+        int64_t after_first = first->d_off;
+        // copy the name out, the next call overwrites the buffer it lives in
+        char first_name[VFS_NAME_SIZE];
+        snprintf(first_name, VFS_NAME_SIZE, "%s", first->d_name);
+
+        sys_lseek(fd, after_first, SEEK_SET);
+        len = sys_getdents64(fd, buf, TEST_VFS_BUF_SIZE);
+        uint32_t rest = test_vfs_walk_dents(buf, len, first_name, &found, &well_formed);
+        test_report(TEST_VFS_TAG, "d_off resumes after that entry", rest == 2 && !found);
+    }
+
+    // a buffer too small for even one record is the caller's error,
+    // reporting it as an empty directory would be a wrong answer instead of an error
+    sys_lseek(fd, 0, SEEK_SET);
+    test_report(TEST_VFS_TAG, "getdents64 into a tiny buffer fails", sys_getdents64(fd, buf, 8) == -EINVAL);
+    test_report(TEST_VFS_TAG, "getdents64 with a zero count fails", sys_getdents64(fd, buf, 0) == -EINVAL);
+
+    sys_close(fd);
+
+    // a regular file is not a directory, and saying so beats saying "not implemented"
+    int file_fd = sys_open(TEST_VFS_DENTS_DIR "/short.txt", O_RDONLY);
+    if (file_fd >= 0) {
+        test_report(TEST_VFS_TAG, "getdents64 on a file fails", sys_getdents64(file_fd, buf, TEST_VFS_BUF_SIZE) == -ENOTDIR);
+        sys_close(file_fd);
+    }
+}
+
 void test_vfs(void) {
     // sys_read/sys_write bounds-check against VMM_ADDR_SPLIT,
     // so the shared scratch buffer has to be a real mapped page below it,
@@ -218,10 +346,11 @@ void test_vfs(void) {
         pmm_free(buf_phys, 1);
         return;
     }
-    uint8_t *buf = (uint8_t *) TEST_VFS_BUF_VIRT;
+    uint8_t *buf = (uint8_t *)TEST_VFS_BUF_VIRT;
 
     test_vfs_initrd(buf);
     test_vfs_directories(buf);
+    test_vfs_getdents(buf);
     test_vfs_write(buf);
     test_vfs_page_boundary(buf);
     test_vfs_sparse(buf);

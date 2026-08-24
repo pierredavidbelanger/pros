@@ -4,13 +4,20 @@
 #include "core/memory.h"
 #include "core/syscalls.h"
 #include "errno.h"
+#include "fs/vfs/vfs.h"
 #include "mm/heap.h"
 #include "mm/uaccess.h"
 #include "proc/sched.h"
+#include "stdc.h"
 
 #define COPY_BUFFER_SIZE 512
 
 #define AT_FDCWD -100  // from Linux
+
+// user expect the linux_dirent64.d_reclen be rounded up to 8
+#define DIRENT_RECLEN_ROUND_UP(x) (((x) + 7) & ~7ULL)
+#define DIRENT_NAME_OFFSET (offsetof(struct linux_dirent64, d_name))
+#define DIRENT_BUFFER_SIZE DIRENT_RECLEN_ROUND_UP(DIRENT_NAME_OFFSET + VFS_NAME_SIZE)
 
 static struct file **current_task_fds() {
     struct task *task = sched_get_current_task();
@@ -110,27 +117,78 @@ int64_t sys_close(int fd) {
     return 0;
 }
 
-int64_t sys_readdir(int fd, struct vfs_dirent *out) {
+int64_t sys_getdents64(int fd, void *dirp, uint64_t count) {
     if (fd < 0 || fd >= MAX_OPEN_FILES) return -EBADF;
-    if (!out) return -EFAULT;
+    if (!dirp) return -EFAULT;
 
     struct file **fds = current_task_fds();
     if (!fds) return -EBADF;
 
     struct file *f = fds[fd];
-    if (!f) return -EBADF;
+    if (!f || !f->node) return -EBADF;
+    if (!(f->node->flags & VFS_DIRECTORY)) return -ENOTDIR;
     if (!f->node->ops || !f->node->ops->readdir) return -ENOSYS;
 
-    // Use f->offset as the directory index
-    int res = f->node->ops->readdir(f->node, f->offset, out);
+    // lot of trouble to ABI fit my VFS readdir to Linux getdents64
+    // i guess this will be worth it when porting busybox
 
-    // If the driver successfully found a file at this index, increment the offset
-    // this way, the next time sys_readdir is called, it fetches the NEXT file
-    if (res == 1) {
+    uint64_t actual_count = 0;
+    while (true) {
+        struct vfs_dirent dirent;
+
+        // Use f->offset as the directory index
+        int res = f->node->ops->readdir(f->node, f->offset, &dirent);
+        if (res != 1) {
+            // no more entry, not an error
+            if (res == 0) break;
+            // nothing written yet, caller get an error
+            if (actual_count == 0) return -EIO;
+            // we have written something, let the caller know
+            break;
+        }
+
+        size_t name_len = strlen(dirent.name) + 1;
+        uint64_t reclen = DIRENT_RECLEN_ROUND_UP(DIRENT_NAME_OFFSET + name_len);
+        // can we fit this entry in the caller buffer
+        if (actual_count + reclen > count) {
+            // nothing written yet, caller get an error
+            if (actual_count == 0) return -EINVAL;
+            // we have written something, let the caller know
+            break;
+        }
+
+        struct linux_dirent64 hdr;
+        hdr.d_ino = dirent.inode;
+        hdr.d_off = (int64_t)(f->offset + 1);  // so lseek find the next entry
+        hdr.d_reclen = (uint16_t)reclen;
+        if (dirent.flags & VFS_FILE) {
+            hdr.d_type = DT_REG;
+        } else if (dirent.flags & VFS_DIRECTORY) {
+            hdr.d_type = DT_DIR;
+        } else if (dirent.flags & VFS_CHARDEVICE) {
+            hdr.d_type = DT_CHR;
+        } else {
+            hdr.d_type = DT_UNKNOWN;
+        }
+
+        char chunk[DIRENT_BUFFER_SIZE];
+        memset(chunk, 0, reclen);
+        memcpy(chunk, &hdr, DIRENT_NAME_OFFSET);
+        memcpy(chunk + DIRENT_NAME_OFFSET, dirent.name, name_len);
+
+        res = copy_to_user((uint8_t *)dirp + actual_count, chunk, reclen);
+        if (res != 0) {
+            // nothing written yet, caller get an error
+            if (actual_count == 0) return res;
+            // we have written something, let the caller know
+            break;
+        }
+
+        actual_count += reclen;
         f->offset++;
     }
 
-    return res;
+    return actual_count;
 }
 
 int64_t sys_read(int fd, void *buf, uint64_t count) {
