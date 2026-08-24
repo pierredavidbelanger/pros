@@ -11,4 +11,4 @@ int copy_from_user(void *kernel_dst, const void *user_src, uint64_t len);
 
 int copy_to_user(void *user_dst, const void *kernel_src, uint64_t len);
 
-#endif //PROS_UACCESS_H
+#endif  // PROS_UACCESS_H

@@ -7,19 +7,19 @@
 // These are NOT hardware PTE bits. They are translated to hardware
 // format by arch_vmm_make_pte() in each arch's arch.c.
 
-#define VMM_PRESENT       (1ULL << 0)
-#define VMM_WRITABLE      (1ULL << 1)
-#define VMM_USER          (1ULL << 2)
+#define VMM_PRESENT (1ULL << 0)
+#define VMM_WRITABLE (1ULL << 1)
+#define VMM_USER (1ULL << 2)
 #define VMM_CACHE_DISABLE (1ULL << 3)
-#define VMM_NO_EXECUTE    (1ULL << 4)
+#define VMM_NO_EXECUTE (1ULL << 4)
 
 // ─── Paging Geometry (architecture-neutral, 4-level / 4 KiB granule) ──
 // Single source of truth for the page-table walk math, instead of the shift/mask
 // literals it replaces being hand-copied at every call site in vmm.c.
 
-#define VMM_LEVEL_BITS 9                                   // index bits per page-table level
-#define VMM_LEVELS     4                                   // page-table depth (root..leaf)
-#define VMM_VA_BITS    (12 + VMM_LEVELS * VMM_LEVEL_BITS)  // usable virtual-address width (48)
+#define VMM_LEVEL_BITS 9                                // index bits per page-table level
+#define VMM_LEVELS 4                                    // page-table depth (root..leaf)
+#define VMM_VA_BITS (12 + VMM_LEVELS * VMM_LEVEL_BITS)  // usable virtual-address width (48)
 
 // Canonical split between the per-context lower half and the shared kernel upper half.
 #define VMM_ADDR_SPLIT (1ULL << (VMM_VA_BITS - 1))
@@ -27,10 +27,10 @@
 // ─── VMM Context ─────────────────────────────────────────────
 
 struct vmm_context {
-    uint64_t root_phys;      // Physical address of root page table
-    uint64_t *root_virt;     // HHDM virtual address of root page table
-    uint64_t demand_page_lo; // Start of this context's demand-pageable range
-    uint64_t demand_page_hi; // End (exclusive) of the demand-pageable range (0/0 = disabled)
+    uint64_t root_phys;       // Physical address of root page table
+    uint64_t *root_virt;      // HHDM virtual address of root page table
+    uint64_t demand_page_lo;  // Start of this context's demand-pageable range
+    uint64_t demand_page_hi;  // End (exclusive) of the demand-pageable range (0/0 = disabled)
 };
 
 extern struct vmm_context *vmm_kernel_context;
@@ -63,4 +63,4 @@ void vmm_switch_context(struct vmm_context *ctx);
 // Handle a page fault (demand paging). Returns true if resolved.
 bool vmm_handle_page_fault(uint64_t fault_addr, uint64_t error_code);
 
-#endif //PROS_VMM_H
+#endif  // PROS_VMM_H

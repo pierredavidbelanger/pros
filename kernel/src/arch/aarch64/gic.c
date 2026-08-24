@@ -39,8 +39,8 @@ void gic_init(void) {
 void gic_enable_irq(uint32_t intid) {
     // One bit per interrupt ID, write-1-to-set.
     // Zeros are ignored rather than clearing, so enabling one line needs no read-modify-write
-    uint64_t reg_offset = GICD_ISENABLER0 + (intid / 32) * 4; // which 32-line block
-    gic_write(GIC_DIST_PHYS_BASE, reg_offset, 1u << (intid % 32)); // which bit in it
+    uint64_t reg_offset = GICD_ISENABLER0 + (intid / 32) * 4;       // which 32-line block
+    gic_write(GIC_DIST_PHYS_BASE, reg_offset, 1u << (intid % 32));  // which bit in it
 }
 
 uint32_t gic_acknowledge(void) {

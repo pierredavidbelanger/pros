@@ -86,7 +86,6 @@ static struct vfs_node *vfs_inner_find_and_create(const char *path, bool stop_at
     char *saveptr;
     char *token = strtokr(path_buf, "/", &saveptr);
     while (token != NULL) {
-
         // no token after this one means this token is the last one
         char *next_token = strtokr(NULL, "/", &saveptr);
         bool is_last = next_token == NULL;

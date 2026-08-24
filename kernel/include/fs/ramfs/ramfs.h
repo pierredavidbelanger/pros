@@ -5,4 +5,4 @@
 
 struct vfs_node *ramfs_create_root(void);
 
-#endif //PROS_RAMFS_H
+#endif  // PROS_RAMFS_H

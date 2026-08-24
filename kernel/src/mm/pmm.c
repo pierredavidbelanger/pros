@@ -64,11 +64,11 @@ uint64_t pmm_claim(uint64_t memmap_type) {
 }
 
 void *pmm_phys_to_virt(uint64_t phys_addr) {
-    return (void *) (phys_addr + hhdm_get_offset());
+    return (void *)(phys_addr + hhdm_get_offset());
 }
 
 uint64_t pmm_virt_to_phys(void *virt_addr) {
-    return (uint64_t) virt_addr - hhdm_get_offset();
+    return (uint64_t)virt_addr - hhdm_get_offset();
 }
 
 uint64_t pmm_get_max_phys_addr(void) {
@@ -85,7 +85,7 @@ uint64_t pmm_alloc(size_t count) {
         for (size_t actual = 0; actual < count - 1; actual++) {
             // here we check that curr_node - PAGE_SIZE == curr_node->next
             // because page are prepended, so the order is reversed
-            contiguous = (void *) curr_node - PAGE_SIZE == (void *) curr_node->next;
+            contiguous = (void *)curr_node - PAGE_SIZE == (void *)curr_node->next;
             if (!contiguous) {
                 break;
             }

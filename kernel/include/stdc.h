@@ -6,4 +6,4 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#endif //PROS_STDC_H
+#endif  // PROS_STDC_H

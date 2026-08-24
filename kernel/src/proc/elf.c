@@ -10,11 +10,11 @@
 #define EI_NIDENT 16
 
 // e_ident[] indices
-#define EI_MAG0    0
-#define EI_MAG1    1
-#define EI_MAG2    2
-#define EI_MAG3    3
-#define EI_CLASS   4
+#define EI_MAG0 0
+#define EI_MAG1 1
+#define EI_MAG2 2
+#define EI_MAG3 3
+#define EI_CLASS 4
 
 // e_ident[] magic bytes, one per EI_MAG* index
 #define ELFMAG0 0x7f
@@ -26,8 +26,8 @@
 #define ELFCLASS64 2
 
 // e_type
-#define ET_EXEC 2 // what we load
-#define ET_DYN  3 // PIE, rejected explicitly
+#define ET_EXEC 2  // what we load
+#define ET_DYN 3   // PIE, rejected explicitly
 
 #define PT_LOAD 1
 
@@ -105,7 +105,7 @@ int elf_load(const char *path, struct vmm_context *ctx, struct elf_load_result *
     // pass 1: every PT_LOAD segment gets its pages allocated, zeroed, filled
     for (uint16_t i = 0; i < ehdr.e_phnum; i++) {
         struct elf64_phdr phdr;
-        uint64_t off = ehdr.e_phoff + (uint64_t) i * ehdr.e_phentsize;
+        uint64_t off = ehdr.e_phoff + (uint64_t)i * ehdr.e_phentsize;
         if (node->ops->read(node, off, sizeof(phdr), &phdr) != sizeof(phdr)) {
             kprintf("ELF", "%s: short read on phdr %u\n", path, i);
             return -1;
@@ -138,7 +138,7 @@ int elf_load(const char *path, struct vmm_context *ctx, struct elf_load_result *
             uint64_t end = (page + PAGE_SIZE) < seg_file_end ? (page + PAGE_SIZE) : seg_file_end;
             if (end > start) {
                 uint64_t file_off = phdr.p_offset + (start - phdr.p_vaddr);
-                void *dest = (uint8_t *) pmm_phys_to_virt(phys) + (start - page);
+                void *dest = (uint8_t *)pmm_phys_to_virt(phys) + (start - page);
                 // kprintf("ELF", "phdr[%u] read at file offset 0x%016lx\n", i, file_off);
                 if (node->ops->read(node, file_off, end - start, dest) != (int64_t)(end - start)) {
                     kprintf("ELF", "%s: short read on segment %u\n", path, i);
@@ -151,7 +151,7 @@ int elf_load(const char *path, struct vmm_context *ctx, struct elf_load_result *
     // pass 2: now that every segment are loaded, set real permissions
     for (uint16_t i = 0; i < ehdr.e_phnum; i++) {
         struct elf64_phdr phdr;
-        uint64_t off = ehdr.e_phoff + (uint64_t) i * ehdr.e_phentsize;
+        uint64_t off = ehdr.e_phoff + (uint64_t)i * ehdr.e_phentsize;
         // we already know its readable from pass 1
         node->ops->read(node, off, sizeof(phdr), &phdr);
 
@@ -236,7 +236,7 @@ uint64_t elf_build_user_stack(struct vmm_context *ctx, uint64_t stack_top, int a
 
     // 5) argc
     cursor -= 8;
-    *(uint64_t *)(base + cursor) = (uint64_t) argc;
+    *(uint64_t *)(base + cursor) = (uint64_t)argc;
 
     // map this page
     if (vmm_map_page(ctx, page_vaddr, phys, VMM_USER | VMM_WRITABLE | VMM_NO_EXECUTE) != 0) {

@@ -7,4 +7,4 @@ void hhdm_init(void);
 
 uint64_t hhdm_get_offset(void);
 
-#endif //PROS_HHDM_H
+#endif  // PROS_HHDM_H

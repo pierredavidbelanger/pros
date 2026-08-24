@@ -19,4 +19,4 @@ extern volatile struct limine_entry_point_request entry_point_request;
 extern volatile struct limine_executable_address_request executable_address_request;
 extern volatile struct limine_module_request module_request;
 
-#endif //PROS_BOOT_H
+#endif  // PROS_BOOT_H

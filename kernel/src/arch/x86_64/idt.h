@@ -6,8 +6,8 @@
 struct idt_entry {
     uint16_t offset_low;
     uint16_t selector;
-    uint8_t  ist;
-    uint8_t  attributes;
+    uint8_t ist;
+    uint8_t attributes;
     uint16_t offset_mid;
     uint32_t offset_high;
     uint32_t zero;
@@ -37,15 +37,15 @@ struct trap_frame {
     uint64_t rip, cs, rflags, rsp, ss;
 };
 
-#define X86_64_SELECTOR_KERNEL_CODE 0x08        // gdt.kernel_code, from tss_init()
-#define X86_64_SELECTOR_KERNEL_DATA 0x10        // gdt.kernel_data
-#define X86_64_SELECTOR_USER_DATA   0x33        // gdt.user_data (0x30) | RPL 3
-#define X86_64_SELECTOR_USER_CODE   0x3b        // gdt.user_code (0x38) | RPL 3
+#define X86_64_SELECTOR_KERNEL_CODE 0x08  // gdt.kernel_code, from tss_init()
+#define X86_64_SELECTOR_KERNEL_DATA 0x10  // gdt.kernel_data
+#define X86_64_SELECTOR_USER_DATA 0x33    // gdt.user_data (0x30) | RPL 3
+#define X86_64_SELECTOR_USER_CODE 0x3b    // gdt.user_code (0x38) | RPL 3
 
-#define X86_64_STAR_USER_BASE       0x28
+#define X86_64_STAR_USER_BASE 0x28
 
-#define X86_64_RFLAGS_RESERVED_BIT1 (1ULL << 1) // always 1
-#define X86_64_RFLAGS_IF            (1ULL << 9) // interrupts enabled
+#define X86_64_RFLAGS_RESERVED_BIT1 (1ULL << 1)  // always 1
+#define X86_64_RFLAGS_IF (1ULL << 9)             // interrupts enabled
 
 // syscall_entry.S's int_no: not a real IDT vector (those top out at 47), just legible in a dump
 #define X86_64_SYSCALL_INT_NO_SENTINEL 0x80
@@ -56,4 +56,4 @@ void idt_tss_set_rsp0(void *rsp0);
 
 struct trap_frame *x86_64_syscall_handler(struct trap_frame *frame);
 
-#endif //PROS_X86_64_IDT_H
+#endif  // PROS_X86_64_IDT_H

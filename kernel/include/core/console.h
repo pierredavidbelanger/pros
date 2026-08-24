@@ -5,4 +5,4 @@ void console_init(void);
 
 void console_putc(char c);
 
-#endif // PROS_CONSOLE_H
+#endif  // PROS_CONSOLE_H

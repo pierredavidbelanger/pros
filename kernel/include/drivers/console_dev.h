@@ -5,4 +5,4 @@
 
 struct vfs_node *console_dev_create(void);
 
-#endif //PROS_CONSOLE_DEV_H
+#endif  // PROS_CONSOLE_DEV_H

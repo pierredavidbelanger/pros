@@ -5,4 +5,4 @@
 
 int tar_load(uint64_t tar_addr, size_t tar_size);
 
-#endif //PROS_TAR_H
+#endif  // PROS_TAR_H

@@ -36,7 +36,7 @@ void *memmove(void *dest, const void *src, size_t n) {
         }
     } else if ((uintptr_t)src < (uintptr_t)dest) {
         for (size_t i = n; i > 0; i--) {
-            pdest[i-1] = psrc[i-1];
+            pdest[i - 1] = psrc[i - 1];
         }
     }
 
@@ -161,8 +161,8 @@ char *strtokr(char *str, const char *delim, char **saveptr) {
     // Scan for the end of the token
     while (*next) {
         if (is_delim(*next, delim)) {
-            *next = '\0';          // Null-terminate the token
-            *saveptr = next + 1;   // Save the next position into the caller's context
+            *next = '\0';         // Null-terminate the token
+            *saveptr = next + 1;  // Save the next position into the caller's context
             return token_start;
         }
         next++;

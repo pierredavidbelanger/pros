@@ -8,4 +8,4 @@ void arm_timer_init(uint32_t hz);
 // Push the deadline forward by one interval.
 void arm_timer_rearm(void);
 
-#endif //PROS_AARCH64_TIMER_H
+#endif  // PROS_AARCH64_TIMER_H

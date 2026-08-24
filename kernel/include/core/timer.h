@@ -7,4 +7,4 @@ void timer_tick(void);
 
 uint64_t timer_get_ticks(void);
 
-#endif //PROS_TIMER_H
+#endif  // PROS_TIMER_H

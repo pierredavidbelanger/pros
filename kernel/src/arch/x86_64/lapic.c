@@ -5,14 +5,14 @@
 #include "mm/pmm.h"
 #include "mm/vmm.h"
 
-#define LAPIC_BASE_ENABLE    (1ULL << 11)
+#define LAPIC_BASE_ENABLE (1ULL << 11)
 #define LAPIC_BASE_ADDR_MASK 0xFFFFFFFFFFFFF000ULL
 
 // Register offsets into the 4 KiB register file. Every register is 32 bits
 // wide and 16-byte aligned; accesses must be 32 bit.
-#define LAPIC_REG_SPIV 0x0F0 // Spurious Interrupt Vector
-#define LAPIC_REG_LVT0 0x350 // Local Vector Table entry for the LINT0 pin
-                             // (0x360 is LINT1, which is the NMI line)
+#define LAPIC_REG_SPIV 0x0F0  // Spurious Interrupt Vector
+#define LAPIC_REG_LVT0 0x350  // Local Vector Table entry for the LINT0 pin
+                              // (0x360 is LINT1, which is the NMI line)
 
 // Bit 8 of SPIV is the *software* enable, independent of the hardware enable
 // in IA32_APIC_BASE. Both must be on for the LVT entries to deliver anything.

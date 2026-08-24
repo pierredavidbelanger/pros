@@ -18,4 +18,4 @@ void serial_putc(char c);
 
 char serial_getc(void);
 
-#endif // PROS_SERIAL_H
+#endif  // PROS_SERIAL_H

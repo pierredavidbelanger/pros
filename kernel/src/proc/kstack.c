@@ -8,7 +8,7 @@ void *kstack_alloc(void) {
     if (!phys_addr) return NULL;
     void *kstack = pmm_phys_to_virt(phys_addr);
     memset(kstack, 0, KSTACK_SIZE);
-    *((uint64_t *) kstack) = KSTACK_GUARD;
+    *((uint64_t *)kstack) = KSTACK_GUARD;
     return kstack;
 }
 
@@ -20,12 +20,12 @@ void kstack_free(void *kstack) {
 
 void *kstack_get_top(void *kstack) {
     if (!kstack) return NULL;
-    return (uint8_t *) kstack + KSTACK_SIZE;
+    return (uint8_t *)kstack + KSTACK_SIZE;
 }
 
 bool kstack_guard_intact(void *kstack) {
     if (!kstack) return true;
-    return *((uint64_t *) kstack) == KSTACK_GUARD;
+    return *((uint64_t *)kstack) == KSTACK_GUARD;
 }
 
 bool kstack_contains(void *kstack, void *ptr) {
@@ -39,7 +39,7 @@ void kstack_get_usage(void *kstack, uint64_t *free, uint64_t *total) {
     *free = 0;
     *total = KSTACK_SIZE;
     uint64_t i = sizeof(uint64_t);
-    while (i < KSTACK_SIZE && *((uint8_t *) kstack + i) == 0) {
+    while (i < KSTACK_SIZE && *((uint8_t *)kstack + i) == 0) {
         (*free)++;
         i++;
     }

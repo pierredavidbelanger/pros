@@ -11,7 +11,7 @@ void pic_init(void) {
     //
     // set up cascading mode
     outb(PIC_MASTER_CMD, PIC_ICW1_INIT | PIC_ICW1_ICW4);
-    outb(PIC_SLAVE_CMD,  PIC_ICW1_INIT | PIC_ICW1_ICW4);
+    outb(PIC_SLAVE_CMD, PIC_ICW1_INIT | PIC_ICW1_ICW4);
     // Tell the master its vector offset
     outb(PIC_MASTER_DATA, PIC_VECTOR_BASE);
     // Tell the slave its vector offset

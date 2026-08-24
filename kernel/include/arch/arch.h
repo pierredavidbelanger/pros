@@ -32,7 +32,7 @@ uint64_t arch_vmm_pte_get_phys(uint64_t pte);
 // No arch_vmm_get_user_root()/arch_vmm_set_kernel_root() needed.
 // "the user root" and "the kernel root" is the same on x86_64, and arch_vmm_ensure_user_root() below is the only place that distinction ever mattered, so each arch do it directly
 uint64_t arch_vmm_get_kernel_root(void);
-void     arch_vmm_set_user_root(uint64_t phys_addr);
+void arch_vmm_set_user_root(uint64_t phys_addr);
 
 // Ensure the current low-half root register holds a valid root table,
 // allocating and installing a fresh one if the bootloader didn't already set one up (needed on aarch64).
@@ -84,4 +84,4 @@ struct trap_frame *arch_task_init_user_frame(void *kernel_stack_top, uint64_t us
 
 uint16_t arch_wanted_elf_machine();
 
-#endif //PROS_ARCH_H
+#endif  // PROS_ARCH_H

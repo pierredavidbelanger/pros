@@ -16,4 +16,4 @@ void *krealloc(void *virt_addr, size_t size);
 
 void kfree(void *virt_addr);
 
-#endif //PROS_HEAP_H
+#endif  // PROS_HEAP_H

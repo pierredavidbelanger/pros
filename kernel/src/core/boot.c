@@ -1,83 +1,60 @@
 #include "core/boot.h"
 
-__attribute__((used, section(".limine_requests_start")))
-volatile uint64_t limine_requests_start_marker[] = LIMINE_REQUESTS_START_MARKER;
+__attribute__((used, section(".limine_requests_start"))) volatile uint64_t limine_requests_start_marker[] = LIMINE_REQUESTS_START_MARKER;
 
-__attribute__((used, section(".limine_requests")))
-volatile uint64_t limine_base_revision[] = LIMINE_BASE_REVISION(6);
+__attribute__((used, section(".limine_requests"))) volatile uint64_t limine_base_revision[] = LIMINE_BASE_REVISION(6);
 
-__attribute__((used, section(".limine_requests")))
-volatile struct limine_hhdm_request hhdm_request = {
+__attribute__((used, section(".limine_requests"))) volatile struct limine_hhdm_request hhdm_request = {
     .id = LIMINE_HHDM_REQUEST_ID,
-    .revision = 0
-};
+    .revision = 0};
 
-__attribute__((used, section(".limine_requests")))
-volatile struct limine_executable_cmdline_request cmdline_request = {
+__attribute__((used, section(".limine_requests"))) volatile struct limine_executable_cmdline_request cmdline_request = {
     .id = LIMINE_EXECUTABLE_CMDLINE_REQUEST_ID,
-    .revision = 0
-};
+    .revision = 0};
 
-__attribute__((used, section(".limine_requests")))
-volatile struct limine_framebuffer_request framebuffer_request = {
+__attribute__((used, section(".limine_requests"))) volatile struct limine_framebuffer_request framebuffer_request = {
     .id = LIMINE_FRAMEBUFFER_REQUEST_ID,
-    .revision = 0
-};
+    .revision = 0};
 
-__attribute__((used, section(".limine_requests")))
-volatile struct limine_memmap_request memmap_request = {
+__attribute__((used, section(".limine_requests"))) volatile struct limine_memmap_request memmap_request = {
     .id = LIMINE_MEMMAP_REQUEST_ID,
-    .revision = 0
-};
+    .revision = 0};
 
-__attribute__((used, section(".limine_requests")))
-volatile struct limine_paging_mode_request paging_mode_request = {
+__attribute__((used, section(".limine_requests"))) volatile struct limine_paging_mode_request paging_mode_request = {
     .id = LIMINE_PAGING_MODE_REQUEST_ID,
     .revision = 0,
     // 4-level paging is value 0 on both x86_64 and AArch64
     // (LIMINE_PAGING_MODE_X86_64_4LVL == LIMINE_PAGING_MODE_AARCH64_4LVL == 0)
     .mode = 0,
     .max_mode = 0,
-    .min_mode = 0
-};
+    .min_mode = 0};
 
-__attribute__((used, section(".limine_requests")))
-volatile struct limine_rsdp_request rsdp_request = {
+__attribute__((used, section(".limine_requests"))) volatile struct limine_rsdp_request rsdp_request = {
     .id = LIMINE_RSDP_REQUEST_ID,
-    .revision = 0
-};
+    .revision = 0};
 
-__attribute__((used, section(".limine_requests")))
-volatile struct limine_dtb_request dtb_request = {
+__attribute__((used, section(".limine_requests"))) volatile struct limine_dtb_request dtb_request = {
     .id = LIMINE_DTB_REQUEST_ID,
-    .revision = 0
-};
+    .revision = 0};
 
-__attribute__((used, section(".limine_requests")))
-volatile struct limine_stack_size_request stack_size_request = {
+__attribute__((used, section(".limine_requests"))) volatile struct limine_stack_size_request stack_size_request = {
     .id = LIMINE_STACK_SIZE_REQUEST_ID,
     .revision = 0,
-    .stack_size = 64 * 1024 // 64 KiB stack
+    .stack_size = 64 * 1024  // 64 KiB stack
 };
 
-__attribute__((used, section(".limine_requests")))
-volatile struct limine_entry_point_request entry_point_request = {
+__attribute__((used, section(".limine_requests"))) volatile struct limine_entry_point_request entry_point_request = {
     .id = LIMINE_ENTRY_POINT_REQUEST_ID,
     .revision = 0,
-    .entry = _start
-};
+    .entry = _start};
 
-__attribute__((used, section(".limine_requests")))
-volatile struct limine_executable_address_request executable_address_request = {
+__attribute__((used, section(".limine_requests"))) volatile struct limine_executable_address_request executable_address_request = {
     .id = LIMINE_EXECUTABLE_ADDRESS_REQUEST_ID,
-    .revision = 0
-};
+    .revision = 0};
 
-__attribute__((used, section(".limine_requests")))
-volatile struct limine_module_request module_request = {
+__attribute__((used, section(".limine_requests"))) volatile struct limine_module_request module_request = {
     .id = LIMINE_MODULE_REQUEST_ID,
     .revision = 0,
 };
 
-__attribute__((used, section(".limine_requests_end")))
-volatile uint64_t limine_requests_end_marker[] = LIMINE_REQUESTS_END_MARKER;
+__attribute__((used, section(".limine_requests_end"))) volatile uint64_t limine_requests_end_marker[] = LIMINE_REQUESTS_END_MARKER;

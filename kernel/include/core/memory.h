@@ -15,4 +15,4 @@ void strntrim(char *s, char t, size_t n);
 char *strstr(const char *haystack, const char *needle);
 char *strtokr(char *str, const char *delim, char **saveptr);
 
-#endif //PROS_MEMORY_H
+#endif  // PROS_MEMORY_H

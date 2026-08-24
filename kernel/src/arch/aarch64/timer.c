@@ -3,8 +3,8 @@
 #include "core/kprintf.h"
 
 // CNTV_CTL_EL0 bits. The interrupt output is asserted when ISTATUS is set and IMASK is clear.
-#define ARM64_CNTV_CTL_ENABLE  (1ULL << 0)
-#define ARM64_CNTV_CTL_IMASK   (1ULL << 1)
+#define ARM64_CNTV_CTL_ENABLE (1ULL << 0)
+#define ARM64_CNTV_CTL_IMASK (1ULL << 1)
 #define ARM64_CNTV_CTL_ISTATUS (1ULL << 2)
 
 // Ticks of CNTFRQ_EL0 per interrupt.
@@ -17,7 +17,7 @@ void arm_timer_init(uint32_t hz) {
 
     // the tick rate is not hardcoded, it is whatever the firmware put there.
     uint64_t cntfrq;
-    asm volatile ("mrs %0, cntfrq_el0" : "=r"(cntfrq));
+    asm volatile("mrs %0, cntfrq_el0" : "=r"(cntfrq));
 
     // writing TVAL sets CVAL = CNTVCT + interval, so interval must fit in a signed 32 bit value
     uint64_t interval = cntfrq / hz;
@@ -31,10 +31,10 @@ void arm_timer_init(uint32_t hz) {
     arm_timer_rearm();
 
     // start the counter
-    asm volatile ("msr cntv_ctl_el0, %0\n\tisb" :: "r"(ARM64_CNTV_CTL_ENABLE));
+    asm volatile("msr cntv_ctl_el0, %0\n\tisb" ::"r"(ARM64_CNTV_CTL_ENABLE));
 }
 
 // The Generic Timer is a one-shot, nothing reloads it, so this has to happen on every interrupt or it never fires again.
 void arm_timer_rearm(void) {
-    asm volatile ("msr cntv_tval_el0, %0" :: "r"((uint64_t)arm_timer_interval));
+    asm volatile("msr cntv_tval_el0, %0" ::"r"((uint64_t)arm_timer_interval));
 }
