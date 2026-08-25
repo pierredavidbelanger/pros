@@ -1,8 +1,8 @@
 
 ARCH ?= aarch64
 
-.PHONY: default
-default: bin/$(ARCH)/initrd
+.PHONY: all
+all: bin/$(ARCH)/initrd
 
 USER_BIN := ../user/bin/$(ARCH)
 USER_PROGRAMS := $(wildcard $(USER_BIN)/*)

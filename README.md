@@ -72,9 +72,10 @@ Every build artifact, from every subproject, lands under `bin/`.
 │   ├── config.x86_64.mk, config.aarch64.mk   # Per-arch CC/LDFLAGS (freestanding, linux-none target)
 │   ├── include/           # Shared syscall wrappers, string helpers, ABI structs — no libc
 │   └── src/init/          # /bin/init — opens, reads, writes, closes, exits, for real
-└── initrd/                # The RAM-backed root filesystem's tracked source content
-    ├── Makefile           # Packs data/ + that arch's user/ binaries into initrd/bin/$(ARCH)/initrd
-    └── data/root/         # Tracked filesystem content (e.g. hello.txt) — the name IS the runtime /root path
+├── initrd/                # The RAM-backed root filesystem's tracked source content
+│   ├── Makefile           # Packs data/ + that arch's user/ binaries into initrd/bin/$(ARCH)/initrd
+│   └── data/root/         # Tracked filesystem content (e.g. hello.txt) — the name IS the runtime /root path
+└── tools/zig-cc-clang     # The CC every config.$(ARCH).mk points at — one exe wrapping `zig cc`
 ```
 
 `kernel/libs/` (downloaded third-party libraries — freestanding headers, printf, limine) is

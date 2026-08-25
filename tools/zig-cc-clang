@@ -1,0 +1,5 @@
+#!/bin/sh
+# hides the two word "zig cc" behind one command, so CLion stops looking for a file named cc
+# named -clang on purpose: CLion sees that, and probes with the right switches
+
+exec zig cc "$@"

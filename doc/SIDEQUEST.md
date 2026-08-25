@@ -1,9 +1,32 @@
 # Some side quest i want to do at some point
 
-## CLion setup
+## ~~CLion setup~~ ✅ DONE
 
-i still cant autocomplete nor correctly CTRL-click navigate using my current CLion setup, since i dont use cmake.
-I really need to fix that stuff
+> [!NOTE]
+> **Resolved by hiding `zig cc` behind one exe, not by teaching CLion what it is.** The Makefile
+> project never loaded at all: CLion cannot parse a multi-word `CC` like `zig cc -target
+> aarch64-linux-none`, so it keeps the `cc` token and looks for a file by that name in the make
+> working directory. No compiler, no index, no Ctrl-click. Sergey Senko, of JetBrains CLion
+> technical support, diagnosed it from the project and suggested the wrapper.
+>
+> [`tools/zig-cc-clang`](../tools/zig-cc-clang) is that wrapper, and it is one line of shell:
+> `exec zig cc "$@"`. Every `config.$(ARCH).mk` now points `CC` at it and carries its own
+> `-target` in `CFLAGS` — which is where a target belongs anyway — and `user/Makefile` passes
+> `$(CFLAGS)` through, the way `kernel/Makefile` already did. The name ends in `clang` on
+> purpose: CLion recognizes that as a compiler and probes it for the real predefined macros,
+> instead of shrugging at an unknown name and indexing blind. The root `Makefile` also grew an
+> `all: kernel user`, since CLion probes for the conventional `all` and `clean`.
+>
+> **The road not taken:** a Custom Compiler config (*Settings | Build, Execution, Deployment |
+> Toolchains | Custom Compiler*) also works, and is the officially supported answer — a YAML
+> feeding clangd a target triple and the predefined macros per target. But it must be generated,
+> because that is ~400 macros for each of our four arch/abi pairs, and regenerated on every Zig
+> upgrade or `CFLAGS` change. ~1700 committed lines describing a compiler that is sitting right
+> there and can answer for itself. Wrong-sized tool.
+>
+> Two things the wrapper does not fix: it is a `/bin/sh` script, so it only runs where make
+> already does, and CLion must find `zig` on the `PATH` it launches make with — which on macOS
+> is not the login shell's.
 
 ## ACPI table walker, to stop hardcoding device addresses
 

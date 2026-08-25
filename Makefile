@@ -4,6 +4,9 @@ MAKEFLAGS += -s
 .PHONY: default
 default: qemu-both-nographic
 
+.PHONY: all
+all: kernel user
+
 .PHONY: clean
 clean:
 	rm -rf bin/root logs

@@ -3,8 +3,8 @@ ARCH ?= aarch64
 
 include config.$(ARCH).mk
 
-.PHONY: default
-default: bin/$(ARCH)/kernel
+.PHONY: all
+all: bin/$(ARCH)/kernel
 
 .PHONY: clean
 clean:
