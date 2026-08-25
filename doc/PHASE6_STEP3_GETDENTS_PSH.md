@@ -331,7 +331,7 @@ header.
 
 ---
 
-## 🧩 C2 — `psh`, launchable and alive
+## 🧩 C2 — `psh`, launchable and alive 🚧 IN PROGRESS
 
 **Goal:** the shell exists, starts, prompts, reads a line, and can end the session.
 
@@ -349,6 +349,44 @@ header.
 
 **Verify:** boot, get a prompt, type a line, see it echoed back by the line discipline, type
 `exit`, watch the machine shut down because the shell ended.
+
+### 📌 Where C2 stands (2026-08-25)
+
+**Landed and working, both architectures:** `sched_only_current_is_alive()` in `sched.c` (the
+walk `task_dump_all()` already used, asking `state != TASK_DEAD` and skipping the caller);
+`cmdline_parse_bool()` / `cmdline_parse_string()` in `main.c`, with `pros.init=` threaded into
+`elf_load()` and `task_create_user()`; `pros.init=/bin/psh` on both `limine.conf` entries; the
+10-second loop replaced by a spin on the predicate; `user/include/io.h` gathering the fd numbers,
+`O_RDONLY`, the `PUTS_*` macros and the `linux_dirent64` shape that used to be `dirent.h`.
+
+**The chain is proven end to end** — `psh` prints, exits, BOOT's walk finds every other task dead,
+the machine shuts down because the program ended:
+
+```
+[IRQ  ] Enable IRQ
+PjErOS shell
+[K    ] All done here, shutting down.
+```
+
+**What's left:** `psh` is still a stub that prints one line and exits. The prompt / `read` /
+strip-the-`\n` / `strncmp` against `exit` / loop is the remaining work, and it's all userland.
+
+**Temporarily switched off to shorten the edit-boot loop — restore before this Step closes:**
+`pros.tests` in both `limine.conf` entries (so `test_all()`, and therefore C0's packing checks,
+never run right now), and the five `X8664` MSR dumps in `arch/x86_64/arch.c`.
+
+**Three things worth remembering rather than rediscovering:**
+
+- **`while (!sched_only_current_is_alive)`** — missing `()`, so the condition was the function's
+  *address*, never null, always false. BOOT never waited once. It looked architecture-specific
+  because x86_64 kept winning the tiny race between `arch_irq_enable()` and `arch_shutdown()` and
+  aarch64 kept losing it — the arch difference was pure timing noise, not a real asymmetry.
+- **`-Wall -Wextra` did not catch it**, which it should: clang emits
+  `address of function 'f' will always evaluate to 'true' [-Wpointer-bool-conversion]` for exactly
+  this shape, on by default, reproducible outside the kernel build. Something in the build is
+  swallowing it, which means other diagnostics are being swallowed too. Worth a look.
+- **`PUTS_OUT(s)` must be `sizeof(s) - 1`.** The first version sent the NUL down the UART after
+  every message — visible in the boot log as a stray byte before the next `kprintf`.
 
 ---
 
@@ -437,9 +475,9 @@ New:
 
 - ✅ `user/include/string.h` — `strnlen` + `strncmp`, `static inline` (decision 6). Bounded
   `strnlen` rather than the planned `strlen`, same instinct that picked `strncmp` over `strcmp`
-- ✅ `user/include/dirent.h` — the ABI shape, userland side. Its own file rather than riding along
-  in `syscall.h`, which is where C1 originally put it
-- ⬜ `user/src/psh/psh.c` — the shell
+- ✅ `user/include/io.h` — the ABI shape plus the fd numbers, `O_RDONLY` and the `PUTS_*` macros.
+  Its own file rather than riding along in `syscall.h`, which is where C1 originally put it
+- 🚧 `user/src/psh/psh.c` — the shell. Exists, builds, prints and exits; no read loop yet
 - ⬜ `kernel/include/fs/vfs/dirent.h` — **not created.** `struct linux_dirent64` and the `DT_*`
   constants went into the existing `kernel/include/fs/vfs/file.h` instead; a new header earned
   nothing next to the `struct file` declarations that already live there
@@ -454,10 +492,14 @@ Existing, modified:
   `dirent.h` instead)
 - ✅ `kernel/src/core/test/test_vfs.c` — its `sys_readdir` loop rewritten against `getdents64`,
   which is where the packing/alignment check lives (decision 1)
-- ⬜ `kernel/src/core/main.c` — `pros.init=`, and the boot loop waiting on
-  `sched_others_all_dead()` instead of the clock (decision 5)
-- ⬜ `kernel/src/proc/sched.c` + `kernel/include/proc/sched.h` — `sched_others_all_dead()`
-  (decision 5)
+- ✅ `kernel/src/core/main.c` — `pros.init=`, and the boot loop waiting on
+  `sched_only_current_is_alive()` instead of the clock (decision 5). `core/timer.h` went with the
+  tick loop
+- ✅ `kernel/src/proc/sched.c` + `kernel/include/proc/sched.h` — `sched_only_current_is_alive()`,
+  named in the positive rather than decision 5's `sched_others_all_dead()`
+- ✅ `limine.conf` — `pros.init=/bin/psh` on both entries
+- ✅ `user/Makefile` — `src/$(1)/*.c` with `$^`, so a program can grow past one file
+- ✅ `user/src/init/init.c` — its hardcoded fd numbers and lengths moved to `io.h`
 
 ---
 
