@@ -70,7 +70,7 @@ Every build artifact, from every subproject, lands under `bin/`.
 ├── user/                  # Userland programs, one subdirectory per program
 │   ├── Makefile           # ARCH-parametrized, auto-discovers src/*/ → user/bin/$(ARCH)/<program>
 │   ├── config.x86_64.mk, config.aarch64.mk   # Per-arch CC/LDFLAGS (freestanding, linux-none target)
-│   ├── include/           # Shared syscall wrappers every program #includes — no libc
+│   ├── include/           # Shared syscall wrappers, string helpers, ABI structs — no libc
 │   └── src/init/          # /bin/init — opens, reads, writes, closes, exits, for real
 └── initrd/                # The RAM-backed root filesystem's tracked source content
     ├── Makefile           # Packs data/ + that arch's user/ binaries into initrd/bin/$(ARCH)/initrd
@@ -88,10 +88,10 @@ Development happens in iterative phases, each sized to end in something demonstr
 merely correct. **[`doc/ROADMAP.md`](doc/ROADMAP.md) is the source of truth** for the phase
 breakdown, status, and payoff of everything — done, in progress, and planned — not this README.
 
-Phases 1 through 5 are complete on both architectures, and Phase 6 is two Steps in. Most
-recently: **PrOS talks back.** Type a line over `-serial stdio` — backspacing over your typos —
-and `/bin/init` reads it through `/dev/console` as an ordinary file descriptor and prints it
-back. The whole path is real: hardware interrupt → byte queue → line discipline → VFS node →
+Phases 1 through 5 are complete on both architectures, and Phase 6 is into its third and last
+Step. Most recently: **PrOS talks back.** Type a line over `-serial stdio` — backspacing over your
+typos — and `/bin/init` reads it through `/dev/console` as an ordinary file descriptor and prints
+it back. The whole path is real: hardware interrupt → byte queue → line discipline → VFS node →
 syscall → an unprivileged program. Each phase gets its own working document while it's being
 designed or built, then moves to [`doc/archive/`](doc/archive/) once it closes, kept for the
 reasoning trail rather than deleted.

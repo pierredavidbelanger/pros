@@ -1,4 +1,4 @@
-# Working Document: Phase 6 Step 3 — `getdents64` and `psh` [STATUS: NOT STARTED ⬜]
+# Working Document: Phase 6 Step 3 — `getdents64` and `psh` [STATUS: IN PROGRESS 🚧]
 
 > [!NOTE]
 > **Phase 6 Step 3**, the last one, from [`PHASE6_TALK_BACK.md`](PHASE6_TALK_BACK.md) Chapter 3 —
@@ -286,7 +286,7 @@ it the acceptance test for the whole Step rather than just another command.
 
 ---
 
-## 🧩 C0 — `sys_getdents64`
+## 🧩 C0 — `sys_getdents64` ✅ DONE (2026-08-23)
 
 **Goal:** a real, Linux-ABI-shaped directory read, reachable from ring 3, with no user pointer
 ever touched by a filesystem driver.
@@ -314,7 +314,7 @@ split, so the offset-commit ordering is exercised rather than assumed.
 
 ---
 
-## 🧩 C1 — Userland plumbing
+## 🧩 C1 — Userland plumbing ✅ DONE (2026-08-24)
 
 **Goal:** `psh` can call the syscall and compare a string, without including a single kernel
 header.
@@ -435,24 +435,29 @@ traps below.
 
 New:
 
-- ⬜ `kernel/include/fs/vfs/dirent.h` (or wherever `struct linux_dirent64` and the `DT_*` constants
-  best live) — the ABI shape, kernel side
+- ✅ `user/include/string.h` — `strnlen` + `strncmp`, `static inline` (decision 6). Bounded
+  `strnlen` rather than the planned `strlen`, same instinct that picked `strncmp` over `strcmp`
+- ✅ `user/include/dirent.h` — the ABI shape, userland side. Its own file rather than riding along
+  in `syscall.h`, which is where C1 originally put it
 - ⬜ `user/src/psh/psh.c` — the shell
-- ⬜ `user/include/string.h` — minimal freestanding string helpers (decision 6)
+- ⬜ `kernel/include/fs/vfs/dirent.h` — **not created.** `struct linux_dirent64` and the `DT_*`
+  constants went into the existing `kernel/include/fs/vfs/file.h` instead; a new header earned
+  nothing next to the `struct file` declarations that already live there
 
-Existing, to be modified:
+Existing, modified:
 
-- ⬜ `kernel/src/fs/vfs/file.c` — `sys_getdents64()` added, `sys_readdir()` **removed** (decision 1)
-- ⬜ `kernel/include/core/syscalls.h` — `sys_getdents64` declared, `sys_readdir` declaration removed
-- ⬜ `kernel/include/asm/unistd.h` — `SYS_getdents64` (217 / 61)
-- ⬜ `kernel/src/syscall/syscall.c` — one `syscall_table` row
+- ✅ `kernel/src/fs/vfs/file.c` — `sys_getdents64()` added, `sys_readdir()` **removed** (decision 1)
+- ✅ `kernel/include/core/syscalls.h` — `sys_getdents64` declared, `sys_readdir` declaration removed
+- ✅ `kernel/include/asm/unistd.h` — `SYS_getdents64` (217 / 61)
+- ✅ `kernel/src/syscall/syscall.c` — one `syscall_table` row
+- ✅ `user/include/syscall.h` — the `getdents64` wrapper (the userland `linux_dirent64` went to
+  `dirent.h` instead)
+- ✅ `kernel/src/core/test/test_vfs.c` — its `sys_readdir` loop rewritten against `getdents64`,
+  which is where the packing/alignment check lives (decision 1)
 - ⬜ `kernel/src/core/main.c` — `pros.init=`, and the boot loop waiting on
   `sched_others_all_dead()` instead of the clock (decision 5)
 - ⬜ `kernel/src/proc/sched.c` + `kernel/include/proc/sched.h` — `sched_others_all_dead()`
   (decision 5)
-- ⬜ `user/include/syscall.h` — the `getdents64` wrapper and the userland `linux_dirent64`
-- ⬜ `kernel/src/core/test/test_vfs.c` — its `sys_readdir` loop rewritten against `getdents64`,
-  which is where the packing/alignment check lives (decision 1)
 
 ---
 

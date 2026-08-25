@@ -244,8 +244,8 @@ stays a retrospective on its own merits, independent of which convention version
 ---
 
 ### Phase 6: Talk Back — Serial Input, TTY & a Shell You Wrote
-* **Status**: **IN PROGRESS** 🚧 — Steps 1 and 2 complete on both architectures, Step 3 remains
-  and is still undesigned. **A keystroke now makes it all the way in**: interrupt → shared byte
+* **Status**: **IN PROGRESS** 🚧 — Steps 1 and 2 complete on both architectures, Step 3 designed
+  and underway. **A keystroke now makes it all the way in**: interrupt → shared byte
   queue → line discipline → `/dev/console` → a userland `read()`. `/bin/init` reads a line you
   typed, backspace and all, and prints it back. Two things landed that no Step designed, both
   fallout from Step 2's decision 4 being wrong about interrupt state: **every syscall is now
@@ -275,12 +275,16 @@ stays a retrospective on its own merits, independent of which convention version
     machine on the first `read()` and is corrected in place in
     [`PHASE6_STEP2_TTY_CONSOLE.md`](PHASE6_STEP2_TTY_CONSOLE.md), along with a retrospective on
     why identical failure across two independent drivers was read backwards.
-  - ⬜ **Step 3 — `getdents64` and `psh`** — the internal `sys_readdir` becomes the real,
+  - 🚧 **Step 3 — `getdents64` and `psh`** — the internal `sys_readdir` becomes the real,
     Linux-ABI-shaped syscall (packed variable-length `struct linux_dirent64`), in service of a
     freestanding shell with builtins only (`echo`, `ls`, `cat`, `help`). Builtins only because
-    `fork`/`exec` don't exist yet, and an interactive prompt is worth having this early. Not yet
-    designed — deliberately deferred until Steps 1-2 were built, and it now inherits a real
-    console, a preemptible syscall path and a spinlock that none of the original planning assumed.
+    `fork`/`exec` don't exist yet, and an interactive prompt is worth having this early. Designed
+    against the built tree rather than planned ahead of it, so it inherits a real console, a
+    preemptible syscall path and a spinlock that none of the original planning assumed. **The
+    syscall and the userland plumbing are done**; what remains is `psh` itself, and the rule that
+    shuts the machine down once the last task exits — which is what lets a shell session, rather
+    than a timer, decide when the machine is finished. Working doc:
+    [`PHASE6_STEP3_GETDENTS_PSH.md`](PHASE6_STEP3_GETDENTS_PSH.md).
 
 ---
 
