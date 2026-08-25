@@ -136,6 +136,29 @@ static inline long sys_getpid(void) {
 #endif
 }
 
+// returns bytes packed into dirp, 0 at end of dir, -errno on failure
+// -EINVAL if dirp cannot even hold the first entry, so a short buffer is not mistaken for "done"
+static inline long sys_getdents64(long fd, void *dirp, long count) {
+#ifdef __x86_64__
+    long ret;
+    asm volatile(
+        "syscall"
+        : "=a"(ret)
+        : "a"(217), "D"(fd), "S"(dirp), "d"(count)
+        : "rcx", "r11", "memory");
+    return ret;
+#else
+    register long x8 asm("x8") = 61;
+    register long x0 asm("x0") = fd, x1 asm("x1") = (long)dirp, x2 asm("x2") = count;
+    asm volatile(
+        "svc #0"
+        : "+r"(x0)
+        : "r"(x8), "r"(x1), "r"(x2)
+        : "memory");
+    return x0;
+#endif
+}
+
 // never actually returns once sched_exit_current() runs, callers should not rely on it coming back
 static inline long sys_exit(long status) {
 #ifdef __x86_64__
