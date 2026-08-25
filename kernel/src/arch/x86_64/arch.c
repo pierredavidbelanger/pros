@@ -68,11 +68,11 @@ void syscall_init(void) {
 
     wrmsr(MSR_IA32_KERNEL_GS_BASE, (uint64_t) &x86_64_percpu0);
 
-    kprintf("X8664", "EFER:  0x%016lx\n", rdmsr(MSR_IA32_EFER));
-    kprintf("X8664", "STAR:  0x%016lx\n", rdmsr(MSR_IA32_STAR));
-    kprintf("X8664", "LSTAR: 0x%016lx\n", rdmsr(MSR_IA32_LSTAR));
-    kprintf("X8664", "FMASK: 0x%016lx\n", rdmsr(MSR_IA32_FMASK));
-    kprintf("X8664", "KGSB:  0x%016lx\n", rdmsr(MSR_IA32_KERNEL_GS_BASE));
+    // kprintf("X8664", "EFER:  0x%016lx\n", rdmsr(MSR_IA32_EFER));
+    // kprintf("X8664", "STAR:  0x%016lx\n", rdmsr(MSR_IA32_STAR));
+    // kprintf("X8664", "LSTAR: 0x%016lx\n", rdmsr(MSR_IA32_LSTAR));
+    // kprintf("X8664", "FMASK: 0x%016lx\n", rdmsr(MSR_IA32_FMASK));
+    // kprintf("X8664", "KGSB:  0x%016lx\n", rdmsr(MSR_IA32_KERNEL_GS_BASE));
 }
 
 // ─── VMM Architecture Primitives ─────────────────────────────

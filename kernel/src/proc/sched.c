@@ -82,3 +82,15 @@ void sched_exit_current(void) {
     // but we need a resched for it to happen for real
     need_resched = true;
 }
+
+bool sched_only_current_is_alive(void) {
+    struct task *first = sched_get_current_task();
+    if (!first) return false;
+    struct task *task = first;
+    while (true) {
+        if (task != first && task->state != TASK_DEAD) return false;
+        task = task->next;
+        if (task == first) break;
+    }
+    return true;
+}

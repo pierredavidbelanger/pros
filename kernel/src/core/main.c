@@ -8,7 +8,6 @@
 #include "core/kprintf.h"
 #include "core/memory.h"
 #include "core/serial.h"
-#include "core/timer.h"
 #include "core/test/test.h"
 #include "drivers/console_dev.h"
 #include "fs/ramfs/ramfs.h"
@@ -28,25 +27,42 @@
 
 // (1 GiB + 8 MiB)
 // so we have 8 MiB of empty space between where the programe segment ends and where the stack begin
-#define USER_STACK_TOP  0x0000000040800000ULL
+#define USER_STACK_TOP 0x0000000040800000ULL
 
-void task_entry(const char *name) {
-    uint64_t last_ticks = 0;
-    while (true) {
-        uint64_t ticks = timer_get_ticks() / 50;
-        if (ticks != last_ticks) {
-            kprintf(name, "%zu\n", timer_get_ticks());
-            last_ticks = ticks;
-        }
+static bool cmdline_parse_bool(const char *cmdline, const char *param, bool def, bool *out) {
+    if (!cmdline || !param || strstr(cmdline, param) == NULL) {
+        if (out) *out = def;
+        return false;
     }
+    if (out) *out = true;
+    return true;
 }
 
-void task1_entry(void) {
-    task_entry("T1");
-}
-
-void task2_entry(void) {
-    task_entry("T2");
+static bool cmdline_parse_string(const char *cmdline, const char *param, const char *def, size_t count, char *out) {
+    if (!cmdline || !param || count == 0) {
+        if (out) snprintf(out, count, "%s", def);
+        return false;
+    }
+    char *cmd = strstr(cmdline, param);
+    if (cmd == NULL) {
+        if (out) snprintf(out, count, "%s", def);
+        return false;
+    }
+    size_t cmdlen = strlen(cmd);
+    if (cmdlen < strlen(param) + 2 || *(cmd + strlen(param)) != '=') {
+        if (out) snprintf(out, count, "%s", def);
+        return false;
+    }
+    if (out) {
+        char *val = cmd + strlen(param) + 1;
+        size_t i = 0;
+        while (i < count - 1 && val[i] != ' ' && val[i] != '\0') {
+            out[i] = val[i];
+            i++;
+        }
+        out[i] = '\0';
+    }
+    return true;
 }
 
 void _start(void) {
@@ -72,8 +88,13 @@ void _start(void) {
     // 1- i learn how to actually use limine cmdline feature
     // 2- i can make the kernel less verbose when i want
     const char *cmdline = cmdline_request.response ? cmdline_request.response->cmdline : NULL;
-    bool tests_enabled = cmdline && strstr(cmdline, "pros.tests") != NULL;
-    kprintf("K", "Self-tests %s (cmdline: \"%s\")\n", tests_enabled ? "enabled" : "disabled", cmdline ? cmdline : "");
+    kprintf("K", "prams: cmdline: '%s'\n", cmdline);
+    bool tests_enabled = false;
+    cmdline_parse_bool(cmdline, "pros.tests", false, &tests_enabled);
+    kprintf("K", "prams: Self-tests %s\n", tests_enabled ? "enabled" : "disabled");
+    char init_path[VFS_NAME_SIZE];
+    cmdline_parse_string(cmdline, "pros.init", "/bin/init", VFS_NAME_SIZE, init_path);
+    kprintf("K", "prams: Init %s\n", init_path);
 
     pmm_init();
     uint64_t pages = pmm_claim(LIMINE_MEMMAP_USABLE);
@@ -95,7 +116,7 @@ void _start(void) {
     if (!ramfs) kpanic("cannot create ramfs");
     if (vfs_mount("/", ramfs)) kpanic("cannot mount ramfs on /");
     if (module_request.response && module_request.response->modules && module_request.response->modules[0]) {
-        if (tar_load((uint64_t) module_request.response->modules[0]->address, module_request.response->modules[0]->size) != 0) {
+        if (tar_load((uint64_t)module_request.response->modules[0]->address, module_request.response->modules[0]->size) != 0) {
             kpanic("cannot load initrd into ramfs at /");
         }
     }
@@ -117,14 +138,15 @@ void _start(void) {
     // loading the ELF (that will give us the entry point)
     // building the process stack
     // and adding the process to the scheduler
+    kprintf("K", "Load init: %s\n", init_path);
     struct vmm_context *init_ctx = vmm_create_context();
-    if (!init_ctx) kpanic("cannot create context for /bin/init");
+    if (!init_ctx) kpanic("cannot create context for init");
     struct elf_load_result elf;
-    if (elf_load("/bin/init", init_ctx, &elf) != 0) kpanic("cannot load /bin/init");
+    if (elf_load(init_path, init_ctx, &elf) != 0) kpanic("cannot load init");
     uint64_t sp = elf_build_user_stack(init_ctx, USER_STACK_TOP, 0, NULL, NULL);  // C3
     if (!sp) kpanic("cannot create user stack");
-    struct task *init = task_create_user("/bin/init", init_ctx, elf.entry, sp);
-    if (!init) kpanic("cannot create /bin/init task");
+    struct task *init = task_create_user(init_path, init_ctx, elf.entry, sp);
+    if (!init) kpanic("cannot create init task");
     sched_add_task(init);
 
     kprintf("TIMER", "Starting timer at %d Hz\n", TIMER_HZ);
@@ -141,17 +163,8 @@ void _start(void) {
     kprintf("IRQ", "Enable IRQ\n");
     arch_irq_enable();
 
-    kprintf("K", "Run for 10 seconds\n");
-    uint64_t last_seconds = 0;
-    while (true) {
-        uint64_t seconds = timer_get_ticks() / TIMER_HZ;
-        if (seconds != last_seconds) {
-            //task_dump_all();
-            last_seconds = seconds;
-            if (seconds >= 10) {
-                break;
-            }
-        }
+    while (!sched_only_current_is_alive()) {
+        arch_cpu_relax();
     }
 
     kprintf("K", "All done here, shutting down.\n");

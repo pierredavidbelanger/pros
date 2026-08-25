@@ -9,9 +9,9 @@ PROGRAMS := $(patsubst %/,%,$(patsubst src/%,%,$(wildcard src/*/)))
 default: $(PROGRAMS:%=bin/$(ARCH)/%)
 
 define PROGRAM_RULE
-bin/$(ARCH)/$(1): src/$(1)/$(1).c
+bin/$(ARCH)/$(1): src/$(1)/*.c
 	mkdir -p bin/$(ARCH)
-	$$(CC) -nostdinc -ffreestanding -I include $$< $$(LDFLAGS) -o $$@
+	$$(CC) -nostdinc -ffreestanding -I include $$^ $$(LDFLAGS) -o $$@
 endef
 
 $(foreach p,$(PROGRAMS),$(eval $(call PROGRAM_RULE,$(p))))
