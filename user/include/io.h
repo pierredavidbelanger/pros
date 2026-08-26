@@ -14,8 +14,9 @@
 #define O_RDONLY 0x0000
 
 // only for literals, otherwise sizeof is wrong
-#define PUTS_OUT(buf) sys_write(STDOUT, (buf), sizeof((buf)) - 1)
-#define PUTS_ERR(buf) sys_write(STDERR, (buf), sizeof((buf)) - 1)
+#define PUTS_OUT(s) sys_write(STDOUT, (s), sizeof((s)) - 1)
+#define PUTS_ERR(s) sys_write(STDERR, (s), sizeof((s)) - 1)
+#define BUF_EQ_S(buf, s) (strncmp((buf), (s), sizeof((s))) == 0)
 
 #define DT_REG 8
 #define DT_DIR 4
