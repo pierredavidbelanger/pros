@@ -1,4 +1,4 @@
-# Working Document: Phase 6 Step 3 — `getdents64` and `psh` [STATUS: IN PROGRESS 🚧]
+# Working Document: Phase 6 Step 3 — `getdents64` and `psh` [STATUS: DONE ✅]
 
 > [!NOTE]
 > **Phase 6 Step 3**, the last one, from [`PHASE6_TALK_BACK.md`](PHASE6_TALK_BACK.md) Chapter 3 —
@@ -8,7 +8,7 @@
 > and `struct spinlock`.
 
 > [!NOTE]
-> Mentor-mode reminder (see the note at the top of [`../README.md`](../README.md)): this is a
+> Mentor-mode reminder (see the note at the top of [`../README.md`](../../README.md)): this is a
 > design reference to code from by hand, not code to paste in. **All six decisions below are
 > resolved** (2026-08-23). Signatures are given where the shape is settled.
 
@@ -90,7 +90,7 @@ narrower one has no callers left in userland's future and would only ever be the
 reaches for by mistake.
 
 **The one real consequence:** `sys_readdir` has exactly one caller today,
-[`test_vfs.c:63`](../kernel/src/core/test/test_vfs.c) —
+[`test_vfs.c:63`](../../kernel/src/core/test/test_vfs.c) —
 `while (sys_readdir(fd, &entry) == 1)`, which looks for `hello.txt` by name rather than by count.
 That loop has to be rewritten against `sys_getdents64()`. That is a gain, not a tax: the rewritten
 version has to walk packed entries by `d_reclen`, which is exactly the check C0 needs and the one
@@ -207,7 +207,7 @@ This is *more* general than watching the shell, and costs nothing extra, because
 already there:
 
 - The run queue is a **circular list through `task->next`**, and
-  [`task_dump_all()`](../kernel/src/proc/task.c) (`task.c:153`) already walks it exactly this way
+  [`task_dump_all()`](../../kernel/src/proc/task.c) (`task.c:153`) already walks it exactly this way
   — start at `sched_get_current_task()`, follow `next`, stop on return. The predicate is that same
   walk asking `state != TASK_DEAD`.
 - **Dead tasks are never reaped** — Phase 5 named that as a leak, and `sched_pick_next()` merely
@@ -331,7 +331,7 @@ header.
 
 ---
 
-## 🧩 C2 — `psh`, launchable and alive 🚧 IN PROGRESS
+## 🧩 C2 — `psh`, launchable and alive ✅ DONE (2026-08-25)
 
 **Goal:** the shell exists, starts, prompts, reads a line, and can end the session.
 
@@ -350,7 +350,7 @@ header.
 **Verify:** boot, get a prompt, type a line, see it echoed back by the line discipline, type
 `exit`, watch the machine shut down because the shell ended.
 
-### 📌 Where C2 stands (2026-08-25)
+### 📌 What C2 landed (2026-08-25)
 
 **Landed and working, both architectures:** `sched_only_current_is_alive()` in `sched.c` (the
 walk `task_dump_all()` already used, asking `state != TASK_DEAD` and skipping the caller);
@@ -368,12 +368,14 @@ PjErOS shell
 [K    ] All done here, shutting down.
 ```
 
-**What's left:** `psh` is still a stub that prints one line and exits. The prompt / `read` /
-strip-the-`\n` / `strncmp` against `exit` / loop is the remaining work, and it's all userland.
+The read loop followed: prompt, `sys_read`, strip the `\n`, compare against `exit`. `PSH_BUF_MAX`
+is 512 rather than the 256 the goal above asked for — bigger than `LDISC_BUF_SIZE` is what matters,
+and 512 leaves the tokenizer room it doesn't have to think about.
 
-**Temporarily switched off to shorten the edit-boot loop — restore before this Step closes:**
-`pros.tests` in both `limine.conf` entries (so `test_all()`, and therefore C0's packing checks,
-never run right now), and the five `X8664` MSR dumps in `arch/x86_64/arch.c`.
+**`pros.tests` is back on both `limine.conf` entries**, so C0's packing checks run again. The five
+`X8664` MSR dumps in `arch/x86_64/arch.c` stay commented out on purpose — too verbose for a normal
+boot, kept in place rather than deleted because they are exactly what you want back the next time
+the syscall entry path misbehaves.
 
 **Three things worth remembering rather than rediscovering:**
 
@@ -390,7 +392,7 @@ never run right now), and the five `X8664` MSR dumps in `arch/x86_64/arch.c`.
 
 ---
 
-## 🧩 C3 — The easy builtins
+## 🧩 C3 — The easy builtins ✅ DONE (2026-08-25)
 
 **Goal:** `help`, `echo`, `cat` — everything that needs only what Phase 5 already built.
 
@@ -406,9 +408,35 @@ already shipped in Phase 5 Step 2.
 **Verify:** `help` lists the builtins, `echo hello world` prints both words, `cat /root/hello.txt`
 prints the file, an unknown command says so instead of doing nothing.
 
+### 📌 What C3 landed (2026-08-25)
+
+`strtokr()` in `user/include/string.h` rather than a hand-rolled split — a `strtok_r` in all but
+the underscore, so the tokenizer is a loop over one call. `argv[]` stayed, sized
+`(PSH_BUF_MAX / 2) + 1`: a 512-byte line holds at most 256 tokens, so the array cannot overflow by
+construction and there is no guard to forget. `BUF_EQ_S(buf, s)` in `io.h` wraps decision 6's
+`strncmp(…, sizeof(s))` so every builtin compares the same way.
+
+**Four bugs, all of them worth the trail:**
+
+- **`sys_write(STDERR, argv[i], n - 1)`** — `n` is the *line* length, not the token's. `cat test`
+  printed `Cannot open 'test1'`: eight bytes from `argv[1]` ran off the end of `test\0` and into
+  the previous command's tokens, still sitting in `buf`. The fix is `strnlen(argv[i], …)`, which
+  one call site already did. **Reading the corpse of the last line is the failure mode a shared
+  line buffer produces**, and it looks like a kernel bug until you notice the leftover bytes.
+- **`echo test 1 2` printed `test12`.** The tokenizer ate the spaces and nothing put them back.
+- **The inner `long n = sys_read(fd, …)` shadowed the outer `n`**, so the error branch passed a
+  negative length to `sys_write`. Renamed to `len`.
+- **`cat` did one `read`, not a loop** — silently truncating past 512 bytes. Invisible against an
+  11-byte `hello.txt`; `lorem.txt` at 3038 bytes is what proves the loop. The `if (len > 0)` around
+  the `while (len > 0)` reads redundant and is not: it makes the error branch fire only when the
+  *first* read fails, instead of at every EOF.
+
+**And one semantic distinction worth keeping:** `len == 0` on the first read is an **empty file**,
+not a failure. Only `len < 0` is an error. `/root/empty.txt` exists to hold that case down.
+
 ---
 
-## 🧩 C4 — `ls`, and the acceptance test
+## 🧩 C4 — `ls`, and the acceptance test ✅ DONE (2026-08-25)
 
 **Goal:** `ls /root` lists `hello.txt`, through `getdents64`, from ring 3.
 
@@ -436,6 +464,66 @@ psh$ exit
 `ls /dev` is the interesting one: `/dev/console` is a mount, not a `ramfs` directory entry, so
 whether it appears at all is a real question about how mounts and `readdir` interact — see the
 traps below.
+
+### 📌 What C4 landed (2026-08-25)
+
+The acceptance run, on both architectures — with `pros.tests` on, so `/test/scratch` is the VFS
+self-tests' own scratch directory showing up as an ordinary listing, which is a better test than
+the two-file `/root` the goal above asked for:
+
+```
+# ls
+bin/
+root/
+test/
+# ls /bin /root
+/bin:
+init
+psh
+/root:
+hello.txt
+lorem.txt
+empty.txt
+# ls /test/scratch
+deep/
+dents/
+rw.bin
+cross.bin
+sparse.bin
+# exit
+[K    ] All done here, shutting down.
+```
+
+**The bug this Part was always going to have** was not the alignment one the traps predicted —
+C0's self-test had already closed that. It was the walk's bound:
+
+```c
+while (dirpi < sizeof(dirp))   // wrong: the buffer's capacity, not what getdents64 wrote
+```
+
+Past `len` the buffer is uninitialized stack, so `d_reclen` is garbage — and garbage that happens
+to be `0` never advances `dirpi`. **An endless loop, not a wrong listing**, which is the one
+symptom the alignment trap doesn't produce. `while (dirpi < len)` is the fix; a
+`if (d_reclen == 0) break;` guard turns any future packing bug into visible truncation instead of
+a hang.
+
+### 🚧 Named limitations, all three from the same missing piece
+
+`ls` is deliberately "a very limited version of `ls`". Three cases fail, and **`stat` is what
+unblocks the last two** — it doesn't exist, so `psh` has no way to ask what a path *is* before
+deciding what to do with it:
+
+| Case | What happens | Why |
+|---|---|---|
+| `ls /dev` | `Cannot open '/dev'` (`-ENOENT`) | **Mounts are invisible to `readdir`.** `/dev/console` was mounted without a `/dev` directory ever existing, and `ramfs`'s `readdir` walks `ramfs`'s own children. |
+| `ls /dev/console` | `Cannot read '/dev/console'` | The kernel correctly returns `-ENOTDIR` for a `VFS_CHARDEVICE`. `psh` decodes no errno, so every failure reads the same. |
+| `ls /root/hello.txt` | `Cannot read '/root/hello.txt'` | Real `ls` `stat`s first and prints the name for a regular file. Without `stat`, `open` succeeding tells `psh` nothing. |
+
+The first is a genuine VFS limitation and stays one for now. The other two are shell-side and
+cheap once `stat` lands — a natural early Phase 7 item, since BusyBox wants it long before
+anything else does.
+
+**One gap left on purpose:** `help` doesn't list `ls`. Worth fixing the next time `psh` is touched.
 
 ---
 
@@ -473,11 +561,14 @@ traps below.
 
 New:
 
-- ✅ `user/include/string.h` — `strnlen` + `strncmp`, `static inline` (decision 6). Bounded
-  `strnlen` rather than the planned `strlen`, same instinct that picked `strncmp` over `strcmp`
-- ✅ `user/include/io.h` — the ABI shape plus the fd numbers, `O_RDONLY` and the `PUTS_*` macros.
-  Its own file rather than riding along in `syscall.h`, which is where C1 originally put it
-- 🚧 `user/src/psh/psh.c` — the shell. Exists, builds, prints and exits; no read loop yet
+- ✅ `user/include/string.h` — `strnlen` + `strncmp` + `strtokr`, `static inline` (decision 6).
+  Bounded `strnlen` rather than the planned `strlen`, same instinct that picked `strncmp` over
+  `strcmp`. `strtokr` arrived with C3 — a `strtok_r` in all but the underscore
+- ✅ `user/include/io.h` — the ABI shape plus the fd numbers, `O_RDONLY`, the `PUTS_*` macros and
+  C3's `BUF_EQ_S`. Its own file rather than riding along in `syscall.h`, which is where C1
+  originally put it
+- ✅ `user/src/psh/psh.c` — the shell, whole: prompt, read loop, tokenizer, and `help` / `echo` /
+  `cat` / `ls` / `exit`
 - ⬜ `kernel/include/fs/vfs/dirent.h` — **not created.** `struct linux_dirent64` and the `DT_*`
   constants went into the existing `kernel/include/fs/vfs/file.h` instead; a new header earned
   nothing next to the `struct file` declarations that already live there
@@ -512,7 +603,11 @@ Existing, modified:
 - **C2, C3, C4** are only observable by booting and typing — which is the entire point of the
   Phase, and the first time that sentence has been true.
 
-When `C4` passes on both architectures, **Phase 6 is complete**: its three working documents move
-to [`archive/`](archive/), `ROADMAP.md`'s Phase 6 entry keeps its numbered Steps heading per the
-phase-list lifecycle, and Phase 7 — which now inherits preemptible syscalls, a spinlock, and two
-named stopgaps in `/dev/console` waiting for a wait queue — is next.
+**C4 passed on both architectures on 2026-08-25, so Phase 6 is complete.** Its three working
+documents are archived here, `ROADMAP.md`'s Phase 6 entry keeps its numbered Steps heading per the
+phase-list lifecycle, and Phase 7 — which now inherits preemptible syscalls, a spinlock, two named
+stopgaps in `/dev/console` waiting for a wait queue, and a shell that wants `stat` — is next.
+
+One loose thread this Step raised and did not pull: **the build is swallowing clang diagnostics**
+(see C2's `-Wpointer-bool-conversion` note). Nothing here depends on it; everything after here
+does.

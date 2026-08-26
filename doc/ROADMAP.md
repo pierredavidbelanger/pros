@@ -244,16 +244,16 @@ stays a retrospective on its own merits, independent of which convention version
 ---
 
 ### Phase 6: Talk Back — Serial Input, TTY & a Shell You Wrote
-* **Status**: **IN PROGRESS** 🚧 — Steps 1 and 2 complete on both architectures, Step 3 designed
-  and underway. **A keystroke now makes it all the way in**: interrupt → shared byte
-  queue → line discipline → `/dev/console` → a userland `read()`. `/bin/init` reads a line you
-  typed, backspace and all, and prints it back. Two things landed that no Step designed, both
-  fallout from Step 2's decision 4 being wrong about interrupt state: **every syscall is now
-  preemptible**, and PrOS has its **first synchronization primitive** (`struct spinlock`,
-  irqsave-only) — both Phase 7 groundwork arriving early. Working doc:
-  [`PHASE6_TALK_BACK.md`](PHASE6_TALK_BACK.md).
-* **Payoff**: **you type at your OS and it answers.** Over `-serial stdio`, which is fully
-  interactive. No libc, no keyboard driver, no VirtIO required. Only the phase as a whole needs
+* **Status**: **COMPLETE** ✅ — all three Steps done and verified on both architectures. **A
+  keystroke now makes it all the way in**: interrupt → shared byte queue → line discipline →
+  `/dev/console` → a userland `read()` → a shell that answers. Two things landed that no Step
+  designed, both fallout from Step 2's decision 4 being wrong about interrupt state: **every
+  syscall is now preemptible**, and PrOS has its **first synchronization primitive**
+  (`struct spinlock`, irqsave-only) — both Phase 7 groundwork arriving early. Working doc:
+  [`PHASE6_TALK_BACK.md`](archive/PHASE6_TALK_BACK.md).
+* **Payoff**: **you type at your OS and it answers.** `psh$ ls /root` → `hello.txt`;
+  `cat /root/hello.txt` → the file; `exit` → the machine shuts down. Over `-serial stdio`, fully
+  interactive, no libc, no keyboard driver, no VirtIO required. Only the phase as a whole needed
   to end there — an individual Step doesn't need its own standalone demo, as long as every Step
   is actually used by the final payoff.
 * **Steps**:
@@ -263,8 +263,8 @@ stays a retrospective on its own merits, independent of which convention version
     VirtIO-input would mean rebuilding the VirtIO transport first. `gic_enable_irq()` generalized
     to any `GICD_ISENABLERn` rather than duplicated for the SPI, and the ISR drains in a loop —
     one interrupt can stand for several queued bytes. Individually designed in
-    [`PHASE6_STEP1_UART_INPUT.md`](PHASE6_STEP1_UART_INPUT.md), whose retrospective records the
-    Step's own latent defect: `console_input_init()` was written and never called, which made the
+    [`PHASE6_STEP1_UART_INPUT.md`](archive/PHASE6_STEP1_UART_INPUT.md), whose retrospective
+    records the Step's own latent defect: `console_input_init()` was written and never called, which made the
     queue silently drop everything and cost most of Step 2's debugging.
   - ✅ **Step 2 — TTY line discipline + `/dev/console`** — canonical mode, echo, destructive
     backspace, line buffering, exposed as a real `VFS_CHARDEVICE` node mounted at `/dev/console`
@@ -273,39 +273,59 @@ stays a retrospective on its own merits, independent of which convention version
     an ordinary `copy_from_user`-validated path to a real file descriptor. Its design was wrong
     about one load-bearing fact — that interrupts stay enabled during a syscall — which wedged the
     machine on the first `read()` and is corrected in place in
-    [`PHASE6_STEP2_TTY_CONSOLE.md`](PHASE6_STEP2_TTY_CONSOLE.md), along with a retrospective on
-    why identical failure across two independent drivers was read backwards.
-  - 🚧 **Step 3 — `getdents64` and `psh`** — the internal `sys_readdir` becomes the real,
-    Linux-ABI-shaped syscall (packed variable-length `struct linux_dirent64`), in service of a
-    freestanding shell with builtins only (`echo`, `ls`, `cat`, `help`). Builtins only because
-    `fork`/`exec` don't exist yet, and an interactive prompt is worth having this early. Designed
-    against the built tree rather than planned ahead of it, so it inherits a real console, a
-    preemptible syscall path and a spinlock that none of the original planning assumed. **The
-    syscall and the userland plumbing are done**; what remains is `psh` itself, and the rule that
-    shuts the machine down once the last task exits — which is what lets a shell session, rather
-    than a timer, decide when the machine is finished. Working doc:
-    [`PHASE6_STEP3_GETDENTS_PSH.md`](PHASE6_STEP3_GETDENTS_PSH.md).
+    [`PHASE6_STEP2_TTY_CONSOLE.md`](archive/PHASE6_STEP2_TTY_CONSOLE.md), along with a
+    retrospective on why identical failure across two independent drivers was read backwards.
+  - ✅ **Step 3 — `getdents64` and `psh`** — the internal `sys_readdir` becomes the real,
+    Linux-ABI-shaped syscall (packed variable-length `struct linux_dirent64`, one `copy_to_user`
+    at the boundary, which also closed a latent hole where a driver `snprintf`'d straight into an
+    unvalidated ring-3 pointer), in service of `/bin/psh` — a freestanding shell with builtins
+    only (`help`, `echo`, `cat`, `ls`, `exit`). Builtins only because `fork`/`exec` don't exist
+    yet, and an interactive prompt is worth having this early. Two pieces of machinery came with
+    it: a `pros.init=` kernel command line knob, so `/bin/init` stays bootable and the Phase 5
+    demo stays runnable; and `sched_only_current_is_alive()`, which replaces the boot task's
+    10-second timer — **the machine now shuts down because the last program ended**, which is
+    what makes a session last as long as the human wants. Designed against the built tree rather
+    than planned ahead of it, so it inherited a real console, a preemptible syscall path and a
+    spinlock that none of the original planning assumed. `ls` is honestly limited — mounts are
+    invisible to `readdir`, so `ls /dev` finds nothing, and `ls <file>` needs a `stat` that
+    doesn't exist yet. Working doc:
+    [`PHASE6_STEP3_GETDENTS_PSH.md`](archive/PHASE6_STEP3_GETDENTS_PSH.md).
 
 ---
 
 ### Phase 7: Many Programs — `fork`, `exec`, Pipes & Signals
-* **Status**: **NOT STARTED** ⬜ — undesigned; the scope below is a wish list, not a plan.
-* **Payoff**: `psh` launches separate programs and pipes them together. `Ctrl+C` works.
-* **Planned scope**:
-  - **`switch_to` and blocking** — wait queues and voluntary switching, which the frame-swap
-    scheduler of Phase 3 deliberately doesn't cover. Two prerequisites already landed early in
-    Phase 6 Step 2: syscalls are preemptible, and `struct spinlock` exists. Two known stopgaps are
-    waiting on this: `/dev/console`'s `read()` spins instead of sleeping, and its line buffer is
-    per-node rather than per-open, so a second reader would race.
-  - **`fork`** — eager copy first, copy-on-write once it works.
-  - **`execve`, `wait4`, zombie reaping.**
-  - **`pipe` + `dup2`**, and `|` in `psh`.
-  - **Minimal signals** — `SIGINT` from `Ctrl+C`, `SIGCHLD`, `kill`; delivery frames on the
-    user stack and `sigreturn`.
-  - **FPU / SIMD context switching** lands here — the first time two *user* tasks coexist.
-    AArch64 is nearly free (`-mgeneral-regs-only` means the kernel emits no FP at all); the
-    x86_64 kernel currently *does* use SSE, so it needs `-mno-sse` to make lazy switching
-    correct rather than approximately correct.
+* **Status**: **IN DESIGN** 🚧 — chapters written against the tree as Phase 6 left it, ten
+  decisions named; no code yet. **The two that gate Step 1 are resolved:** a real `switch_to` —
+  which the per-task kernel stacks of Phase 3 Step 2 make a dozen instructions rather than an
+  architecture — with `sched_on_trap_exit()` becoming a caller of it rather than a peer, xv6's
+  dedicated-scheduler-thread shape, and `BOOT` filling that role from outside the run queue; plus
+  xv6-style channels for `sleep`/`wakeup`, with `poll` named in advance as what retires them. The
+  other eight wait for built code to decide against. Working doc:
+  [`PHASE7_MANY_PROGRAMS.md`](PHASE7_MANY_PROGRAMS.md).
+* **Payoff**: `ls /root | cat` runs **two separate programs** connected by a pipe. `Ctrl+C` kills
+  a program that isn't listening. A process that ends is reaped by its parent, rather than left as
+  a corpse in the run queue forever.
+* **Steps** (proposed by the working doc; each gets its own document when it starts):
+  - ⬜ **Step 1 — Blocking and wait queues** — the piece Phase 3's frame-swap scheduler
+    deliberately doesn't cover. Two prerequisites already landed early in Phase 6 Step 2: syscalls
+    are preemptible, and `struct spinlock` exists. Retires both known `/dev/console` stopgaps —
+    `read()` spinning instead of sleeping, and a line buffer that is per-node rather than
+    per-open, so a second reader would race — the second waits for Step 2, since nothing can
+    contend for it until `fork` exists. Working doc:
+    [`PHASE7_STEP1_BLOCKING.md`](PHASE7_STEP1_BLOCKING.md).
+  - ⬜ **Step 2 — `fork`, `wait4`, reaping, and FPU/SIMD state** — the first two user processes,
+    and the first one that gets cleaned up. Eager copy first, copy-on-write once it works. Carries
+    a collision worth seeing early: reaping is the direct enemy of the shutdown predicate Phase 6
+    Step 3 built, which terminates *because* dead tasks are never removed from the ring. FPU state
+    lands here because this is the first moment two *user* tasks coexist — AArch64 is nearly free
+    (`-mgeneral-regs-only`), x86_64 needs `-mno-sse` first.
+  - ⬜ **Step 3 — `execve`, plus `stat`/`fstat`** — `psh` runs a real child process and gets its
+    prompt back. `stat` is already owed: without it Phase 6's `ls <file>` can't tell a regular
+    file from a directory it failed to read, and BusyBox wants it long before anything else does.
+  - ⬜ **Step 4 — `pipe`, `dup2`, and `|` in `psh`** — the Step that makes the payoff sentence
+    true.
+  - ⬜ **Step 5 — Minimal signals** — `SIGINT` from `Ctrl+C`, `SIGCHLD`, `kill`; delivery frames
+    on the user stack and `sigreturn`. Splittable into its own phase if it grows past its worth.
 
 ---
 

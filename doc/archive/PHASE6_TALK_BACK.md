@@ -13,7 +13,7 @@
 > primitive** (`struct spinlock`, irqsave-only). Both are Phase 7 groundwork arriving early.
 
 > [!NOTE]
-> Mentor-mode reminder (see the note at the top of [`../README.md`](../README.md)): this is a
+> Mentor-mode reminder (see the note at the top of [`../README.md`](../../README.md)): this is a
 > design reference to code from by hand, not code to paste in. Snippets are illustrative and
 > deliberately incomplete.
 

@@ -6,7 +6,7 @@
 > stands after Phase 5 — no RX code exists on either architecture; only polling transmit does.
 
 > [!NOTE]
-> Mentor-mode reminder (see the note at the top of [`../README.md`](../README.md)): this is a
+> Mentor-mode reminder (see the note at the top of [`../README.md`](../../README.md)): this is a
 > design reference to code from by hand, not code to paste in. Signatures are given where the
 > shape is settled; several decisions below are genuinely open and want your judgment call before
 > anything is written.
