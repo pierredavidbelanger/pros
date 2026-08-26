@@ -74,6 +74,50 @@ void _start(void) {
             continue;
         }
 
+        if (BUF_EQ_S(argv[0], "ls")) {
+            if (argc == 1) {
+                argc = 2;
+                argv[1] = "/";
+            }
+            for (int i = 1; i < argc; i++) {
+                int fd = sys_open(argv[i], O_RDONLY);
+                if (fd < 0) {
+                    PUTS_ERR("Cannot open '");
+                    sys_write(STDERR, argv[i], (long) strnlen(argv[i], PSH_BUF_MAX));
+                    PUTS_ERR("'\n");
+                    continue;
+                }
+                char dirp[512];
+                long len = sys_getdents64(fd, dirp, sizeof(dirp));
+                if (len >= 0) {
+                    if (argc > 2) {
+                        sys_write(STDOUT, argv[i], (long) strnlen(argv[i], PSH_BUF_MAX));
+                        PUTS_OUT(":\n");
+                    }
+                    while (len > 0) {
+                        long dirpi = 0;
+                        while (dirpi < len) {
+                            struct linux_dirent64 *dirent = (struct linux_dirent64 *)(dirp + dirpi);
+                            sys_write(STDOUT, dirent->d_name, (long) strnlen(dirent->d_name, dirent->d_reclen - 19));
+                            if (dirent->d_type == DT_DIR) {
+                                PUTS_OUT("/");
+                            }
+                            PUTS_OUT("\n");
+                            if (dirent->d_reclen == 0) break;
+                            dirpi += dirent->d_reclen;
+                        }
+                        len = sys_getdents64(fd, dirp, sizeof(dirp));
+                    }
+                } else {
+                    PUTS_ERR("Cannot read '");
+                    sys_write(STDERR, argv[i], (long) strnlen(argv[i], PSH_BUF_MAX));
+                    PUTS_ERR("'\n");
+                }
+                sys_close(fd);
+            }
+            continue;
+        }
+
         if (BUF_EQ_S(argv[0], "exit")) {
             break;
         }
