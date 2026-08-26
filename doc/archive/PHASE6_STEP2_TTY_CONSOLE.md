@@ -93,6 +93,26 @@ but a second task ever opening `/dev/console` (a second shell, someday) would si
 the first one's in-progress line. Per-open costs one small allocation per `open()` and removes
 the assumption entirely.
 
+> [!WARNING]
+> **Corrected 2026-08-26, by Phase 7's Decision 3 — the recommendation above is wrong twice, and
+> "confirm the exact field name" is the hedge that should have been resolved before it was
+> written.**
+>
+> **`struct file` has no `priv_data`.** `fs/vfs/file.h` is `node`, `offset`, `flags`, `ref_count`.
+> Only `struct vfs_node` carries a private pointer. Per-open state has nowhere to live without a
+> new field, plus `vfs_ops.open`/`close`/`read` all taking a `struct file *` instead of a node —
+> which `elf.c` cannot give them, since it reads a node with no open file in existence.
+>
+> **And per-open would not have fixed the case this decision feared.** Decision 2 above opens
+> `/dev/console` *once* per task and `file_ref()`s it into fds 0/1/2; `fork` refs the same
+> `struct file` into the child. Parent and child share one open file permanently, so per-open
+> state does not separate them — it separates two `open()` calls, and nothing in the tree makes a
+> second one.
+>
+> **Per-node was right.** A line discipline is per-*tty* in Linux and in every Unix before it. The
+> real gap is arbitration — who gets the bytes, given one UART queue — and Phase 7 closes it with
+> a `struct tty`, a lock, and a named console reader, not with a per-open buffer.
+
 ### 4. What `read()` does with no line ready yet — the one genuinely open question
 
 PrOS has no blocking primitive at all — Phase 7's own scope list names `switch_to` and blocking

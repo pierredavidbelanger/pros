@@ -295,12 +295,14 @@ stays a retrospective on its own merits, independent of which convention version
 
 ### Phase 7: Many Programs — `fork`, `exec`, Pipes & Signals
 * **Status**: **IN DESIGN** 🚧 — chapters written against the tree as Phase 6 left it, ten
-  decisions named; no code yet. **The two that gate Step 1 are resolved:** a real `switch_to` —
+  decisions named; no code yet. **The two that gate Step 1 are resolved, and a third since:** a real `switch_to` —
   which the per-task kernel stacks of Phase 3 Step 2 make a dozen instructions rather than an
   architecture — with `sched_on_trap_exit()` becoming a caller of it rather than a peer, xv6's
   dedicated-scheduler-thread shape, and `BOOT` filling that role from outside the run queue; plus
-  xv6-style channels for `sleep`/`wakeup`, with `poll` named in advance as what retires them. The
-  other eight wait for built code to decide against. Working doc:
+  xv6-style channels for `sleep`/`wakeup`, with `poll` named in advance as what retires them; plus
+  the `/dev/console` line buffer staying per-node, which is where a line discipline belongs, with
+  a `struct tty` and a named reader replacing what was mis-stated as a per-open gap. The other
+  seven wait for built code to decide against. Working doc:
   [`PHASE7_MANY_PROGRAMS.md`](PHASE7_MANY_PROGRAMS.md).
 * **Payoff**: `ls /root | cat` runs **two separate programs** connected by a pipe. `Ctrl+C` kills
   a program that isn't listening. A process that ends is reaped by its parent, rather than left as
@@ -308,10 +310,11 @@ stays a retrospective on its own merits, independent of which convention version
 * **Steps** (proposed by the working doc; each gets its own document when it starts):
   - ⬜ **Step 1 — Blocking and wait queues** — the piece Phase 3's frame-swap scheduler
     deliberately doesn't cover. Two prerequisites already landed early in Phase 6 Step 2: syscalls
-    are preemptible, and `struct spinlock` exists. Retires both known `/dev/console` stopgaps —
-    `read()` spinning instead of sleeping, and a line buffer that is per-node rather than
-    per-open, so a second reader would race — the second waits for Step 2, since nothing can
-    contend for it until `fork` exists. Working doc:
+    are preemptible, and `struct spinlock` exists. Retires the first of the two known
+    `/dev/console` stopgaps — `read()` spinning instead of sleeping. The second was mis-stated:
+    the line buffer belongs per-node, and what is actually missing is arbitration between two
+    readers, which waits for Step 2, since nothing can contend for the console until `fork`
+    exists. Working doc:
     [`PHASE7_STEP1_BLOCKING.md`](PHASE7_STEP1_BLOCKING.md).
   - ⬜ **Step 2 — `fork`, `wait4`, reaping, and FPU/SIMD state** — the first two user processes,
     and the first one that gets cleaned up. Eager copy first, copy-on-write once it works. Carries

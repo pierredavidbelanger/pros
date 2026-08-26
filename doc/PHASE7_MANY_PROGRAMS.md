@@ -258,16 +258,69 @@ Two smaller things that arrive sooner and are extensions rather than walls:
   `while`, never an `if`. Linux requires this too, so it is not a channel tax — but a blocking
   path written with an `if` is a bug that only shows up under load.
 
-### ⚖️ Decision 3 — the two `/dev/console` stopgaps **OPEN**
+### ⚖️ Decision 3 — the two `/dev/console` stopgaps ✅ RESOLVED (2026-08-26)
 
-Both were named in Phase 6 Step 2 and both come due here:
+> **The `ldisc` stays per-node — that is where a line discipline belongs. The second stopgap was
+> the wrong gap: what is missing is not per-open state, it is *arbitration*. A `struct tty` gathers
+> the console's split state, a lock plus Decision 2's channel make concurrent readers safe, and a
+> named owner turns "one console reader" from an accident into a rule.**
 
-- **`read()` spins** — retired by whatever Decision 1 picks.
-- **The `ldisc` is per-node, not per-open.** With `fork`, two processes really can hold the
-  console. Per-open state means `struct file` gains a private pointer, or the `ldisc` moves
-  behind something that knows which opener it belongs to. **Or** the honest alternative: declare
-  one console reader a rule rather than an accident, and enforce it — which is most of what a
-  foreground process group is for, and connects to Chapter 5.
+Both were named in Phase 6 Step 2. The first is unchanged: **`read()` spins** — retired by
+Decision 1, in Step 1.
+
+#### Two facts that reframe the second half
+
+Confirmed by reading the tree, which is how this decision's original framing should have been
+written and was not:
+
+1. **`struct file` has no `priv_data`.** [`file.h:8`](../kernel/include/fs/vfs/file.h:8) is
+   `node`, `offset`, `flags`, `ref_count`, and nothing else. Phase 6 Step 2's decision 3 sent
+   per-open state "via the `struct file`'s `priv_data` (already exists…)" — it does not exist;
+   only `struct vfs_node` carries one. Corrected in place in that archived document.
+2. **Per-open would not separate a `fork`ed pair.** `task_open_std_fds()`
+   ([`task.c:18`](../kernel/src/proc/task.c:18)) opens `/dev/console` *once* and `file_ref()`s it
+   into fds 0/1/2, and `fork`'s fd-table half is a `file_ref()` loop over `fds[]` — so parent and
+   child share one `struct file`, deliberately and permanently. Per-open means per-`open()`-call,
+   and nothing in the tree opens the console twice. **The scenario this decision named — "with
+   `fork`, two processes really can hold the console" — is precisely the case per-open does not
+   cover.**
+
+So the question was never where the line buffer lives. It is **who gets the bytes**, and there is
+exactly one queue of them: `console_input`'s ring is a file-scope static
+([`console_input.c:9`](../kernel/src/core/console_input.c:9)) while the `ldisc` sits in the node's
+`priv_data`. One device's state living in two homes — that is the real smell, and it is not the
+one that got written down.
+
+#### What real kernels do here
+
+The line discipline is per-**tty** in Linux and in every Unix it descends from — never per-open.
+Two processes reading one tty steal each other's input, and that is documented behaviour rather
+than corruption; job control is what stops it happening. **Per-node was the right shape all
+along.** It was under-defended, not misplaced.
+
+#### What lands, and where
+
+- **`struct tty`** — the `ldisc`, the input ring, the wait channel, and later the foreground
+  process group, in one allocation the console node's `priv_data` points at. **Step 2.** Phase
+  10's PTY work then means allocating a second one instead of a rewrite.
+- **A lock and one channel** — `struct spinlock` around feed/drain, and every sleeper re-checking
+  `ldisc_ready()` in a `while` per Decision 2's spurious-wakeup rule. This makes two readers
+  *safe*, not *orderly*: whoever wakes first takes the line. **Step 2**, with `fork`.
+- **A named owner** — the first reader claims the console, a second gets `-EIO`. Ten lines, no
+  signals, and the assumption becomes a rule that fails loudly. **Step 2.**
+- **Job control** — controlling terminal, foreground process group, `SIGTTIN` for a background
+  reader (`-EIO` is what Unix gives when that signal cannot be delivered, which is why it is the
+  right placeholder). The grown-up owner. **Step 5**, with signals — and if Step 5 is split off,
+  the named owner is what stands in its place.
+
+*Kept for the trail — why per-open was rejected:* it needs `priv_data` on `struct file`,
+`vfs_ops.open`/`close` taking a `struct file *` rather than a node
+([`vfs.h:23`](../kernel/include/fs/vfs/vfs.h:23)), and `read` taking one too
+([`vfs.h:27`](../kernel/include/fs/vfs/vfs.h:27)) — which breaks
+[`elf.c:74`](../kernel/src/proc/elf.c:74), where `ops->read(node, …)` runs with no open file in
+existence at all. Three signature changes across every filesystem, and at the end of it one UART
+queue still feeds N line buffers and something still has to decide who gets each byte. It buys a
+bigger interface for the same unanswered question, and leaves `fork` uncovered.
 
 ---
 
@@ -457,7 +510,8 @@ architecture-neutral (`C` track) **except Steps 1 and 2**: `switch_to` is per-ar
 assembly (Decision 1), and so is FPU state.
 
 - **⬜ Step 1 — Blocking and wait queues.** Chapter 1. Retires the first `/dev/console` stopgap;
-  the per-open `ldisc` waits for Step 2, since nothing can contend for it until `fork` exists.
+  the console's arbitration — a `struct tty`, a lock, a named owner — waits for Step 2, since
+  nothing can contend for it until `fork` exists.
   *Demo:* the console `read()` no longer spins — visible as the shell's `switch_count` staying
   flat while nothing is typed, which `task_dump_all()` already prints. Individually designed in
   [`PHASE7_STEP1_BLOCKING.md`](PHASE7_STEP1_BLOCKING.md).
@@ -518,8 +572,8 @@ Existing, to be modified:
 - ⬜ [`kernel/src/mm/pmm.c`](../kernel/src/mm/pmm.c) — per-page reference counts, only if CoW
 - ⬜ [`kernel/src/proc/elf.c`](../kernel/src/proc/elf.c) — `execve` reusing `elf_load()` and the
   `argv`/`envp` path that already exists
-- ⬜ [`kernel/src/drivers/console_dev.c`](../kernel/src/drivers/console_dev.c) — the spin and the
-  per-node `ldisc`, both retired
+- ⬜ [`kernel/src/drivers/console_dev.c`](../kernel/src/drivers/console_dev.c) — the spin retired,
+  and the `ldisc` folded into a `struct tty` with a named owner (Decision 3)
 - ⬜ [`kernel/src/syscall/syscall.c`](../kernel/src/syscall/syscall.c) +
   `kernel/include/asm/unistd.h` — one row and one number per new syscall
 - ⬜ [`kernel/src/core/main.c`](../kernel/src/core/main.c) — the spin on
@@ -533,6 +587,8 @@ New:
   Phase 3 Step 2 already built (Decision 1)
 - ⬜ `sleep(chan, lk)` / `wakeup(chan)` — and the rule, written where they are declared, that
   callers never reach past them (Decision 2)
+- ⬜ `struct tty` — the console's `ldisc`, input ring, wait channel and future foreground pgrp in
+  one allocation, replacing state split between a node and a file-scope static (Decision 3)
 - ⬜ A pipe implementation, and whatever node shape Decision 8 picks
 - ⬜ Signal delivery and `sigreturn`, per architecture
 

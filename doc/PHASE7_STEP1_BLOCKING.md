@@ -30,8 +30,9 @@ spends as much effort on how to see it as on how to build it.
 
 - ❌ **No `fork`.** There is still exactly one user task. `sleep`/`wakeup` gets built and exercised
   with one sleeper, which is the honest scope — Step 2 is where a second one appears.
-- ❌ **No per-open `ldisc`.** The other half of Phase 7 Decision 3. One console reader is still an
-  assumption, and it is still true, because nothing can create a second reader yet.
+- ❌ **No console arbitration.** The other half of Phase 7 Decision 3 — the `struct tty`, the
+  lock, the named owner — belongs to Step 2, because nothing can create a second reader yet. One
+  console reader stays an assumption here, and stays true.
 - ❌ **No timeouts, no `poll`.** Phase 7 Decision 2 named `poll` as what eventually retires
   channels. Nothing here should make that migration harder, and nothing here should start it.
 - ❌ **No reaping.** Dead tasks still accumulate. Step 2 owns that, together with what it does to
@@ -507,5 +508,5 @@ Existing, to be modified:
   idle, climbing after a keystroke.
 
 When C2 passes on both architectures, **Step 1 is done**, and Phase 7's Decision 3 has lost its
-first half — `read()` no longer spins. The second half, the per-node `ldisc`, stays open until
-Step 2 creates something that can contend for it.
+first half — `read()` no longer spins. The second half is arbitration, not per-open state (see
+Decision 3 as amended), and stays open until Step 2 creates something that can contend for it.
