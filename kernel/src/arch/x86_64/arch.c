@@ -24,6 +24,12 @@ void arch_cpu_relax(void) {
     asm volatile("pause");
 }
 
+void arch_idle(void) {
+    // sti and hlt must stay adjacent,
+    // the shadow (sti inhibit for one instruction) is what makes this race-free
+    asm volatile("sti; hlt; cli" ::: "memory");
+}
+
 void arch_halt(void) {
     for (;;) {
         asm volatile ("cli; hlt");
@@ -186,6 +192,12 @@ void arch_irq_disable(void) {
     asm volatile ("cli" ::: "memory");
 }
 
+bool arch_irq_enabled(void) {
+    uint64_t flags;
+    asm volatile("pushfq\n\tpopq %0" : "=r"(flags)::"memory");
+    return flags & X86_64_RFLAGS_IF;
+}
+
 uint64_t arch_irq_save(void) {
     uint64_t flags;
     asm volatile("pushfq\n\tpopq %0\n\tcli" : "=r"(flags)::"memory");
@@ -245,6 +257,6 @@ struct trap_frame *arch_task_init_user_frame(void *kernel_stack_top, uint64_t us
 
 // ELF
 
-uint16_t arch_wanted_elf_machine() {
+uint16_t arch_wanted_elf_machine(void) {
     return EM_X86_64;
 }

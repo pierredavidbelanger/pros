@@ -54,6 +54,14 @@ void arch_cpu_relax(void) {
     asm volatile("yield");
 }
 
+void arch_idle(void) {
+    // seems wrong, but is not,
+    // wfi is noop if an interrupt is already pending,
+    // daifclr delivers it (so scheduling can continue)
+    // then daifset will be the return after the interrupt has been handled
+    asm volatile("wfi\n\tmsr daifclr, #2\n\tisb\n\tmsr daifset, #2" ::: "memory");
+}
+
 void arch_halt(void) {
     for (;;) {
         asm volatile ("msr daifset, #2\n\twfi");
@@ -193,6 +201,12 @@ void arch_irq_disable(void) {
     asm volatile ("msr daifset, #2" ::: "memory");
 }
 
+bool arch_irq_enabled(void) {
+    uint64_t daif;
+    asm volatile("mrs %0, daif" : "=r"(daif)::"memory");
+    return !(daif & AARCH64_SPSR_I);
+}
+
 uint64_t arch_irq_save(void) {
     uint64_t daif;
     asm volatile("mrs %0, daif\n\tmsr daifset, #2" : "=r"(daif)::"memory");
@@ -243,6 +257,6 @@ struct trap_frame *arch_task_init_user_frame(void *kernel_stack_top, uint64_t us
 
 // ELF
 
-uint16_t arch_wanted_elf_machine() {
+uint16_t arch_wanted_elf_machine(void) {
     return EM_AARCH64;
 }

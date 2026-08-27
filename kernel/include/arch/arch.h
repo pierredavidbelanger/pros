@@ -5,15 +5,14 @@
 
 // the layout is architecture-specific and not visible here
 struct trap_frame;
+struct switch_frame;
 
 void arch_init(void);
 
-void arch_cpu_relax(void);
-
-void arch_halt(void);
-
-// Cleanly power off the machine
-void arch_shutdown(void);
+void arch_cpu_relax(void);  // pause/yield
+void arch_idle(void);       // unmasks, halt (but wakes on interrupt), masks
+void arch_halt(void);       // masks, then sleeps forever
+void arch_shutdown(void);   // Cleanly power off the machine
 
 // VMM
 
@@ -59,6 +58,8 @@ void arch_vmm_invlpg(void *virt_addr);
 
 void arch_timer_init(uint32_t hz);
 
+bool arch_irq_enabled(void);
+
 void arch_irq_enable(void);
 void arch_irq_disable(void);
 
@@ -80,8 +81,14 @@ struct trap_frame *arch_task_init_frame(void *stack_top, void (*entry)(void));
 
 struct trap_frame *arch_task_init_user_frame(void *kernel_stack_top, uint64_t user_entry, uint64_t user_stack_top);
 
+void arch_task_switch_to(struct switch_frame **old, struct switch_frame *new);
+
+// Trap
+
+void arch_trap_return(struct trap_frame *frame);
+
 // ELF
 
-uint16_t arch_wanted_elf_machine();
+uint16_t arch_wanted_elf_machine(void);
 
 #endif  // PROS_ARCH_H
