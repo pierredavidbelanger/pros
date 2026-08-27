@@ -52,10 +52,10 @@ static struct task *task_inner_create(char const *name, void *kernel_stack_top, 
     }
     // are we provided with a context we dont own, otherwise create one
     if (ctx) {
-        task->ctx = ctx;
+        task->vmm_context = ctx;
     } else {
-        task->ctx = vmm_create_context();
-        if (!task->ctx) {
+        task->vmm_context = vmm_create_context();
+        if (!task->vmm_context) {
             task_destroy(task);
             return NULL;
         }
@@ -76,14 +76,14 @@ struct task *task_init_boot(void) {
 struct task *task_create(const char *name, void (*entry)(void)) {
     struct task *task = task_inner_create(name, NULL, vmm_kernel_context);
     if (!task) return NULL;
-    task->frame = arch_task_init_frame(task->kernel_stack_top, entry);
+    task->trap_frame = arch_task_init_frame(task->kernel_stack_top, entry);
     return task;
 }
 
 struct task *task_create_user(const char *name, struct vmm_context *ctx, uint64_t user_entry, uint64_t user_stack_top) {
     struct task *task = task_inner_create(name, NULL, ctx);
     if (!task) return NULL;
-    task->frame = arch_task_init_user_frame(task->kernel_stack_top, user_entry, user_stack_top);
+    task->trap_frame = arch_task_init_user_frame(task->kernel_stack_top, user_entry, user_stack_top);
     return task;
 }
 
@@ -97,8 +97,8 @@ void task_destroy(struct task *task) {
         }
     }
     // do we have a ctx and do we own it
-    if (task->ctx && task->ctx != vmm_kernel_context) {
-        vmm_destroy_context(task->ctx);
+    if (task->vmm_context && task->vmm_context != vmm_kernel_context) {
+        vmm_destroy_context(task->vmm_context);
     }
     // do we have a stack that we own
     if (task->kernel_stack_base) {
@@ -134,7 +134,7 @@ void task_dump(struct task *task) {
     if (!task->kernel_stack_base) {
         kprintf("TASK", "pid %zu  %s  %s  switch_count %zu  ctx 0x%016lx  boot stack, sp was 0x%016lx, extent unknown, guard n/a\n",
                 task->pid, task->name, state, task->switch_count,
-                (uint64_t)task->ctx,
+                (uint64_t)task->vmm_context,
                 (uint64_t)task->kernel_stack_top);
         return;
     }
@@ -144,7 +144,7 @@ void task_dump(struct task *task) {
     kstack_get_usage(task->kernel_stack_base, &free, &total);
     kprintf("TASK", "pid %zu  %s  %s  switch_count %zu  ctx 0x%016lx  kstack 0x%016lx-0x%016lx  free %zu/%zu  guard %s\n",
             task->pid, task->name, state, task->switch_count,
-            (uint64_t)task->ctx,
+            (uint64_t)task->vmm_context,
             (uint64_t)task->kernel_stack_base, (uint64_t)task->kernel_stack_top,
             free, total,
             kstack_guard_intact(task->kernel_stack_base) ? "ok" : "GONE");

@@ -16,8 +16,8 @@ struct task {
     char const *name;          // for the dump essentially
     void *kernel_stack_base;   // base, for freeing and for the guard check
     void *kernel_stack_top;    // what arch_set_kernel_stack() gets
-    struct trap_frame *frame;  // valid only while suspended
-    struct vmm_context *ctx;
+    struct trap_frame *trap_frame;    // where we re-enter what got interrupted, rewritten on every kernel entry
+    struct vmm_context *vmm_context;  // its address space
     uint64_t switch_count;             // how many times this task has been switched to
     struct file *fds[MAX_OPEN_FILES];  // per process FDs, FD are shared and ref-counted
     struct task *next;

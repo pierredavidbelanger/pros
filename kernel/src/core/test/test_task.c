@@ -18,7 +18,7 @@ void test_task(void) {
     test_report(TEST_TASK_TAG, "create returns a task", task != NULL);
     if (!task) return;
 
-    test_report(TEST_TASK_TAG, "fresh frame lies inside its own kernel stack", task_owns_frame(task, task->frame));
+    test_report(TEST_TASK_TAG, "fresh frame lies inside its own kernel stack", task_owns_frame(task, task->trap_frame));
     test_report(TEST_TASK_TAG, "fresh stack is intact", task_stack_intact(task));
 
     // every task gets 0/1/2 on /dev/console without ever calling sys_open

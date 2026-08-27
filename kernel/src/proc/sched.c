@@ -51,7 +51,7 @@ struct trap_frame *sched_on_trap_exit(struct trap_frame *frame) {
         task_dump_all();
         kpanic("current task does not owns the current frame");
     }
-    current->frame = frame;
+    current->trap_frame = frame;
 
     if (!need_resched) return frame;
     need_resched = false;
@@ -68,8 +68,8 @@ struct trap_frame *sched_on_trap_exit(struct trap_frame *frame) {
     current = next;
 
     arch_set_kernel_stack(current->kernel_stack_top);
-    vmm_switch_context(current->ctx);
-    return current->frame;
+    vmm_switch_context(current->vmm_context);
+    return current->trap_frame;
 }
 
 void sched_on_timer_tick(void) {
