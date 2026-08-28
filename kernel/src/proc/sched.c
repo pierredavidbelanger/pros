@@ -94,3 +94,16 @@ bool sched_only_current_is_alive(void) {
     }
     return true;
 }
+
+void sched(void) {
+    if (arch_irq_enabled()) kpanic("sched() with interrupts enabled");
+    // TODO switch to
+}
+
+void scheduler(void) {
+    // TODO actually do the scheduling
+    while (true) {
+        arch_idle();
+    }
+    arch_shutdown();
+}
