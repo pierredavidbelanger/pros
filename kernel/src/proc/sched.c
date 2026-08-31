@@ -10,6 +10,9 @@ static bool need_resched;
 static struct task *run_queue_head;
 static struct task *current;
 
+// where whoever is playing scheduler parked itself, the only frame that is not a task's
+static struct switch_frame *scheduler_frame;
+
 static struct task *sched_pick_next(void) {
     struct task *next = current->next;
     while (next->state == TASK_DEAD) {
@@ -97,7 +100,17 @@ bool sched_only_current_is_alive(void) {
 
 void sched(void) {
     if (arch_irq_enabled()) kpanic("sched() with interrupts enabled");
-    // TODO switch to
+    arch_task_switch_to(&current->switch_frame, scheduler_frame);
+    // we come back here, on our own stack, whenever someone picks us again
+}
+
+void sched_switch_to(struct task *task) {
+    struct task *prev = current;
+    current = task;
+    task->state = TASK_RUNNING;
+    task->switch_count++;
+    arch_task_switch_to(&scheduler_frame, task->switch_frame);
+    current = prev;  // C1 leaves this NULL: while the scheduler runs there is no current task
 }
 
 void scheduler(void) {

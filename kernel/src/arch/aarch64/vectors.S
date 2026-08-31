@@ -83,6 +83,11 @@ vector_common_stub:
     /* Pointer to struct trap_frame is SP */
     mov x0, sp
     bl aarch64_exception_handler
+
+/* Also the way back for a task that never trapped: task_trampoline calls in here with x0 = its frame.
+   Above the vector_type test on purpose, that decision belongs to the frame, not to how we got here. */
+.global aarch64_trap_return
+aarch64_trap_return:
     mov sp, x0 /* restore from whatever frame the handler returned */
 
     /* Restore system registers */

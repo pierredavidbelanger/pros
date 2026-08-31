@@ -22,4 +22,7 @@
 
 struct trap_frame *aarch64_exception_handler(struct trap_frame *frame);
 
+// the restore tail in vectors.S, entered with a frame to eret through
+_Noreturn void aarch64_trap_return(struct trap_frame *frame);
+
 #endif  // PROS_AARCH64_EXCEPTIONS_H

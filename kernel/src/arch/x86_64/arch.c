@@ -255,6 +255,23 @@ struct trap_frame *arch_task_init_user_frame(void *kernel_stack_top, uint64_t us
     return frame;
 }
 
+void arch_task_switch_to(struct switch_frame **old, struct switch_frame *new) {
+    (void) old;
+    (void) new;
+    kpanic("arch_task_switch_to: A1 not written yet");
+}
+
+struct switch_frame *arch_task_init_switch_frame(struct trap_frame *trap_frame) {
+    (void) trap_frame;
+    kpanic("arch_task_init_switch_frame: A1 not written yet");
+    return NULL;
+}
+
+void arch_trap_return(struct trap_frame *frame) {
+    (void) frame;
+    kpanic("arch_trap_return: A1 not written yet");
+}
+
 // ELF
 
 uint16_t arch_wanted_elf_machine(void) {

@@ -77,6 +77,7 @@ struct task *task_create(const char *name, void (*entry)(void)) {
     struct task *task = task_inner_create(name, NULL, vmm_kernel_context);
     if (!task) return NULL;
     task->trap_frame = arch_task_init_frame(task->kernel_stack_top, entry);
+    task->switch_frame = arch_task_init_switch_frame(task->trap_frame);
     return task;
 }
 
@@ -84,6 +85,7 @@ struct task *task_create_user(const char *name, struct vmm_context *ctx, uint64_
     struct task *task = task_inner_create(name, NULL, ctx);
     if (!task) return NULL;
     task->trap_frame = arch_task_init_user_frame(task->kernel_stack_top, user_entry, user_stack_top);
+    task->switch_frame = arch_task_init_switch_frame(task->trap_frame);
     return task;
 }
 
@@ -123,6 +125,13 @@ bool task_stack_intact(const struct task *task) {
 
 void task_exit_guard(void) {
     kpanic("kernel thread returned");
+}
+
+// a fresh task has never trapped, so we fake the return: read its frame and leave through the normal tail
+void task_trampoline(void) {
+    struct task *task = sched_get_current_task();
+    if (!task) kpanic("trampoline with no current task");
+    arch_trap_return(task->trap_frame);
 }
 
 void task_dump(struct task *task) {

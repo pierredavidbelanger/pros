@@ -42,6 +42,9 @@ bool task_stack_intact(const struct task *task);
 
 void task_exit_guard(void);
 
+// where the first switch into a brand new task lands, never called directly
+void task_trampoline(void);
+
 void task_dump(struct task *task);
 
 void task_dump_all(void);

@@ -65,6 +65,16 @@ static bool cmdline_parse_string(const char *cmdline, const char *param, const c
     return true;
 }
 
+// B1/A1 scaffolding: entered through task_trampoline the first time, through switch_to itself the second
+static void switch_probe(void) {
+    kprintf("SWTCH", "probe: entered, sp=%p\n", arch_get_stack_pointer());
+    arch_irq_disable();  // the eret that got us here cleared DAIF, sched() wants them masked
+    sched();
+    kprintf("SWTCH", "probe: resumed where it left off\n");
+    sched();
+    kpanic("probe resumed a third time");
+}
+
 void _start(void) {
     if (!LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision)) {
         arch_halt();
@@ -148,6 +158,14 @@ void _start(void) {
     struct task *init = task_create_user(init_path, init_ctx, elf.entry, sp);
     if (!init) kpanic("cannot create init task");
     sched_add_task(init);
+
+    // B1/A1 scaffolding: prove switch_to and the trampoline while nothing else can interrupt us
+    struct task *probe = task_create("PROBE", switch_probe);
+    if (!probe) kpanic("cannot create switch probe");
+    sched_switch_to(probe);  // first entry: ret lands in task_trampoline, then eret into switch_probe
+    sched_switch_to(probe);  // second: ret lands inside sched(), right where it gave up the cpu
+    kprintf("SWTCH", "probe: round trip survived, switch_count=%d\n", (int) probe->switch_count);
+    task_destroy(probe);
 
     kprintf("TIMER", "Starting timer at %d Hz\n", TIMER_HZ);
     arch_timer_init(TIMER_HZ);

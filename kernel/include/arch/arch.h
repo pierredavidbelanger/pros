@@ -83,6 +83,9 @@ struct trap_frame *arch_task_init_user_frame(void *kernel_stack_top, uint64_t us
 
 void arch_task_switch_to(struct switch_frame **old, struct switch_frame *new);
 
+// fabricate the frame the very first arch_task_switch_to into this task will land on, just below its trap frame
+struct switch_frame *arch_task_init_switch_frame(struct trap_frame *trap_frame);
+
 // Trap
 
 void arch_trap_return(struct trap_frame *frame);

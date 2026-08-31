@@ -2,6 +2,7 @@
 
 #include "gic.h"
 #include "timer.h"
+#include "switch_frame.h"
 #include "trap_frame.h"
 #include "exceptions.h"
 #include "mm/vmm.h"
@@ -253,6 +254,19 @@ struct trap_frame *arch_task_init_user_frame(void *kernel_stack_top, uint64_t us
     frame->spsr = AARCH64_SPSR_M_EL0T;
     frame->vector_type = AARCH64_VECTOR_LOWER_EL_IRQ; // exit path installs sp into SP_EL0
     return frame;
+}
+
+struct switch_frame *arch_task_init_switch_frame(struct trap_frame *trap_frame) {
+    struct switch_frame *frame = (struct switch_frame *) ((uint8_t *) trap_frame - SWITCH_FRAME_SIZE);
+    memset(frame, 0, sizeof(struct switch_frame));
+    frame->x30 = (uint64_t) task_trampoline;
+    return frame;
+}
+
+// Trap
+
+void arch_trap_return(struct trap_frame *frame) {
+    aarch64_trap_return(frame); // never comes back, we eret out of here
 }
 
 // ELF

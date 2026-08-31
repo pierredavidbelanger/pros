@@ -28,4 +28,6 @@ void sched(void);
 // run what is ready, idle while anything is alive, never returns
 void scheduler(void);
 
+void sched_switch_to(struct task *task);
+
 #endif  // PROS_SCHED_H
