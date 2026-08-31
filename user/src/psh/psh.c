@@ -35,6 +35,7 @@ void _start(void) {
             PUTS_ERR("\thelp: print this help\n");
             PUTS_ERR("\techo arg: print arg\n");
             PUTS_ERR("\tcat arg: open arg and print its content\n");
+            PUTS_ERR("\tls arg: open arg and list its content\n");
             PUTS_ERR("\texit: exit psh\n");
             continue;
         }
