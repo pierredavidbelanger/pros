@@ -66,6 +66,12 @@ ISR_NOERRCODE 46
 ISR_NOERRCODE 47
 
 isr_common_stub:
+    /* cs sits above int_no/error_code/rip. from ring 3 means GS is userland's and ours has to come in,
+       same pairing syscall_entry has always had, and what lets the exit below decide from the frame alone */
+    cmpq $0x3b, 24(%rsp)
+    jne 1f
+    swapgs
+1:
     pushq %rax
     pushq %rbx
     pushq %rcx
@@ -86,6 +92,10 @@ isr_common_stub:
     call x86_64_exception_handler
     movq %rax, %rsp /* restore from whatever frame the handler returned */
 
+/* The one restore tail, three ways in: here, syscall_entry, and arch_trap_return for a task that never trapped.
+   All of them arrive with rsp on a struct trap_frame, and after a switch that frame belongs to another task. */
+.global x86_64_trap_return
+x86_64_trap_return:
     popq %r15
     popq %r14
     popq %r13
@@ -103,6 +113,13 @@ isr_common_stub:
     popq %rax
 
     addq $16, %rsp /* Clean up pushed int_no and error_code */
+
+    /* peek at cs without popping it, iretq needs it still on the stack.
+       ring 3 gets its own GS back, ring 0 keeps ours */
+    cmpq $0x3b, 8(%rsp)
+    jne 1f
+    swapgs
+1:
     iretq
 
 .global isr_stub_table

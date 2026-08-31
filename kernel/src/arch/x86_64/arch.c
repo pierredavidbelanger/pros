@@ -1,6 +1,7 @@
 #include "arch/arch.h"
 
 #include "idt.h"
+#include "switch_frame.h"
 #include "pic.h"
 #include "lapic.h"
 #include "percpu.h"
@@ -72,7 +73,10 @@ void syscall_init(void) {
     // IF must be masked on entry, or a syscall can be interrupted before it has a kernel stack
     wrmsr(MSR_IA32_FMASK, X86_64_RFLAGS_IF);
 
-    wrmsr(MSR_IA32_KERNEL_GS_BASE, (uint64_t) &x86_64_percpu0);
+    // the kernel runs on percpu0 at all times and swapgs happens at every ring transition, both ways.
+    // the exit path reads the ring out of the frame, so a switch can leave through another task's frame
+    wrmsr(MSR_IA32_GS_BASE, (uint64_t) &x86_64_percpu0);
+    wrmsr(MSR_IA32_KERNEL_GS_BASE, 0);  // what userland gets handed on the way out
 
     // kprintf("X8664", "EFER:  0x%016lx\n", rdmsr(MSR_IA32_EFER));
     // kprintf("X8664", "STAR:  0x%016lx\n", rdmsr(MSR_IA32_STAR));
@@ -255,21 +259,13 @@ struct trap_frame *arch_task_init_user_frame(void *kernel_stack_top, uint64_t us
     return frame;
 }
 
-void arch_task_switch_to(struct switch_frame **old, struct switch_frame *new) {
-    (void) old;
-    (void) new;
-    kpanic("arch_task_switch_to: A1 not written yet");
-}
-
 struct switch_frame *arch_task_init_switch_frame(struct trap_frame *trap_frame) {
-    (void) trap_frame;
-    kpanic("arch_task_init_switch_frame: A1 not written yet");
-    return NULL;
-}
-
-void arch_trap_return(struct trap_frame *frame) {
-    (void) frame;
-    kpanic("arch_trap_return: A1 not written yet");
+    struct switch_frame *frame = (struct switch_frame *) ((uint8_t *) trap_frame - sizeof(struct switch_frame));
+    // ret leaves rsp 8 past the top of a 16 aligned frame, which is the alignment SysV wants at entry
+    if ((uint64_t) frame & 0xF) kpanic("switch_frame is not 16 aligned");
+    memset(frame, 0, sizeof(struct switch_frame));
+    frame->ret = (uint64_t) task_trampoline; // where the first switch into this task lands
+    return frame;
 }
 
 // ELF

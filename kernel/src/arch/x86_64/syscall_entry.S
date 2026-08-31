@@ -44,28 +44,5 @@ syscall_entry:
     call x86_64_syscall_handler
     movq %rax, %rsp             /* restore from whatever frame the handler returned */
 
-    popq %r15
-    popq %r14
-    popq %r13
-    popq %r12
-    popq %r11
-    popq %r10
-    popq %r9
-    popq %r8
-    popq %rbp
-    popq %rdi
-    popq %rsi
-    popq %rdx
-    popq %rcx
-    popq %rbx
-    popq %rax                   /* return value, per the syscall ABI's use of rax */
-
-    addq $16, %rsp              /* drop int_no/error_code */
-
-    /* peek at cs without popping it, iretq needs it still on the stack.
-       might be resuming a kernel thread (BOOT) instead of this task own userspace */
-    cmpq $0x3b, 8(%rsp)
-    jne 1f
-    swapgs                      /* only swap back to user gs if we're actually headed to ring 3 */
-1:
-    iretq                       /* instead of sysretq, we may not return to ring 3 (like in sys_exit) */
+    /* one tail for both stubs, in isr.S. it iretq's, never sysretq: we may not be going back to ring 3 */
+    jmp x86_64_trap_return

@@ -13,6 +13,7 @@
 #define MSR_IA32_STAR 0xC0000081
 #define MSR_IA32_LSTAR 0xC0000082
 #define MSR_IA32_FMASK 0xC0000084
+#define MSR_IA32_GS_BASE 0xC0000101
 #define MSR_IA32_KERNEL_GS_BASE 0xC0000102
 
 inline static uint64_t rdmsr(uint32_t msr) {
