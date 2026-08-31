@@ -159,17 +159,6 @@ void task_dump(struct task *task) {
             kstack_guard_intact(task->kernel_stack_base) ? "ok" : "GONE");
 }
 
-void task_dump_all(void) {
-    struct task *first = sched_get_current_task();
-    if (!first) return;
-    struct task *task = first;
-    while (true) {
-        task_dump(task);
-        task = task->next;
-        if (task == first) break;
-    }
-}
-
 int64_t sys_getpid(void) {
     return sched_get_current_task()->pid;
 }

@@ -4,37 +4,48 @@
 #include "core/kprintf.h"
 #include "mm/vmm.h"
 #include "proc/task.h"
-
-static bool need_resched;
+#include "stdc.h"
 
 static struct task *run_queue_head;
-static struct task *current;
-
-// where whoever is playing scheduler parked itself, the only frame that is not a task's
-static struct switch_frame *scheduler_frame;
+static struct task *current;                  // NULL while the scheduler thread runs
+static struct task *cursor;                   // where round robin resumes looking
+static struct task *scheduler_task;           // BOOT, never in the run queue
+static struct switch_frame *scheduler_frame;  // its bookmark, the only frame that is not a task's
+static bool need_resched;
 
 static struct task *sched_pick_next(void) {
-    struct task *next = current->next;
-    while (next->state == TASK_DEAD) {
-        if (next == current) kpanic("no runnable tasks");
-        next = next->next;
-    }
-    return next;
+    if (!run_queue_head) return NULL;
+    struct task *start = cursor ? cursor : run_queue_head;
+    struct task *task = start;
+    do {
+        task = task->next;
+        if (task->state == TASK_READY) {
+            cursor = task;  // next round starts looking after this one
+            return task;
+        }
+    } while (task != start);
+    return NULL;  // everything is dead or blocked
 }
 
-void sched_init(void) {
+static bool sched_any_alive(void) {
+    struct task *task = run_queue_head;
+    if (!task) return false;
+    do {
+        if (task->state != TASK_DEAD) return true;
+        task = task->next;
+    } while (task != run_queue_head);
+    return false;
+}
+
+void sched_init(struct task *task) {
     run_queue_head = NULL;
+    scheduler_task = task;  // BOOT is the scheduler, it never gets queued
 }
 
 void sched_add_task(struct task *task) {
     if (!task) return;
     if (!run_queue_head) {
-        // we are given the first task, but sched_on_trap_exit has not schedule it by itself yet
-        // we need to call arch_set_kernel_stack manually here and make it the current
         run_queue_head = task;
-        task->state = TASK_RUNNING;
-        arch_set_kernel_stack(task->kernel_stack_top);
-        current = task;
     } else {
         task->next = run_queue_head->next;
     }
@@ -42,7 +53,7 @@ void sched_add_task(struct task *task) {
 }
 
 struct task *sched_get_current_task(void) {
-    return current;
+    return current ? current : scheduler_task;
 }
 
 struct trap_frame *sched_on_trap_exit(struct trap_frame *frame) {
@@ -51,7 +62,7 @@ struct trap_frame *sched_on_trap_exit(struct trap_frame *frame) {
     if (!current) return frame;
 
     if (!task_owns_frame(current, frame)) {
-        task_dump_all();
+        sched_task_dump_all();
         kpanic("current task does not owns the current frame");
     }
     current->trap_frame = frame;
@@ -59,19 +70,9 @@ struct trap_frame *sched_on_trap_exit(struct trap_frame *frame) {
     if (!need_resched) return frame;
     need_resched = false;
 
-    struct task *next = sched_pick_next();
-    if (next == current) return frame;
+    if (current->state == TASK_RUNNING) current->state = TASK_READY;
+    sched();  // gives the cpu back. we come back here, later, as the same task
 
-    if (!task_stack_intact(current)) kpanic("kernel stack overflow on the current task");
-    if (!task_stack_intact(next)) kpanic("kernel stack overflow on the next task");
-
-    if (current->state != TASK_DEAD) current->state = TASK_READY;
-    next->state = TASK_RUNNING;
-    next->switch_count++;
-    current = next;
-
-    arch_set_kernel_stack(current->kernel_stack_top);
-    vmm_switch_context(current->vmm_context);
     return current->trap_frame;
 }
 
@@ -86,37 +87,47 @@ void sched_exit_current(void) {
     need_resched = true;
 }
 
-bool sched_only_current_is_alive(void) {
-    struct task *first = sched_get_current_task();
-    if (!first) return false;
-    struct task *task = first;
-    while (true) {
-        if (task != first && task->state != TASK_DEAD) return false;
+void sched_task_dump_all(void) {
+    if (scheduler_task) task_dump(scheduler_task);  // outside the ring, nothing else would ever print it
+    struct task *task = run_queue_head;
+    if (!task) return;
+    do {
+        task_dump(task);
         task = task->next;
-        if (task == first) break;
-    }
-    return true;
+    } while (task != run_queue_head);
 }
 
 void sched(void) {
     if (arch_irq_enabled()) kpanic("sched() with interrupts enabled");
+    if (!scheduler_frame) kpanic("sched() with no scheduler to go back to");
     arch_task_switch_to(&current->switch_frame, scheduler_frame);
     // we come back here, on our own stack, whenever someone picks us again
 }
 
-void sched_switch_to(struct task *task) {
-    struct task *prev = current;
-    current = task;
-    task->state = TASK_RUNNING;
-    task->switch_count++;
-    arch_task_switch_to(&scheduler_frame, task->switch_frame);
-    current = prev;  // C1 leaves this NULL: while the scheduler runs there is no current task
-}
-
 void scheduler(void) {
-    // TODO actually do the scheduling
+    // the scheduler runs masked, arch_idle() is the only place that opens the window
+    arch_irq_disable();
     while (true) {
-        arch_idle();
+        struct task *next = sched_pick_next();
+        if (next) {
+            if (!task_stack_intact(next)) kpanic("kernel stack overflow on the task we are about to run");
+            current = next;
+            next->state = TASK_RUNNING;
+            next->switch_count++;
+            arch_set_kernel_stack(next->kernel_stack_top);
+            vmm_switch_context(next->vmm_context);
+            arch_task_switch_to(&scheduler_frame, next->switch_frame);
+            // we are the scheduler again
+            if (current != next) kpanic("came back from a task we did not dispatch");
+            current = NULL;
+            if (!task_stack_intact(next)) kpanic("kernel stack overflow on the task we just left");
+        } else if (sched_any_alive()) {
+            // nothing ready, but something is blocked: wait for the interrupt that frees it
+            arch_idle();
+        } else {
+            break;
+        }
     }
+    kprintf("K", "All done here, shutting down.\n");
     arch_shutdown();
 }

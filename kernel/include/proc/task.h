@@ -47,6 +47,4 @@ void task_trampoline(void);
 
 void task_dump(struct task *task);
 
-void task_dump_all(void);
-
 #endif  // PROS_TASK_H

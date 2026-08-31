@@ -46,7 +46,7 @@ static void panic_unhandled(struct trap_frame *frame, const char *what) {
     }
     kprintf("ARM64", " X30 (LR): 0x%016lx\n", frame->x[30]);
     kprintf("ARM64", "==================== [ TASKS ] ====================\n");
-    task_dump_all();
+    sched_task_dump_all();
     kprintf("ARM64", "===================================================\n");
     kpanic("");
 }

@@ -197,7 +197,7 @@ static void x86_64_dispatch(struct trap_frame *frame) {
         kprintf("X8664", " CR2: 0x%016lx\n", cr2);
     }
     kprintf("X8664", "==================== [ TASKS ] ====================\n");
-    task_dump_all();
+    sched_task_dump_all();
     kprintf("X8664", "===================================================\n");
     kpanic("");
 }
