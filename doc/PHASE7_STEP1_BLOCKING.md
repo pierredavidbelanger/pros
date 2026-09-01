@@ -1,4 +1,4 @@
-# Working Document: Phase 7 Step 1 — `switch_to`, a Scheduler Thread, and Blocking [STATUS: NOT STARTED ⬜]
+# Working Document: Phase 7 Step 1 — `switch_to`, a Scheduler Thread, and Blocking [STATUS: COMPLETE ✅]
 
 > [!NOTE]
 > **Phase 7 Step 1**, from [`PHASE7_MANY_PROGRAMS.md`](PHASE7_MANY_PROGRAMS.md) Chapter 1. That
@@ -43,6 +43,11 @@ spends as much effort on how to see it as on how to build it.
 ---
 
 ## 🧠 Where this actually stands
+
+> [!NOTE]
+> **This is the tree as it was before the Step**, kept because every decision below was argued
+> against it. What the tree looks like now is the Parts, all ✅, plus the closeout section
+> "What it left behind" at the end.
 
 Confirmed by reading the tree, not assumed:
 
@@ -592,7 +597,7 @@ later Part is debugged through a scheduler that has already been proven.
 
 ---
 
-## 🧩 C0 — Types and the skeleton
+## 🧩 C0 — Types and the skeleton ✅
 
 **Goal:** everything that both architecture tracks need to exist before either can compile.
 
@@ -620,7 +625,7 @@ later Part is debugged through a scheduler that has already been proven.
 
 ---
 
-## 🧩 B1 — AArch64 `switch_to`
+## 🧩 B1 — AArch64 `switch_to` ✅
 
 **Goal:** two kernel tasks switch to each other by swapping kernel stacks, with the trap-exit path
 untouched.
@@ -642,7 +647,7 @@ Part is proving the register save/restore and the trampoline, nothing else.
 
 ---
 
-## 🧩 A1 — x86_64 `switch_to`
+## 🧩 A1 — x86_64 `switch_to` ✅
 
 **Goal:** the same, on the architecture where the return address is an offset rather than a
 register.
@@ -665,7 +670,7 @@ register.
 
 ---
 
-## 🧩 C1 — The scheduler thread
+## 🧩 C1 — The scheduler thread ✅
 
 **Goal:** `switch_to` becomes the only way tasks switch, `BOOT` becomes the scheduler, and
 **nothing observable changes.**
@@ -693,7 +698,7 @@ is not done. `switch_count` in `task_dump_all()` should still climb for the user
 
 ---
 
-## 🧩 C2 — `sleep`, `wakeup`, and a console that waits
+## 🧩 C2 — `sleep`, `wakeup`, and a console that waits ✅
 
 **Goal:** the spin is gone, and the machine idles.
 
@@ -772,40 +777,47 @@ both architectures.
 
 New:
 
-- ⬜ `kernel/src/arch/aarch64/switch.S` + a `struct switch_frame` header — B1
-- ⬜ `kernel/src/arch/x86_64/switch.S` + a `struct switch_frame` header — A1
+- ✅ `kernel/src/arch/aarch64/switch.S` + a `struct switch_frame` header — B1
+- ✅ `kernel/src/arch/x86_64/switch.S` + a `struct switch_frame` header — A1
 
 Existing, to be modified:
 
-- ⬜ [`kernel/include/proc/task.h`](../kernel/include/proc/task.h) — the field rename
+- ✅ [`kernel/include/proc/task.h`](../kernel/include/proc/task.h) — the field rename
   (Decision 1) with a validity comment on each frame, `TASK_BLOCKED`, the `switch_frame` pointer,
   the channel a task is sleeping on
-- ⬜ [`kernel/src/proc/task.c`](../kernel/src/proc/task.c) — `task_state_names[]`,
+- ✅ [`kernel/src/proc/task.c`](../kernel/src/proc/task.c) — `task_state_names[]`,
   `task_dump_all()` covering the scheduler thread, a fabricated initial `switch_frame` per new
   task
-- ⬜ [`kernel/src/proc/sched.c`](../kernel/src/proc/sched.c) + `proc/sched.h` — the scheduler loop,
+- ✅ [`kernel/src/proc/sched.c`](../kernel/src/proc/sched.c) + `proc/sched.h` — the scheduler loop,
   `sched()`, `sleep`/`wakeup`, `sched_only_current_is_alive()` removed
-- ⬜ [`kernel/include/arch/arch.h`](../kernel/include/arch/arch.h) — `arch_switch_to()`, the
+- ✅ [`kernel/include/arch/arch.h`](../kernel/include/arch/arch.h) — `arch_switch_to()`, the
   initial-`switch_frame` builder, `arch_trap_return()`, `arch_irq_enabled()`, and an idle primitive
   that is not `arch_halt()`
-- ⬜ [`kernel/src/arch/x86_64/arch.c`](../kernel/src/arch/x86_64/arch.c) +
+- ✅ [`kernel/src/arch/x86_64/arch.c`](../kernel/src/arch/x86_64/arch.c) +
   [`aarch64/arch.c`](../kernel/src/arch/aarch64/arch.c) — the initial `switch_frame`, the idle
   primitive
-- ⬜ [`kernel/src/arch/aarch64/vectors.S`](../kernel/src/arch/aarch64/vectors.S) — the restore tail
+- ✅ [`kernel/src/arch/aarch64/vectors.S`](../kernel/src/arch/aarch64/vectors.S) — the restore tail
   factored out so the trampoline can reuse it
-- ⬜ [`kernel/src/arch/x86_64/isr.S`](../kernel/src/arch/x86_64/isr.S) — its tail exported as the
+- ✅ [`kernel/src/arch/x86_64/isr.S`](../kernel/src/arch/x86_64/isr.S) — its tail exported as the
   single `x86_64_trap_return`
-- ⬜ [`kernel/src/arch/x86_64/syscall_entry.S`](../kernel/src/arch/x86_64/syscall_entry.S) — its
+- ✅ [`kernel/src/arch/x86_64/syscall_entry.S`](../kernel/src/arch/x86_64/syscall_entry.S) — its
   duplicate copy of that tail replaced by a `jmp` to the unified one, taking the `swapgs` bug with it
-- ⬜ [`kernel/include/core/spinlock.h`](../kernel/include/core/spinlock.h) + `core/spinlock.c` —
+- ✅ [`kernel/include/core/spinlock.h`](../kernel/include/core/spinlock.h) + `core/spinlock.c` —
   `spinlock_lock`/`spinlock_unlock` exposed, the `_irqsave` pair recast as their composition
-- ⬜ [`kernel/src/core/test/test_task.c`](../kernel/src/core/test/test_task.c) — one `task->frame`
+- ✅ [`kernel/src/core/test/test_task.c`](../kernel/src/core/test/test_task.c) — one `task->frame`
   use, renamed; worth a companion check that a fresh `switch_frame` also lies inside its own stack
-- ⬜ [`kernel/src/drivers/console_dev.c`](../kernel/src/drivers/console_dev.c) — the spin replaced
-  by `sleep()`, and a `struct spinlock` beside the `ldisc`
-- ⬜ [`kernel/src/core/console_input.c`](../kernel/src/core/console_input.c) — feeding the `ldisc`
-  moves here, and `wakeup()` fires on a completed line
-- ⬜ [`kernel/src/core/main.c`](../kernel/src/core/main.c) — falls into `scheduler()` forever
+- ✅ [`kernel/src/drivers/console_dev.c`](../kernel/src/drivers/console_dev.c) — the spin replaced
+  by `sleep()`, a `struct spinlock` beside the `ldisc`, and — **not where this list predicted** —
+  `console_dev_feed()`, the ISR's new entry point, which feeds the `ldisc` and fires `wakeup()`
+  on a completed line. It landed here rather than in `console_input.c` because the `ldisc` and its
+  lock live in the node's `priv_data`, and the feeder needs both
+- ✅ [`kernel/src/arch/x86_64/idt.c`](../kernel/src/arch/x86_64/idt.c) +
+  [`aarch64/exceptions.c`](../kernel/src/arch/aarch64/exceptions.c) — the UART RX branch calls
+  `console_dev_feed()` instead of `console_input_push()`
+- ✅ `kernel/src/core/console_input.c` + its header — **deleted**, along with the
+  `console_input_init()` call in `main.c`: once the ISR feeds the `ldisc`, nothing pushed to that
+  ring and nothing popped from it. See the note below
+- ✅ [`kernel/src/core/main.c`](../kernel/src/core/main.c) — falls into `scheduler()` forever
 
 ---
 
@@ -823,3 +835,54 @@ Existing, to be modified:
 When C2 passes on both architectures, **Step 1 is done**, and Phase 7's Decision 3 has lost its
 first half — `read()` no longer spins. The second half is arbitration, not per-open state (see
 Decision 3 as amended), and stays open until Step 2 creates something that can contend for it.
+
+**It passed, 2026-08-31, on both.** Five `Ctrl+P` dumps across a ten-second idle, every one of them
+`/bin/psh  BLOCKED  switch_count 6` with `BOOT` also at 6; one keystroke took both to 8, and two
+`ls` runs took them to 32. AArch64 reached 293 with `cat /root/lorem.txt` streaming through a
+console that sleeps between lines.
+
+---
+
+## 🧾 What it left behind
+
+Written down at closeout, because none of it is visible from the code and all of it is owed to a
+later Step.
+
+**Two instruments were added that the plan did not name.** `Ctrl+P` in `console_dev_feed()` calls
+`sched_task_dump_all()`, xv6's `procdump` key — without it "the count is flat" can only be seen
+under gdb, since the dump was otherwise reachable only from a panic. And `scheduler_task->switch_count++`
+now fires where `arch_task_switch_to()` returns into the scheduler, mirroring the `next->switch_count++`
+on the way out. That gives a free invariant to eyeball on every dump: **`BOOT`'s count equals the
+sum of every task's**, minus one for a task currently on the CPU, because each dispatch is paid
+back by exactly one return. Drift means something reached the scheduler by a path that is not
+`sched()`.
+
+**`console_input.c` is gone.** C2 asked whether the ring buffer still has a purpose once the ISR
+feeds the `ldisc` directly, and the answer was no: `console_input_push()` and `_pop()` lost every
+caller, and `console_input_init()` was left initialising a queue nothing could reach. Deleted with
+its header and that call. `ring_buffer.c` stays — it is a general utility with its own self-tests,
+and the tty shape sketched below would want it back.
+
+**Type-ahead was lost, deliberately.** `ldisc_feed()` returns early on a complete line
+(`ldisc.c:28`), so a byte arriving while a finished line is still undrained is now **discarded**.
+Before C2 that could not happen: the reader stopped feeding once the line was complete and the
+unread bytes waited in the ring buffer. The window is small today — line completes, sleeper wakes,
+drains — but it opens wide in Step 3, where a child process runs for a while with nobody draining
+the console. Whoever hits it should not have to rediscover the cause. **The fix, when it is
+wanted:** put the ring back *inside* `struct console_dev_node_data` under the same lock as the
+`ldisc`, and pump it from both sides — the ISR pumps after pushing, so echo stays immediate, and
+the reader pumps again after `ldisc_drain()`, because the bytes already queued will never produce
+a second interrupt. That is the flip-buffer shape a real tty has.
+
+**`need_resched` goes stale across an idle period.** Every timer tick during the idle sets it, and
+nothing consumes it: `sched_on_trap_exit()` returns at `if (!current) return frame;` before
+reaching the check. So the first trap exit after a wakeup spends a resched nobody asked for, which
+is why one keystroke costs two dispatches rather than one. Harmless with a single task; worth
+revisiting in Step 2, when the flag being global rather than per-task starts deciding fairness
+between two.
+
+**One bug worth the retelling.** The `Ctrl+P` branch was first written *inside* `spinlock_lock`,
+with a `return` before the unlock. On one core that is not a leaked lock, it is a wedged machine:
+the next keystroke's ISR spins forever on a lock that only a task could release, and no task can
+run. The symptom — input dies while the machine looks alive — reads like a scheduler bug and is
+not. Code that does not touch the protected state belongs above the `lock`, not inside it.

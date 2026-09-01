@@ -294,8 +294,9 @@ stays a retrospective on its own merits, independent of which convention version
 ---
 
 ### Phase 7: Many Programs — `fork`, `exec`, Pipes & Signals
-* **Status**: **IN DESIGN** 🚧 — chapters written against the tree as Phase 6 left it, ten
-  decisions named; no code yet. **The two that gate Step 1 are resolved, and a third since:** a real `switch_to` —
+* **Status**: **IN PROGRESS** 🚧 — **Step 1 is done on both architectures**; Steps 2-5 are still
+  chapters written against the tree as Phase 6 left it. Ten
+  decisions named. **The three that gated Step 1 are resolved and now built:** a real `switch_to` —
   which the per-task kernel stacks of Phase 3 Step 2 make a dozen instructions rather than an
   architecture — with `sched_on_trap_exit()` becoming a caller of it rather than a peer, xv6's
   dedicated-scheduler-thread shape, and `BOOT` filling that role from outside the run queue; plus
@@ -308,13 +309,16 @@ stays a retrospective on its own merits, independent of which convention version
   a program that isn't listening. A process that ends is reaped by its parent, rather than left as
   a corpse in the run queue forever.
 * **Steps** (proposed by the working doc; each gets its own document when it starts):
-  - ⬜ **Step 1 — Blocking and wait queues** — the piece Phase 3's frame-swap scheduler
-    deliberately doesn't cover. Two prerequisites already landed early in Phase 6 Step 2: syscalls
+  - ✅ **Step 1 — Blocking and wait queues** — the piece Phase 3's frame-swap scheduler
+    deliberately doesn't cover, now built: `switch_to` on both architectures, `BOOT` promoted to a
+    dedicated scheduler thread outside the run queue, and xv6-style `sleep`/`wakeup` on a channel.
+    Two prerequisites had already landed early in Phase 6 Step 2: syscalls
     are preemptible, and `struct spinlock` exists. Retires the first of the two known
     `/dev/console` stopgaps — `read()` spinning instead of sleeping. The second was mis-stated:
     the line buffer belongs per-node, and what is actually missing is arbitration between two
     readers, which waits for Step 2, since nothing can contend for the console until `fork`
-    exists. Working doc:
+    exists. **Verified** by `Ctrl+P` ten seconds apart: the shell frozen at the same
+    `switch_count`, `BLOCKED`, while the machine idles in `wfi`/`hlt`. Working doc:
     [`PHASE7_STEP1_BLOCKING.md`](PHASE7_STEP1_BLOCKING.md).
   - ⬜ **Step 2 — `fork`, `wait4`, reaping, and FPU/SIMD state** — the first two user processes,
     and the first one that gets cleaned up. Eager copy first, copy-on-write once it works. Carries

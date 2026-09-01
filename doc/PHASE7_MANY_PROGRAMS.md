@@ -1,4 +1,4 @@
-# Working Document: Phase 7 — Many Programs: `fork`, `exec`, Pipes & Signals [STATUS: IN DESIGN 🚧]
+# Working Document: Phase 7 — Many Programs: `fork`, `exec`, Pipes & Signals [STATUS: IN PROGRESS 🚧]
 
 > [!NOTE]
 > **Phase 7**, from [`ROADMAP.md`](ROADMAP.md), written against the tree as it stands the day
@@ -69,6 +69,12 @@ appear the moment that stops being true, and none of them exist in the tree toda
 ---
 
 ## 🏗️ Chapter 1: Blocking — the `switch_to` that does not exist
+
+> [!NOTE]
+> **Built, as Step 1, 2026-08-31.** `switch_to` exists on both architectures and the console
+> sleeps. The bullets below describe the tree *before* that, and are kept because the decisions
+> further down were argued against exactly this starting point —
+> [`PHASE7_STEP1_BLOCKING.md`](PHASE7_STEP1_BLOCKING.md) is what the tree looks like now.
 
 ### Where this actually stands
 
@@ -266,7 +272,9 @@ Two smaller things that arrive sooner and are extensions rather than walls:
 > named owner turns "one console reader" from an accident into a rule.**
 
 Both were named in Phase 6 Step 2. The first is unchanged: **`read()` spins** — retired by
-Decision 1, in Step 1.
+Decision 1, in Step 1. **That half is now built and gone** (2026-08-31): `console_dev_ops_read()`
+sleeps on its `ldisc`, and the UART ISR is what feeds and wakes it. The second half stands until
+Step 2, since nothing can contend for the console until `fork` exists.
 
 #### Two facts that reframe the second half
 
@@ -286,10 +294,11 @@ written and was not:
    cover.**
 
 So the question was never where the line buffer lives. It is **who gets the bytes**, and there is
-exactly one queue of them: `console_input`'s ring is a file-scope static
-([`console_input.c:9`](../kernel/src/core/console_input.c:9)) while the `ldisc` sits in the node's
-`priv_data`. One device's state living in two homes — that is the real smell, and it is not the
-one that got written down.
+exactly one queue of them: `console_input`'s ring is a file-scope static while the `ldisc` sits in
+the node's `priv_data`. One device's state living in two homes — that is the real smell, and it is
+not the one that got written down. **(Step 1 removed one of the two homes: the ISR now feeds the
+`ldisc` directly and `console_input.c` is deleted. The arbitration question below is untouched by
+that — it was never about where the bytes are queued.)**
 
 #### What real kernels do here
 
@@ -509,11 +518,12 @@ A proposal, ordered so each Step is demonstrable and each unblocks the next. Eve
 architecture-neutral (`C` track) **except Steps 1 and 2**: `switch_to` is per-architecture
 assembly (Decision 1), and so is FPU state.
 
-- **⬜ Step 1 — Blocking and wait queues.** Chapter 1. Retires the first `/dev/console` stopgap;
+- **✅ Step 1 — Blocking and wait queues.** Chapter 1. Retires the first `/dev/console` stopgap;
   the console's arbitration — a `struct tty`, a lock, a named owner — waits for Step 2, since
   nothing can contend for it until `fork` exists.
-  *Demo:* the console `read()` no longer spins — visible as the shell's `switch_count` staying
-  flat while nothing is typed, which `task_dump_all()` already prints. Individually designed in
+  *Demo, done on both architectures:* the console `read()` no longer spins — the shell sits
+  `BLOCKED` at an unchanging `switch_count` while nothing is typed, dumped on demand by a new
+  `Ctrl+P`, and climbing again the moment a key is pressed. Individually designed in
   [`PHASE7_STEP1_BLOCKING.md`](PHASE7_STEP1_BLOCKING.md).
 - **⬜ Step 2 — `fork`, `wait4`, reaping, and FPU state.** Chapters 2 and 3, minus `execve`.
   The first two user processes, and the first process that gets cleaned up. Carries the
