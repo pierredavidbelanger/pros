@@ -2,6 +2,7 @@
 
 #include "arch/arch.h"
 #include "core/kprintf.h"
+#include "core/spinlock.h"
 #include "mm/vmm.h"
 #include "proc/task.h"
 #include "stdc.h"
@@ -97,6 +98,31 @@ void sched_task_dump_all(void) {
     } while (task != run_queue_head);
 }
 
+void sleep(void *chan, struct spinlock *lk) {
+    if (!chan || !lk) kpanic("cant sleep without a chan or a lock");
+    if (!current) kpanic("sleep() on the scheduler thread");
+    struct task *task = current;
+    task->chan = chan;
+    task->state = TASK_BLOCKED;
+    // drop the lock, keep irqs masked until we are off the cpu
+    spinlock_unlock(lk);
+    sched();  // we come back here, later, on our own stack
+    task->chan = NULL;
+    // we can only have been resumed by the scheduler, and it never switches unmasked
+    if (arch_irq_enabled()) kpanic("resumed from sched() with interrupts enabled");
+    spinlock_lock(lk);  // get our lock back, we are still masked
+}
+
+void wakeup(void *chan) {
+    if (!chan) return;
+    struct task *task = run_queue_head;
+    if (!task) return;
+    do {
+        if (task->state == TASK_BLOCKED && task->chan == chan) task->state = TASK_READY;
+        task = task->next;
+    } while (task != run_queue_head);
+}
+
 void sched(void) {
     if (arch_irq_enabled()) kpanic("sched() with interrupts enabled");
     if (!scheduler_frame) kpanic("sched() with no scheduler to go back to");
@@ -118,6 +144,7 @@ void scheduler(void) {
             vmm_switch_context(next->vmm_context);
             arch_task_switch_to(&scheduler_frame, next->switch_frame);
             // we are the scheduler again
+            scheduler_task->switch_count++;
             if (current != next) kpanic("came back from a task we did not dispatch");
             current = NULL;
             if (!task_stack_intact(next)) kpanic("kernel stack overflow on the task we just left");

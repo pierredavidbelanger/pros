@@ -1,14 +1,14 @@
 #include "idt.h"
 
-#include "io.h"
-#include "pic.h"
-#include "core/kprintf.h"
 #include "arch/arch.h"
-#include "mm/vmm.h"
+#include "core/kprintf.h"
 #include "core/memory.h"
-#include "core/timer.h"
-#include "core/console_input.h"
 #include "core/serial.h"
+#include "core/timer.h"
+#include "drivers/console_dev.h"
+#include "io.h"
+#include "mm/vmm.h"
+#include "pic.h"
 #include "proc/sched.h"
 #include "proc/task.h"
 #include "syscall/syscall.h"
@@ -170,7 +170,7 @@ static void x86_64_dispatch(struct trap_frame *frame) {
             timer_tick();
         } else if (irq_no == 4) {
             while (serial_rx_ready()) {
-                console_input_push(serial_getc());
+                console_dev_feed((uint8_t)serial_getc());
             }
         } else {
             kprintf("X8664", "HANDLED %zu: nothing\n", frame->int_no);

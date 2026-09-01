@@ -1,16 +1,16 @@
 #include "exceptions.h"
 
-#include "gic.h"
-#include "timer.h"
-#include "core/serial.h"
-#include "core/kprintf.h"
-#include "core/timer.h"
-#include "core/console_input.h"
 #include "arch/arch.h"
+#include "core/kprintf.h"
+#include "core/serial.h"
+#include "core/timer.h"
+#include "drivers/console_dev.h"
+#include "gic.h"
 #include "mm/vmm.h"
 #include "proc/sched.h"
 #include "proc/task.h"
 #include "syscall/syscall.h"
+#include "timer.h"
 
 static const char *vector_names[16] = {
     "Current EL SP_EL0 Synchronous",
@@ -28,8 +28,7 @@ static const char *vector_names[16] = {
     "Lower EL AArch32 Synchronous",
     "Lower EL AArch32 IRQ",
     "Lower EL AArch32 FIQ",
-    "Lower EL AArch32 SError"
-};
+    "Lower EL AArch32 SError"};
 
 // Dump and die. Never returns.
 static void panic_unhandled(struct trap_frame *frame, const char *what) {
@@ -42,7 +41,7 @@ static void panic_unhandled(struct trap_frame *frame, const char *what) {
     kprintf("ARM64", " ELR_EL1: 0x%016lx\n", frame->elr);
     kprintf("ARM64", " SPSR_EL1: 0x%016lx  SP: 0x%016lx\n", frame->spsr, frame->sp);
     for (int i = 0; i < 30; i += 3) {
-        kprintf("ARM64", " X%02d: 0x%016lx  X%02d: 0x%016lx  X%02d: 0x%016lx\n", i, frame->x[i], i+1, frame->x[i+1], i+2, frame->x[i+2]);
+        kprintf("ARM64", " X%02d: 0x%016lx  X%02d: 0x%016lx  X%02d: 0x%016lx\n", i, frame->x[i], i + 1, frame->x[i + 1], i + 2, frame->x[i + 2]);
     }
     kprintf("ARM64", " X30 (LR): 0x%016lx\n", frame->x[30]);
     kprintf("ARM64", "==================== [ TASKS ] ====================\n");
@@ -79,7 +78,7 @@ static void aarch64_dispatch(struct trap_frame *frame) {
         } else if (intid == GIC_INTID_PL011) {
             // drain fully as one interrupt can represent more than one queued byte
             while (serial_rx_ready()) {
-                console_input_push((uint8_t) serial_getc());
+                console_dev_feed((uint8_t)serial_getc());
             }
         } else {
             kprintf("ARM64", "HANDLED IRQ %u: nothing\n", intid);
@@ -101,7 +100,7 @@ static void aarch64_dispatch(struct trap_frame *frame) {
         int64_t ret = syscall_dispatch(frame->x[8], frame->x[0], frame->x[1], frame->x[2], frame->x[3], frame->x[4], frame->x[5]);
         arch_irq_disable();
         // kprintf("ARM64", "SVC: syscall_dispatch %zu DONE ret %lld\n", frame->x[8], ret);
-        frame->x[0] = (uint64_t) ret;
+        frame->x[0] = (uint64_t)ret;
         // Resolved: CPU will eret back and continue (syscall return is in x0)
         return;
     }

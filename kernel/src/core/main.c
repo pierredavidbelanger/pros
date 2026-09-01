@@ -2,7 +2,6 @@
 #include "asm/unistd.h"
 #include "core/boot.h"
 #include "core/console.h"
-#include "core/console_input.h"
 #include "core/fb.h"
 #include "core/hhdm.h"
 #include "core/kprintf.h"
@@ -154,8 +153,6 @@ void _start(void) {
     // run all tests before we go preemptive
     if (tests_enabled) test_all();
 
-    // enable buffering input from serial
-    console_input_init();
     // enable capturing input from serial
     serial_init_get();
 
