@@ -8,10 +8,11 @@
 
 > [!NOTE]
 > Mentor-mode reminder (see the note at the top of [`../README.md`](../README.md)): this is a
-> design reference to code from by hand, not code to paste in. The seven decisions below are
-> Step-level and **open** — and, unlike Step 1's first draft, **they carry no recommendation.**
-> Each lays out what the tree says and what the field does, then ends with the trace that settles
-> it. The argument is the work, and it is deliberately not written here.
+> design reference to code from by hand, not code to paste in. **All seven Step-level decisions
+> below are resolved** (2026-09-04 and 2026-09-05). Unlike Step 1's first draft, they were
+> written open and without recommendation, and each was resolved one exchange at a time, with
+> its argument written in the words it was resolved with — the reasoning is the part worth
+> re-reading, and it is deliberately not Claude's.
 
 Tracks: **`C`** architecture-neutral · **`A`** x86_64 · **`B`** AArch64.
 
@@ -19,11 +20,11 @@ Tracks: **`C`** architecture-neutral · **`A`** x86_64 · **`B`** AArch64.
 
 ## 🎯 What "done" looks like
 
-> A user program calls `fork()`. **Two** processes come back from that one call, each with its own
-> address space, and both print. The parent calls `wait4()` and **sleeps** — not spins — until the
+> `/bin/init` calls `fork()`. **Two** processes come back from that one call, each with its own
+> address space, and both print. `init` calls `wait4()` and **sleeps** — not spins — until the
 > child exits, then prints the child's exit code. The child's `struct task`, kernel stack and page
-> tables are **freed**, the page count returns to what it was before the `fork`, and `exit` at the
-> prompt still shuts the machine down.
+> tables are **freed**, the page count returns to what it was before the `fork`, and when `init`
+> itself exits the machine still shuts down.
 
 This is the first time the word *process* means something in PrOS: until now there has been
 exactly one user task, built by hand in `main.c`, and the only way a program ended was to leave a
@@ -34,6 +35,10 @@ and clean up after them.
 
 - ❌ **No `execve`.** A child is a copy of its parent and stays one. Step 3 makes it a different
   program, which is why the demo is a program that forks *itself*.
+- ❌ **No shell.** `pros.init=` goes back to `/bin/init` for one Step (Decision 7). `psh` keeps
+  building and stays in the initrd; Step 3 brings it back as the thing `init` forks and `exec`s.
+  There is no prompt in Step 2, and by the Phase 6 rule that is fine — only the phase needs a
+  demo, a Step needs to be used by it.
 - ❌ **No copy-on-write.** Eager copy is the Step. Whether eager copy is written in a shape CoW can
   grow out of is Decision 3; writing CoW is not.
 - ❌ **No `stat`, no pipes, no signals.** Steps 3, 4, 5. `SIGCHLD` in particular is named here
@@ -235,21 +240,65 @@ The other half of the Step is the reverse trip, and it does not happen all at on
 
 | Stage | Who runs it | What is released |
 |---|---|---|
-| **exit** | the dying task, in `sys_exit` | its fds — safe, it is not standing on them |
-| **still exit** | the dying task, off its own address space | its page tables — only after something else is loaded |
+| **exit** | the dying task, in `sys_exit` | its fds — safe, it is not standing on them, and Step 4 needs this |
 | **switch away** | `sched()` | the CPU. It never comes back. |
-| **reap** | *someone else*, in `wait4` or wherever Decision 4 says | the kernel stack it was standing on, and `struct task` |
+| **reap** | its parent, in `wait4` | its page tables, the kernel stack it was standing on, and `struct task` |
 
 The rule under the table: **a task cannot free the stack it is executing on, or the page tables
 the CPU is walking.** Everything else it can hand back itself. What sits between "switch away" and
 "reap" is a task that is not `DEAD` — a zombie — carrying an exit status for a parent that has not
-asked yet. Decision 4 is about how long that stage is allowed to last and who ends it.
+asked yet. Decision 4 settled how long that stage lasts and who ends it: the parent, always, and
+the one task that has no parent skips the stage because the machine is ending.
 
 ---
 
 ## ⚖️ Decisions — Step-level, all open
 
-### 1. How does `sys_fork` get at the parent's trap frame? ⬜ OPEN
+### 1. How does `sys_fork` get at the parent's trap frame? ✅ RESOLVED (2026-09-04)
+
+> **Compute it. One arch function, `arch_task_user_frame(kernel_stack_top)`, returns where the
+> user-entry frame lives on a given kernel stack — `top - 176` on x86_64, `top - 304` on AArch64.
+> The two fabricators become its callers, `sys_clone` its third, and `sched_on_trap_exit()`
+> asserts it on every trap from userland.**
+
+In the words it was resolved with: *"because the stack is always fabricated the same way, and
+we know the state of the stack we (or the machine) fabricated, so we know what offset to look
+at."*
+
+Why the offset is fixed, traced on each entry path: every trap **from userland** starts at the
+stack top — `syscall_entry` from `%gs:0`, the IDT path from `tss.rsp0`, both set to
+`kernel_stack_top` by `arch_set_kernel_stack()` at dispatch; AArch64 from `SP_EL1`, which the exit
+tail's `ldp x0, x1, [sp], #TRAP_FRAME_SIZE` always leaves at the top — and every one of them
+pushes the same fixed number of slots. A trap taken *in the kernel* starts wherever `sp` was, and
+is never the frame `fork` wants. That is the whole reason the pointer was unreliable and the
+arithmetic is not.
+
+The tree already says this twice: `arch_task_init_user_frame()` on both architectures computes
+exactly this address to fabricate a first frame, because a fake frame has to sit where a real one
+would for the same exit tail to restore it. Naming that arithmetic once, and having the
+fabricators and `sys_clone` share it, collapses "the copied frame must land where a real one
+would" into a function that cannot disagree with itself. It is Linux's `task_pt_regs()`.
+
+**What the other two shapes could not do:** the function takes a *stack*, not `current`, so it
+finds the user-entry frame of **any** task — including one asleep inside `sys_read` on the
+console. Step 5 delivers a signal by editing the target's user-entry frame, and the target is
+usually blocked. This shape is already that answer.
+
+**The catch, closed.** It is an assumption written as arithmetic: an entry stub that ever pushes
+one extra word breaks it silently. So `sched_on_trap_exit()`, which already asserts
+`task_owns_frame(current, frame)` on every trap, asserts the stronger thing for a frame that came
+from userland (`cs == 0x3b`, `vector_type >= 8`): `frame == arch_task_user_frame(current->kernel_stack_top)`.
+Checked on every keystroke on both architectures for the rest of the project, so a stub change
+panics on the first trap rather than in `fork` a month later.
+
+**`current->trap_frame` is never read by `fork`.** Its comment in `task.h:20` is rewritten to say
+what the field is — written at trap exit, and the fabricated first frame for a task that has
+never trapped — rather than made true.
+
+*Kept for the trail — the question as it stood, and the two shapes that lost:* write-at-entry
+has the same bug unless the write is conditioned on "from userland" and the exit-side write is
+removed, which makes a rule that three entry sites must remember; pass-it-down is structural but
+puts a seventh argument on the stack on x86_64 and a gap in the syscall table.
 
 `sys_fork` needs to copy the frame this syscall came in on. It is sitting a few hundred bytes up
 the kernel stack, and there is no reliable pointer to it: `current->trap_frame` is written at trap
@@ -276,7 +325,34 @@ Three shapes, none of them large:
 syscall path runs with interrupts enabled. Where does `current->trap_frame` point at the moment of
 the `memcpy`, and which of the three shapes would have noticed?
 
-### 2. `fork`, or `clone` — what does the ABI say the syscall is? ⬜ OPEN
+### 2. `fork`, or `clone` — what does the ABI say the syscall is? ✅ RESOLVED (2026-09-04)
+
+> **The `open`/`openat` precedent, unchanged. The call that exists on both architectures is the
+> implementation: `sys_clone`, at 56 and 220. The other delegates: `sys_fork` is
+> `sys_clone(SIGCHLD, 0, 0, 0, 0)`, at Linux's 57 on x86_64 and at an invented PrOS-only number
+> on AArch64, exactly as `SYS_open` 511 already is.**
+
+In the words it was resolved with: *"we do the same as `open`/`openat`: one call is the
+implementation (the one that exists on both platforms), the other just delegates; we invent a
+number for the call that doesn't exist in the Linux ABI."*
+
+What that fixes in place:
+
+- `sys_clone(flags, stack, parent_tid, …)` accepts **exactly** `flags == SIGCHLD` (17) with every
+  other argument zero, and answers anything else with `-EINVAL`. That is the `fork` shape and the
+  only one this Step builds; threads are the day the check is relaxed.
+- The invented number has to be below `NR_SYSCALLS` (512) and above anything Linux uses; 511 is
+  taken by `open`. The user-side wrapper in `user/include/syscall.h` hardcodes it the way
+  `sys_open` hardcodes 511 — with the same comment pointing at `unistd.h`.
+- **The argument order of `clone` differs between the two architectures in Linux**: x86_64 is
+  `(flags, stack, parent_tid, child_tid, tls)`, the generic table AArch64 uses is
+  `(flags, stack, parent_tid, tls, child_tid)`. Invisible for the `fork` shape, where everything
+  past `flags` is zero — and exactly the kind of thing worth a comment on the handler so the
+  thread work does not learn it the hard way.
+- `wait4` 61/260 and `exit_group` 231/94 are the other rows, no precedent needed: both exist on
+  both.
+
+*Kept for the trail — the question as it stood:*
 
 The Linux ABI commitment ([`SYSCALL_DESIGN.md`](SYSCALL_DESIGN.md) §1-2) means the number a libc
 will use, and on AArch64 that number is **`clone` 220 with `flags = SIGCHLD` and everything else
@@ -297,7 +373,53 @@ the handler. `wait4` 61/260 and `exit_group` 231/94 are the other two rows this 
 **What settles it:** which of these does a statically linked BusyBox on AArch64 issue when its
 shell runs a command — and will that number exist in the table on the day Phase 9 tries it?
 
-### 3. What shape is the eager copy? ⬜ OPEN
+### 3. What shape is the eager copy? ✅ RESOLVED (2026-09-05)
+
+> **The obvious one: create a context, walk the parent's lower half, allocate and copy each
+> present page, map it in the child with the parent's permissions, copy the demand range. The
+> permissions are *decoded* out of the PTE by a new `arch_vmm_pte_get_flags()`, the inverse of
+> `arch_vmm_make_pte()`. A second plain recursive walk, sharing nothing with `destroy`.**
+
+In the words it was resolved with: *"allocate a new context, allocate pages, copy them, then walk
+the parent and copy permissions — and that's it"*; and on the one real question inside it,
+*"easier to just hand a pointer with everything correct in it, but it seems more correct to
+decode the permissions."*
+
+```
+vmm_copy_context(src, dst):
+    for each present leaf in src's lower half:
+        phys = pmm_alloc(1)
+        memcpy(hhdm(phys), hhdm(leaf's phys), PAGE_SIZE)
+        vmm_map_page(dst, virt, phys, arch_vmm_pte_get_flags(*leaf))
+    dst->demand_page_lo/hi = src's
+```
+
+Twenty lines. `vmm_create_context()` already gives the empty `dst`, `vmm_map_page()` already
+builds `dst`'s intermediate tables on demand, and `vmm_free_table_recursive()` already shows what
+the descent looks like — this is that loop with a different body at the leaf.
+
+**The decoder.** `uint64_t arch_vmm_pte_get_flags(uint64_t pte)` in `arch.h` beside the three
+`arch_vmm_pte_*` functions that exist, reading back the bits `make_pte` wrote. x86_64 is a straight
+mirror: bits 0, 1, 2, 4, 63. AArch64 has two that are not straight and want a comment each:
+`WRITABLE` is `AP[2]` (bit 7) **clear** — the bit means read-only — and `NO_EXECUTE` went in as
+two bits, `UXN` (54) and `PXN` (53), so the decoder reads one, `UXN`, and says why one is enough.
+Hardware-managed bits (accessed/dirty on x86_64, the access flag on AArch64) are not flags and
+are not read. The raw-copy alternative — `arch_vmm_pte_set_phys()` keeping every hardware bit,
+xv6's `PTE_FLAGS(*pte)` — was rejected as knowing less: CoW will need to *read* a flag before it
+decides, and a decoder is a read ability the VMM has never had.
+
+**How it is known to be right.** A decoder has one property, that it undoes `make_pte`, and it
+can be tested with no page table at all: all 32 flag combinations through `make_pte` then
+`get_flags`, expecting `flags | VMM_PRESENT` back (`vmm_map_page()` always sets `PRESENT`). One
+loop in `test_vmm()`, both architectures, pins the inversion and the two-bit `NO_EXECUTE` shut
+before the copy test in C1 sends anything through a real tree.
+
+**Left as the honest default, not decided:** one walk or two. A second plain recursive function,
+as the phase document allowed. The visitor that `destroy` and `copy` could share is the shape CoW
+would grow out of, and it can be factored on the day CoW needs it — CoW being the same walk with
+"share and mark read-only" at the leaf.
+
+*Kept for the trail — the question as it stood:*
 
 Phase 7 Decision 4, made concrete. `vmm_copy_context(src, dst)` walks `src`'s lower half, and for
 every present leaf allocates a frame, `memcpy`s a page, maps it in `dst`. The VMM has a recursive
@@ -327,7 +449,60 @@ check the other did not move, destroy both, count pages.
 because it is *demand-paged* and not yet touched? And with the flags-readback shape, which
 `VMM_*` flag has no honest answer on one of the two architectures?
 
-### 4. Zombies, orphans, and who frees what ⬜ OPEN
+### 4. Zombies, orphans, and who frees what ✅ RESOLVED (2026-09-04)
+
+> **Unix's answer, with `init` as a real `init`. `wait4` is the only path that frees a task.
+> Orphans are reparented to pid 1, whose job is to wait for them. A task with no live parent —
+> which can only be `init` itself, at the end — goes straight to `DEAD` and is never freed, because
+> the machine is shutting down.**
+
+In the words it was resolved with:
+
+> *"`init` is our reaper process, he will do the wait that permits to reap tasks that are orphaned
+> (and reparented to him). `init` becomes the entry point again: he will fork, the child prints and
+> exits, the parent will wait for the child to exit, then exit himself; the sched sees there is no
+> more task alive, we shut down."*
+
+The four rules that sentence contains, spelled out:
+
+- **Exit with a live parent → `TASK_ZOMBIE`, `wakeup(parent)`.** The task keeps its `struct task`
+  and its kernel stack, carrying the exit status for a parent that has not asked yet. Before that,
+  it closes its own fds — safe, it is not standing on them, and **Step 4 depends on it**: a pipe's
+  reader gets `EOF` when the writer's end *closes*, which has to happen at `exit`, not at reap, or
+  `ls | cat` hangs until someone waits.
+- **Exit with no live parent → `TASK_DEAD`, freed by nobody.** Only `init` can be in this position
+  — its parent is `NULL`, since `BOOT` is the scheduler thread and not in the ring — and it is in
+  it exactly once, at power-off. One `struct task` and one kernel stack leak at the moment
+  `sched_any_alive()` says no and `arch_shutdown()` runs. Not a leak in any sense that matters.
+  **This is the rule the shutdown payoff rests on:** had `init`'s exit become a zombie, the loop
+  would idle forever waiting for a `wait4` nobody can issue.
+- **`wait4` is the one reaper.** It collects the status, unlinks the zombie from the ring, and
+  calls `task_destroy()` — page tables, stack, struct, in one function that already exists. It runs
+  on the *parent's* stack with the *parent's* root loaded, so nothing it frees is in use. The CR3
+  hazard named above never arises: nothing frees page tables from the scheduler thread.
+- **Exit reparents its live children to pid 1** before becoming a zombie — walk the ring, every
+  task whose `parent` is the exiting one gets `init` instead — so their later `exit` wakes a parent
+  that is actually waiting. If `init` is the one exiting, its children get `NULL`, and the rule
+  above takes them when their turn comes.
+
+The channel a parent sleeps on in `wait4` is its own `struct task *`, xv6's shape; `exit` wakes
+it. The lock `sleep()` demands is one `struct spinlock` in `sched.c`, taken by `exit`, `wait4`
+and the reparenting walk, covering child state, exit status, parent links and the ring. Around
+the sleep, `while`, never `if`: two children, one `wakeup`, and the parent must collect one and
+go back for the other.
+
+**Why this and not the scheduler-as-reaper shape.** It was the other candidate: `wait4` only
+collects, the scheduler loop frees `DEAD` tasks after they switch away, which is Linux's
+`finish_task_switch()`. It also gives one reaper path, but it makes the scheduler thread touch
+process memory, needs it to switch off the dead task's root first, and puts the reparenting walk
+in kernel code that no `wait4` ever calls. Unix's shape needs a real `init`, and this tree can
+have one now: `init` forks, the child does the work, the parent waits — which is Step 3's `init`
+minus one `exec`. Nothing written for it is thrown away.
+
+**A parent blocked somewhere other than `wait4`** — on the console, say — leaves its dead child a
+zombie until it gets around to waiting. That is what a zombie is for, and it is correct.
+
+*Kept for the trail — the four questions as they stood, and the trace that decided them:*
 
 Phase 7 Decision 6, plus the half of it that only shows up in this tree. Four coupled questions:
 
@@ -370,11 +545,16 @@ parent `exit` → shutdown, on paper, naming at every arrow which task is runnin
 other is in, and who has freed what. If any arrow needs a task to touch memory it has already
 released, or the last arrow does not reach `arch_shutdown()`, the policy is not done.
 
-### 5. FPU / SIMD state — what this Step actually owes ⬜ OPEN
+### 5. FPU / SIMD state — what this Step actually owes ✅ RESOLVED (2026-09-04)
+
+> **All three, now. (a) The kernel becomes provably FP-free in C0, with the flags that this
+> toolchain actually honours and a comment saying why. (b) and (c) are eager save and restore at
+> dispatch, in C: two arch functions, `arch_fpu_save(task)` and `arch_fpu_restore(task)`, called
+> from `scheduler()` around the switch, with the state area living in `struct task`.**
 
 Phase 7 Decision 5, rewritten against the measurements above. The original framing — "AArch64 is
-nearly free, x86_64 needs `-mno-sse` first" — has both halves wrong: the AArch64 kernel executes
-SIMD instructions on every `kprintf`, and `-mno-sse` has never reached the compiler. Three
+nearly free, x86_64 needs `-mno-sse` first" — had both halves wrong: the AArch64 kernel executes
+SIMD instructions on every `kprintf`, and `-mno-sse` has never reached the compiler. It was three
 separable questions:
 
 **(a) Kernel hygiene.** Making the kernel *provably* FP-free is a config change:
@@ -383,31 +563,86 @@ separable questions:
 proof. It removes a class of bug (kernel code silently clobbering a user's `xmm`/`q` registers)
 before it exists, and it retires a wrong sentence from two documents. It also means `kprintf`
 loses `%f` for good, and that the flags Linux uses are not the flags this toolchain wants —
-worth a comment in the `.mk` so the next person does not "fix" it back to `-mno-sse`.
+hence the comment in the `.mk`, so the next person does not "fix" it back to `-mno-sse`. **This is
+what makes (b) and (c) small:** once the kernel never touches the FP registers, they are user
+state and only need switching when the *user* changes — once per dispatch, not once per trap.
+That is Linux's rule too; kernel code that wants the FPU there has to ask with
+`kernel_fpu_begin()`.
 
 **(b) User FP on x86_64.** Userland *cannot* use SSE today — `CR4.OSFXSR` is clear — and nothing
-tries. Turning it on is two bits in `CR4` and then a per-task 512-byte `fxsave` area (16-aligned)
-saved and restored on switch, or `CR0.TS` plus a `#NM` handler for the lazy version. Nothing before
-Phase 9's libc will issue an SSE instruction, and a libc's `memcpy` will issue one on its first
-call.
+tries. Turning it on is two bits in `CR4` and then a per-task 512-byte `fxsave` area, 16-aligned,
+saved and restored at dispatch.
 
 **(c) User FP on AArch64.** The opposite situation: the FPU is *on* for EL0 and nothing saves it.
-Two user tasks share `q0`-`q31`, `fpcr` and `fpsr` by accident. Nothing today uses them, so nothing
-today notices. Eager save (528 bytes per task, in `switch_to` or beside the trap frame) or lazy
-(`FPEN = 0b00` at EL0, trap, enable, save the previous owner's) are the shapes; a third is to
-*turn it off* at EL0 for now, so that a program using NEON faults loudly in Phase 9 instead of
-computing with someone else's registers.
+Two user tasks share `q0`-`q31`, `fpcr` and `fpsr` by accident. Nothing today uses them, so
+nothing today notices. 528 bytes per task, saved and restored at dispatch.
 
-Where the save area lives is Step 1's two-frames question again: the FP set is neither caller- nor
-callee-saved from the kernel's point of view — the kernel never touches it after (a) — so it is
-user state, switched when the *user* changes, which is once per dispatch and not once per trap.
+#### Why now, and why AArch64 is the dangerous one
 
-**What settles it:** for each of (b) and (c), name the first program in the roadmap that executes
-an FP/SIMD instruction, and say what it observes on that day under each option. Then decide
-whether "this Step" is the right answer for something whose first observer is two phases away —
-and whether (a), which costs a morning, should wait for that answer at all.
+The first program in the roadmap to execute an FP/SIMD instruction is the static hello world of
+Phase 9 Step 1 — not for a float, but because a libc's `memcpy`, `strlen` and `memset` are
+written with SSE2 and NEON, and a C runtime copies and zeroes things before `main`. Under
+"defer", the two architectures fail in opposite ways on that day, and the difference is the whole
+argument, in the words it was resolved with:
 
-### 6. Does the console get its named owner now? ⬜ OPEN
+> *"Not saved registers on x86_64 are not used and would throw an exception if used, so no
+> mysterious behaviour. But on AArch64, those not saved registers ARE enabled, so they will not
+> throw any exception if used — they are not used now, so we don't see the mysterious behaviour
+> now."*
+
+Spelled out: `struct trap_frame` saves `x0`-`x30`, `struct switch_frame` saves `x19`-`x30`, and
+`q0`-`q31`/`fpcr`/`fpsr` are in neither — the only user-visible registers nothing in the tree ever
+saves. On x86_64 that is harmless, because `CR4` makes every SSE instruction a `#UD` with a dump
+naming the task and the `RIP`: found in five minutes on the first run. On AArch64,
+`CPACR_EL1.FPEN = 0b11` lets two user tasks use the registers freely, so A loads sixteen bytes
+into `q0` inside `memcpy`, the timer fires, B runs its own `memcpy` through `q0`, A resumes and
+**stores B's bytes into A's buffer.** No fault, no dump, only when the tick lands inside a copy —
+which, two phases from now, looks like a libc bug or a race in BusyBox rather than a scheduler
+that does not know the FPU exists. "Enabled but unsaved" is the configuration that lies;
+"disabled" merely does not work yet. Both are unfinished, and only one of them is a heisenbug.
+
+So Step 2 is the right moment: exactly two processes, a `Ctrl+P`, and nothing else in the way.
+The demo carries the proof — both halves of the fork run a loop of `double` arithmetic and check
+their own result, no inline asm needed, since the user build keeps SSE/NEON on and at `-O0` a
+`volatile double` goes through `xmm0`/`d0` on every iteration.
+
+#### Why eager, not lazy
+
+Lazy needs a trap handler on each architecture — `CR0.TS` plus `#NM` on x86_64, `FPEN = 0b00`
+plus its trap on AArch64 — an owner pointer, and a rule for what happens when the owner exits.
+Eager is two small asm helpers and three C lines in `scheduler()`, at the place Step 1 already
+put `arch_set_kernel_stack()` and `vmm_switch_context()`: restore `next` before
+`arch_task_switch_to()`, save it after control comes back while `current` is still `next`. Linux
+dropped lazy FPU switching on x86 in 2016 because eager turned out to be both faster and
+simpler. It is also the choice that keeps everything that decides anything in C.
+
+**The area is a field of `struct task`**, `aligned(16)` — `kmalloc` already guarantees
+`HEAP_ALIGNMENT 16` ([`heap.h:7`](../kernel/include/mm/heap.h:7)) — and `fork` copies it with the
+rest of the struct. Cost: 512 + 528 bytes per task, and a few dozen cycles per dispatch at 100 Hz.
+
+#### Traps this resolution brings with it
+
+- **A zeroed `fxsave` area is not a valid initial state.** `fxrstor` of zeros sets `MXCSR` to 0,
+  unmasking every SSE exception, so a fresh task's first float division raises `#XM`. A new
+  task's area needs `MXCSR = 0x1F80` and the x87 control word at `0x37F` — Linux's
+  `fpstate_init`. AArch64 has no such problem: `fpcr = 0` *is* the default.
+- **After (a), the assembler runs under the same `-mcpu` as the compiler.** The AArch64 save
+  routine names `q` registers in a kernel built without NEON, so it needs an `.arch_extension`
+  directive or its own `.S` file with `.arch armv8-a+fp+simd`. On x86_64, `fxsave` is its own
+  feature (`fxsr`) and stays available.
+- **The x86_64 QEMU target has no `-cpu`**, so it runs `qemu64`, which has no AVX. `fxsave` covers
+  everything the guest can use today. The day someone passes `-cpu host`, the upper halves of the
+  `ymm` registers are not saved and `fxsave` is silently wrong — the AArch64 failure, imported.
+  One comment where `CR4` is set.
+
+### 6. Does the console get its named owner now? ✅ RESOLVED (2026-09-04) — not this Step
+
+> **No. Nobody reads the console in Step 2 at all** (Decision 7: `init` is the only program and it
+> never calls `read`), so there is nothing to arbitrate. It comes back with `psh` in Step 3 — and
+> even then `init` sits in `wait4` and never reads, so there is still exactly one reader. The
+> owner is owed by whichever Step first has two readers outstanding at once.
+
+*Kept for the trail — the question as it stood:*
 
 Phase 7 Decision 3's second half named Step 2 because `fork` is what creates a second holder of
 the console's `struct file`. The lock and the `while` around `sleep()` already make two readers
@@ -422,7 +657,18 @@ console while its parent is *not* in `wait4` — which is `&`, and `&` is Phase 
 two of them can be outstanding at once, the owner is Step 3's problem or Phase 10's, and this
 Step's console work is zero. If one can, it is here.
 
-### 7. What is the demo, and who runs it? ⬜ OPEN
+### 7. What is the demo, and who runs it? ✅ RESOLVED (2026-09-04)
+
+> **`/bin/init`, as `pros.init=` again, and it is the reaper of Decision 4.** It forks; the child
+> prints its pid and `exit(42)`s; `init` loops on `wait4(-1, …)`, prints `child 2 exited 42`,
+> gets `-ECHILD`, exits; the machine shuts down. `psh` is not the entry point for one Step and is
+> not modified. The child also forks a grandchild and exits *first*, so the reparenting walk is
+> code a run has actually executed — without that, the orphan rule is never exercised. Both
+> halves run the `volatile double` loop from Decision 5 too. This bends the phase document's
+> "demonstrable from the prompt" rule for exactly one Step, and Step 3 puts the prompt back on
+> top of this same `init`.
+
+*Kept for the trail — the two shapes as they stood:*
 
 `psh` cannot run a program until Step 3, so the program that forks has to be one that already
 exists. Two shapes:
@@ -453,12 +699,11 @@ should be suspected of not existing — against the cost of a builtin that Step 
    │
   C1 ── vmm_copy_context, proven by a self-test with no process anywhere near it
    │
-  B1 ── AArch64: the child's frame, x0 = 0 · and whatever Decision 5 says about q0-q31
-  A1 ── x86_64:  the child's frame, rax = 0 · and whatever Decision 5 says about CR4 and fxsave
+  B1 ── AArch64: the child's frame, x0 = 0 · arch_fpu_save/restore over q0-q31, fpcr, fpsr
+  A1 ── x86_64:  the child's frame, rax = 0 · CR4 on, arch_fpu_save/restore over the fxsave area
    │
-  C2 ── sys_fork, and the demo's first half: two processes, both print, child still leaks
+  C2 ── sys_fork, and init's first half: two processes, both print, child still leaks
   C3 ── exit grows a status, wait4, zombies, reaping, orphans — and shutdown still works
-  C4 ── the console's named owner, if Decision 6 says so
 ```
 
 **`C1` before either architecture Part, and before `sys_fork` exists.** The copy is the one piece
@@ -470,8 +715,8 @@ carried). Prove it alone, so that when the child faults in C2 the copy is not a 
 payoff, and C2 delivers it with the leak still in place: the child dies `DEAD` in the ring exactly
 as `init` always has. Everything C3 adds is debugged against a `fork` that already works.
 
-`B1`/`A1` in either order — the frame copy is symmetric. `A1` is the bigger one if Decision 5
-turns `CR4` bits on.
+`B1`/`A1` in either order — the frame copy is symmetric. `A1` is the bigger one, since it also
+turns `CR4` bits on and has to hand a fresh task a *valid* FPU state, not a zeroed one.
 
 ---
 
@@ -480,21 +725,31 @@ turns `CR4` bits on.
 **Goal:** everything both architecture tracks and both later C Parts need to exist before any of
 them can compile.
 
-- `struct task` grows `parent`, an exit status, and whatever Decision 4 (a) adds to the state enum
-  — **with its string in `task_state_names[]`**, Step 1's trap, still live.
-- `unistd.h`: the rows Decision 2 picks, plus `wait4` and `exit_group` on both architectures.
-  `errno.h`: `ECHILD` 10.
-- The two arch hooks, declared in `arch.h` beside `arch_task_init_user_frame()`: one that lays a
-  copied trap frame at the top of a fresh kernel stack and zeroes its return register, and — only
-  if Decision 3 goes that way — one that reads a PTE's flags back or re-targets its address.
-- `vmm_copy_context()` declared in `vmm.h`. `sys_fork()`/`sys_clone()` and `sys_wait4()` declared
-  in `syscalls.h`, in the table in `syscall.c`, returning `-ENOSYS`.
-- If Decision 5 (a) is yes, the `.mk` flags and the `printf` define land here, since they change
-  the binary and nothing else in the Step should be debugged on top of an unproven toolchain
-  change.
+- `struct task` grows `parent`, an exit status, the FPU state area (Decision 5 — per
+  architecture, `aligned(16)`, its size and layout in each arch's own header), and
+  `TASK_ZOMBIE` (Decision 4) — **with its string in `task_state_names[]`**, Step 1's trap, still
+  live.
+- `unistd.h`: `clone` 56/220, `fork` 57 and its invented AArch64 number, `wait4` 61/260,
+  `exit_group` 231/94 (Decision 2). `errno.h`: `ECHILD` 10.
+- The arch hooks, declared in `arch.h` beside `arch_task_init_user_frame()`:
+  `arch_task_user_frame(kernel_stack_top)` (Decision 1), with both fabricators rewritten as its
+  callers; one that lays a copied trap frame there and zeroes its return register;
+  `arch_fpu_save(task)` / `arch_fpu_restore(task)` and whatever initialises a fresh task's area
+  (Decision 5); and `arch_vmm_pte_get_flags(pte)`, the inverse of `arch_vmm_make_pte()`
+  (Decision 3), with its 32-combination round-trip test in `test_vmm()` landing with it.
+- The assertion in `sched_on_trap_exit()`: a frame from userland is at
+  `arch_task_user_frame(current->kernel_stack_top)`, or panic (Decision 1). Lands here, before
+  anything depends on it, so Phase 6's acceptance run proves the invariant on both architectures.
+- `vmm_copy_context()` declared in `vmm.h`. `sys_clone()`, `sys_fork()` delegating to it, and
+  `sys_wait4()` declared in `syscalls.h`, in the table in `syscall.c`, returning `-ENOSYS`.
+- **The kernel goes FP-free here** (Decision 5 (a)): `-mcpu=x86_64-sse-sse2-mmx+soft_float` and
+  `-mcpu=generic-fp_armv8-neon` in the two `.mk`, the never-honoured `-mgeneral-regs-only`
+  retired, `-DPRINTF_DISABLE_SUPPORT_FLOAT` beside them, and a comment saying why these and not
+  `-mno-sse`. It lands first because it changes the binary, and nothing else in the Step should be
+  debugged on top of an unproven toolchain change.
 
-**Verify:** compiles on both architectures. If the flags changed: Phase 6's acceptance run,
-unchanged, and the objdump count at zero on both.
+**Verify:** compiles on both architectures. Phase 6's acceptance run, unchanged, and the objdump
+count of FP/SIMD instructions at **zero** on both — that count is the only proof (a) has.
 
 ---
 
@@ -503,17 +758,20 @@ unchanged, and the objdump count at zero on both.
 **Goal:** a second address space that is byte-for-byte the first, with the same permissions,
 proven without a process in sight.
 
-- The walk over `src`'s root entries 0..255, recursively, in the shape Decision 3 chose. At a
-  present leaf: `pmm_alloc(1)`, `memcpy` through the HHDM, map into `dst` with the source's
-  permissions. Intermediate tables are `dst`'s own — `vmm_map_page()`'s `create` path builds them
-  ([`vmm.c:163-174`](../kernel/src/mm/vmm.c:163)).
+- The walk over `src`'s root entries 0..255, recursively — a second plain function beside
+  `vmm_free_table_recursive()`, sharing nothing with it (Decision 3). At a present leaf:
+  `pmm_alloc(1)`, `memcpy` through the HHDM, `vmm_map_page()` into `dst` with
+  `arch_vmm_pte_get_flags(*leaf)`. Intermediate tables are `dst`'s own — `vmm_map_page()`'s
+  `create` path builds them ([`vmm.c:163-174`](../kernel/src/mm/vmm.c:163)).
+- A refusal up front: `src` is never `vmm_kernel_context`. Nothing that forks owns it, and its
+  lower half is Limine's on one architecture and a placeholder on the other.
 - `demand_page_lo/hi` copied.
 - On failure midway, `dst` is left in a state `vmm_destroy_context()` can clean up — which it can,
   since it frees whatever is present and nothing else.
 - The self-test in `test_vmm.c`: a writable page and a read-only page in a fresh context, copy,
   compare both through the HHDM, write the source's writable page and confirm the copy did not
-  change, confirm the read-only page's PTE is still read-only in the copy, destroy both, and the
-  page count before equals the page count after.
+  change, confirm the read-only page's PTE still decodes as read-only in the copy, destroy both,
+  and the page count before equals the page count after.
 
 **Verify:** the new `[VMM  ]` lines pass on both architectures. **Take this seriously as the
 Step's only isolated proof** — nothing after this Part can test the copy without a scheduler and
@@ -531,8 +789,10 @@ two tasks in the way.
   — the child's user stack pointer is the parent's, pointing into the child's own copy of that
   page. `elr` already names the instruction after the `svc`.
 - `arch_task_init_switch_frame()` on the result, unchanged from Step 1.
-- Decision 5 (c)'s answer, if it is "save": the `q0`-`q31`/`fpcr`/`fpsr` area, where it lives,
-  and its copy into the child.
+- `arch_fpu_save()` / `arch_fpu_restore()` over `q0`-`q31`, `fpcr` and `fpsr` — sixteen
+  `stp`/`ldp` pairs and two `mrs`/`msr`, in a `.S` beside `switch.S` or under an
+  `.arch_extension`, since the C side is now built without NEON. A fresh task's area zeroed is
+  correct here.
 
 **Verify:** none on its own — C2 is the first thing that runs it. The hook's alignment panic in
 `arch_task_init_switch_frame()` is the only assertion between a wrong offset and an `eret` into
@@ -549,10 +809,10 @@ garbage.
   `swapgs`es on the way out; `rip` is the parent's `rcx`, the instruction after `syscall`;
   `int_no` stays the `0x80` sentinel, which is honest — the child *did* come from a syscall.
 - `arch_task_init_switch_frame()` on the result.
-- Decision 5 (b)'s answer, if it is "enable": `CR4.OSFXSR | OSXMMEXCPT` in `arch_init()`, a
-  16-aligned 512-byte `fxsave` area per task, `fxsave`/`fxrstor` at the point Decision 5 chose, and
-  its copy into the child. If it is "not yet": nothing, and a note in `arch_init()` saying that
-  `CR4` is deliberately left as Limine handed it.
+- `CR4.OSFXSR | OSXMMEXCPT` in `arch_init()`, with the `qemu64`/AVX comment beside it.
+  `arch_fpu_save()` / `arch_fpu_restore()` as `fxsave`/`fxrstor` over the 512-byte area. **A fresh
+  task's area is not zeroed:** `MXCSR = 0x1F80`, x87 control word `0x37F`, the rest zero — or the
+  first user float division dies of an unmasked exception.
 
 **Verify:** as B1.
 
@@ -566,10 +826,16 @@ garbage.
   gets `file_ref()` of each of the parent's `fds[]` instead, 256 slots, `NULL`s included.
 - `vmm_create_context()` for the child, `vmm_copy_context()` into it, `parent = current`, the
   parent's `name` pointer, the frame hook from B1/A1, `sched_add_task()`.
-- The frame comes from wherever Decision 1 said. The pid goes back through the normal return
-  path; the child's `0` was written by the hook.
-- The demo's first half, in the vehicle Decision 7 chose: fork, both halves print their pid,
-  child `exit`s, parent carries on. No `wait4` yet.
+- The parent's frame is `arch_task_user_frame(current->kernel_stack_top)` (Decision 1) —
+  `current->trap_frame` is never read. The pid goes back through the normal return path; the
+  child's `0` was written by the hook.
+- `scheduler()` grows the two FPU calls around `arch_task_switch_to()` — restore `next` before,
+  save it after — beside `arch_set_kernel_stack()` and `vmm_switch_context()`, which is where the
+  things that ride along with a switch already live.
+- `init`'s first half (Decision 7): `pros.init=/bin/init` in `limine.conf`, `init.c` forks, both
+  halves print their pid, the child `exit`s, `init` carries on and exits. No `wait4` yet. Both
+  halves also run a loop of `volatile double` arithmetic and check their own result — the FPU
+  proof, in C, with no inline asm.
 
 **Verify:** two lines from two pids on both architectures. `Ctrl+P` shows two user tasks, then one
 `DEAD` — **the leak is still there, on purpose.** The order the two lines appear in is not
@@ -582,35 +848,28 @@ write the expected output as if it were.
 
 **Goal:** the child is collected, its memory comes back, and the machine still shuts down.
 
-- `sys_exit()` keeps the status, closes its fds, drops its address space *after* switching to the
-  kernel context, wakes its parent on the channel Decision 4 (d) chose, applies the orphan policy
-  from (b) to its own children, and calls `sched()` in the state (a) picked. It does not touch its
-  kernel stack. `sys_exit_group` is the same function.
+- The lock: one `struct spinlock` in `sched.c` over child state, exit status, parent links and
+  the ring, plus `sched_remove_task()` — the one place that unlinks, fixing `run_queue_head` and
+  `cursor`.
+- `sys_exit()` keeps the status, closes its fds, hands its live children to pid 1 (Decision 4),
+  then: live parent → `TASK_ZOMBIE` and `wakeup(parent)`; none → `TASK_DEAD`. Then `sched()`. It
+  frees nothing else — not its address space, not its stack. `sys_exit_group` is the same
+  function.
 - `sys_wait4(pid, wstatus, options, rusage)`: under the lock, scan the ring for children; a zombie
-  child is unlinked (fixing `run_queue_head` and `cursor`), its status packed Linux-style —
-  `(code & 0xff) << 8` — `copy_to_user`'d if `wstatus` is not `NULL`, `task_destroy()`'d; no
-  children at all is `-ECHILD`; children but none dead is `sleep()`, in a `while`. `pid == -1`
-  and `pid > 0` both; `options` and `rusage` accepted and ignored.
-- The reaper for orphans, wherever (b) put it — and the trace from Decision 4 replayed against
-  the code, arrow by arrow.
+  child has its status packed Linux-style — `(code & 0xff) << 8` — `copy_to_user`'d if `wstatus`
+  is not `NULL`, is unlinked, and is `task_destroy()`'d; no children at all is `-ECHILD`; children
+  but none dead is `sleep()` on our own `struct task *`, in a `while`. `pid == -1` and `pid > 0`
+  both; `options` and `rusage` accepted and ignored.
+- `init`'s second half: the `wait4` loop, the printed exit code, the grandchild that gets
+  orphaned and collected, and `init`'s own exit — the trace from Decision 4 replayed against the
+  code, arrow by arrow.
 - **An instrument:** `pmm_get_free_page_count()` in the `Ctrl+P` dump, so "fork, wait, count
   returns" is visible from the keyboard.
 
-**Verify:** the demo's second half — the parent prints the child's exit code, both architectures.
-`Ctrl+P` after: no corpse, and the free-page count equal to what it was before the `fork`. Then
-`exit` at the prompt and **the machine shuts down** — that line is the Step's regression test for
-Phase 6, and the one Decision 4 (b) exists for.
-
----
-
-## 🧩 C4 — The console's named owner
-
-**Goal:** only if Decision 6 says so — `struct tty` gathering the `ldisc`, its lock and its
-channel in one allocation the node's `priv_data` points at, and a reader field: the first `read()`
-claims it, a second from another task gets `-EIO`, `close` of the last reference releases it.
-
-**Verify:** a second reader gets `-EIO` rather than a line meant for the first; the Phase 6
-acceptance run unchanged.
+**Verify:** `init` prints the child's exit code and the grandchild's, both architectures.
+`Ctrl+P` between the collect and `init`'s exit: no corpse, and the free-page count equal to what
+it was before the first `fork`. Then `init` exits and **the machine shuts down** — that line is
+the Step's regression test for Phase 6, and the one Decision 4's no-live-parent rule exists for.
 
 ---
 
@@ -618,17 +877,25 @@ acceptance run unchanged.
 
 - **`current->trap_frame` is the previous trap's, not this one's.** Decision 1 exists because of
   it. It is right by coincidence on a task's first syscall and wrong the moment a timer tick has
-  landed in the kernel since, which on x86_64 can be *during* `sys_fork` itself.
+  landed in the kernel since, which on x86_64 can be *during* `sys_fork` itself. The resolution
+  never reads it; the trap is kept for whoever is tempted to.
 - **The child's return register is not zero by default.** The handler writes the parent's `rax`/
   `x0` *after* the syscall returns; a copy taken inside it carries `57`, `220` or the first
   argument. Set it in the hook, not "later".
 - **A task cannot free its own kernel stack**, and a task cannot free the address space the CPU
   is walking — and on x86_64 the scheduler thread keeps walking the last task's root table until
   the next dispatch, because that root also holds the kernel's upper half. Free it there and the
-  symptom is a triple fault with no dump at all.
+  symptom is a triple fault with no dump at all. Decision 4 routes around both: `exit` frees
+  neither, `wait4` frees both from the parent's stack with the parent's root loaded. The trap is
+  kept because the day someone "optimises" `exit` to free its own page tables, this is the bug.
 - **A zombie is alive to `sched_any_alive()`.** The last task exiting into a zombie state that
   nothing reaps is an idle loop with no exit — the machine "hangs" in `wfi`/`hlt` looking exactly
-  like it is waiting for a keystroke.
+  like it is waiting for a keystroke. Decision 4's no-live-parent rule is the fix; get the "is my
+  parent alive" test wrong — a parent that is itself a zombie counts as *not* alive — and this is
+  what it looks like.
+- **`exit` must close its fds itself, not leave them to `wait4`.** Invisible in this Step, fatal
+  in Step 4: a pipe reader's `EOF` is the writer's end *closing*, and a child that keeps its fds
+  until reaped keeps `ls | cat` from ever finishing.
 - **Removing a node the `cursor` points at** leaves a dangling `next` that `sched_pick_next()`
   follows on the very next tick. `run_queue_head` the same, one walk later.
 - **`task_state_names[]` is indexed by state.** Same trap as Step 1, same consequence: a new
@@ -667,41 +934,41 @@ acceptance run unchanged.
 
 New:
 
-- ⬜ `user/src/forktest/forktest.c` — only if Decision 7 picks the separate program
 - ⬜ the self-test lines in [`test_vmm.c`](../kernel/src/core/test/test_vmm.c) — C1
 
 Existing, to be modified:
 
-- ⬜ [`kernel/include/proc/task.h`](../kernel/include/proc/task.h) — `parent`, exit status, the
-  state Decision 4 adds, and the `trap_frame` comment made true (Decision 1)
+- ⬜ [`kernel/include/proc/task.h`](../kernel/include/proc/task.h) — `parent`, exit status,
+  `TASK_ZOMBIE`, the FPU area, and the `trap_frame` comment rewritten to say what the field is
+  (Decision 1)
 - ⬜ [`kernel/src/proc/task.c`](../kernel/src/proc/task.c) — `task_state_names[]`,
   `task_inner_create()` split, `sys_exit()` grown up, `sys_fork()`/`sys_wait4()`
-- ⬜ [`kernel/src/proc/sched.c`](../kernel/src/proc/sched.c) + `proc/sched.h` — unlink from the
-  ring, a lock for `wait4` to sleep on, the orphan reaper if it lives here, the free-page count in
-  the dump
-- ⬜ [`kernel/src/mm/vmm.c`](../kernel/src/mm/vmm.c) + `mm/vmm.h` — `vmm_copy_context()` and
-  the walk shape Decision 3 picks
-- ⬜ [`kernel/include/arch/arch.h`](../kernel/include/arch/arch.h) — the fork-frame hook, the PTE
-  readback or re-target hook, and any FPU hook from Decision 5
+- ⬜ [`kernel/src/proc/sched.c`](../kernel/src/proc/sched.c) + `proc/sched.h` —
+  `sched_remove_task()`, the lock `exit`/`wait4` share, the two FPU calls in `scheduler()`, the
+  user-frame assertion in `sched_on_trap_exit()`, the free-page count in the dump
+- ⬜ [`kernel/src/mm/vmm.c`](../kernel/src/mm/vmm.c) + `mm/vmm.h` — `vmm_copy_context()`, a
+  second plain recursive walk (Decision 3)
+- ⬜ [`kernel/include/arch/arch.h`](../kernel/include/arch/arch.h) — `arch_task_user_frame()`
+  (Decision 1), the fork-frame hook, `arch_vmm_pte_get_flags()` (Decision 3),
+  `arch_fpu_save()` / `arch_fpu_restore()` and the fresh-area initialiser (Decision 5)
 - ⬜ [`kernel/src/arch/x86_64/arch.c`](../kernel/src/arch/x86_64/arch.c) +
-  [`aarch64/arch.c`](../kernel/src/arch/aarch64/arch.c) — the hooks above; `CR4` / `CPACR_EL1`
-  per Decision 5
-- ⬜ [`kernel/src/arch/x86_64/idt.c`](../kernel/src/arch/x86_64/idt.c) +
-  [`aarch64/exceptions.c`](../kernel/src/arch/aarch64/exceptions.c) — only if Decision 1 passes
-  the frame down or writes it at entry
+  [`aarch64/arch.c`](../kernel/src/arch/aarch64/arch.c) — the hooks above; `CR4` bits on
+  x86_64, and a per-arch header naming the FPU area's size and layout
 - ⬜ [`kernel/src/syscall/syscall.c`](../kernel/src/syscall/syscall.c),
   [`kernel/include/asm/unistd.h`](../kernel/include/asm/unistd.h),
-  [`kernel/include/core/syscalls.h`](../kernel/include/core/syscalls.h) — the rows Decision 2
-  picks, `wait4`, `exit_group`
+  [`kernel/include/core/syscalls.h`](../kernel/include/core/syscalls.h) — `clone`, `fork`
+  delegating to it, `wait4`, `exit_group` (Decision 2)
 - ⬜ [`kernel/include/errno.h`](../kernel/include/errno.h) — `ECHILD`
 - ⬜ [`kernel/config.x86_64.mk`](../kernel/config.x86_64.mk) +
   [`config.aarch64.mk`](../kernel/config.aarch64.mk) — the `-mcpu=` flags and the `printf`
-  define, if Decision 5 (a) is yes; the never-honoured `-mgeneral-regs-only` retired either way
-- ⬜ [`kernel/src/drivers/console_dev.c`](../kernel/src/drivers/console_dev.c) — `struct tty` and
-  the owner, only if Decision 6 says now
+  define, the never-honoured `-mgeneral-regs-only` retired, and the comment saying why (Decision 5)
+- ⬜ `kernel/src/arch/aarch64/fpu.S` or an `.arch_extension` block — the only place in the
+  kernel allowed to name a `q` register
 - ⬜ [`user/include/syscall.h`](../user/include/syscall.h) — `sys_fork`/`sys_clone`, `sys_wait4`
   wrappers, hardcoded numbers as always
-- ⬜ [`user/src/psh/psh.c`](../user/src/psh/psh.c) — the builtin, if Decision 7 picks it
+- ⬜ [`user/src/init/init.c`](../user/src/init/init.c) — the demo and the reaper: fork, a
+  grandchild, the `wait4` loop (Decision 7)
+- ⬜ [`limine.conf`](../limine.conf) — `pros.init=/bin/init` on both architectures, for one Step
 - ⬜ [`PHASE7_STEP1_BLOCKING.md`](PHASE7_STEP1_BLOCKING.md) and
   [`PHASE7_MANY_PROGRAMS.md`](PHASE7_MANY_PROGRAMS.md) — the `-mgeneral-regs-only` sentence
   corrected in place, the way Phase 6 Step 2's interrupt-state claim was
@@ -714,12 +981,13 @@ Existing, to be modified:
   kernel emits no FP, which is the one claim in this Step a human cannot see at the prompt.
 - **C1** is the Step's isolated proof: the copy, tested with no process anywhere near it.
 - **C2's test is two pids on the screen.** Visible, and the leak is still in place.
-- **C3's test is three things at once:** the exit code arrives, the page count returns, and
-  `exit` still powers the machine off. The third is Phase 6's payoff, and the one Decision 4 puts
-  at risk.
+- **C3's test is three things at once:** the exit codes arrive — the child's and the orphaned
+  grandchild's — the page count returns, and `init`'s exit still powers the machine off. The
+  third is Phase 6's payoff, and the one Decision 4's last rule exists for.
 - **Both architectures, every Part**, as always. B1/A1 are where the two differ, and where
   "works on one" says the least — the frame copy is symmetric, but Decision 5's work is not.
 
-When C3 passes on both architectures, **Step 2 is done**: PrOS has two user processes, a parent
-that waits without spinning, and a child that is genuinely gone afterward. Step 3 then makes a
-child into a *different* program, which is where `psh` finally stops being a shell of builtins.
+When C3 passes on both architectures, **Step 2 is done**: PrOS has a real `init`, two user
+processes under it, a parent that waits without spinning, and a child that is genuinely gone
+afterward. Step 3 then makes a child into a *different* program — `init` forks and `exec`s
+`/bin/psh`, the prompt comes back, and `psh` finally stops being a shell of builtins.
