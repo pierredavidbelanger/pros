@@ -325,7 +325,8 @@ stays a retrospective on its own merits, independent of which convention version
     a collision worth seeing early: reaping is the direct enemy of the shutdown predicate Phase 6
     Step 3 built, which terminates *because* dead tasks are never removed from the ring. FPU state
     lands here because this is the first moment two *user* tasks coexist — AArch64 is nearly free
-    (`-mgeneral-regs-only`), x86_64 needs `-mno-sse` first.
+    (`-mgeneral-regs-only`), x86_64 needs `-mno-sse` first. Working doc:
+    [`PHASE7_STEP2_FORK.md`](PHASE7_STEP2_FORK.md).
   - ⬜ **Step 3 — `execve`, plus `stat`/`fstat`** — `psh` runs a real child process and gets its
     prompt back. `stat` is already owed: without it Phase 6's `ls <file>` can't tell a regular
     file from a directory it failed to read, and BusyBox wants it long before anything else does.

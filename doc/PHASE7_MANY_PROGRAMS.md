@@ -528,7 +528,8 @@ assembly (Decision 1), and so is FPU state.
 - **⬜ Step 2 — `fork`, `wait4`, reaping, and FPU state.** Chapters 2 and 3, minus `execve`.
   The first two user processes, and the first process that gets cleaned up. Carries the
   shutdown-predicate rewrite. *Demo:* a program forks, both halves print, the parent waits and
-  reports the child's exit code, and the machine still shuts down afterward.
+  reports the child's exit code, and the machine still shuts down afterward. Individually designed
+  in [`PHASE7_STEP2_FORK.md`](PHASE7_STEP2_FORK.md).
 - **⬜ Step 3 — `execve`, plus `stat`/`fstat`.** Chapter 3's other half. *Demo:* `psh` runs
   `/bin/init` as a real child process and gets its prompt back — and `ls /root/hello.txt` finally
   prints the filename.
