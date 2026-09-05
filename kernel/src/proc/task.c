@@ -39,6 +39,11 @@ static struct task *task_inner_create(char const *name, void *kernel_stack_top, 
     task->pid = next_pid++;
     task->state = TASK_READY;
     task->name = name;
+    // init the arch dependant fpu state area in the task
+    if (arch_fpu_init(task) != 0) {
+        task_destroy(task);
+        return NULL;
+    }
     // are we provided with a stack we dont own, otherwise create one
     if (kernel_stack_top) {
         task->kernel_stack_top = kernel_stack_top;
@@ -106,6 +111,8 @@ void task_destroy(struct task *task) {
     if (task->kernel_stack_base) {
         kstack_free(task->kernel_stack_base);
     }
+    // free the fpu state area (arch dependant)
+    arch_fpu_free(task);
     kfree(task);
 }
 

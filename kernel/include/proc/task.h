@@ -19,6 +19,7 @@ struct task {
     void *kernel_stack_base;            // base, for freeing and for the guard check
     void *kernel_stack_top;             // what arch_set_kernel_stack() gets
     struct trap_frame *trap_frame;      // where we re-enter what got interrupted, rewritten on every kernel entry
+    struct fpu_state *fpu_state;        // saved userspace FPU state
     struct switch_frame *switch_frame;  // where the scheduler resumes us, valid only while we are not running
     struct vmm_context *vmm_context;    // its address space
     uint64_t switch_count;              // how many times this task has been switched to

@@ -8,7 +8,7 @@
 
 #include "stdc.h"
 
-// AAPCS64 callee-saved. no d8-d15: -mgeneral-regs-only means the kernel emits no FP
+// AAPCS64 callee-saved. no d8-d15: the kernel is built without fp/neon
 struct switch_frame {
     uint64_t x19, x20, x21, x22, x23, x24, x25, x26, x27, x28;
     uint64_t x29;  // fp

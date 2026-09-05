@@ -6,6 +6,10 @@
 // the layout is architecture-specific and not visible here
 struct trap_frame;
 struct switch_frame;
+struct fpu_state;
+
+// task already include arch, so forward declare task here
+struct task;
 
 void arch_init(void);
 
@@ -93,5 +97,16 @@ void arch_trap_return(struct trap_frame *frame);
 // ELF
 
 uint16_t arch_wanted_elf_machine(void);
+
+// FPU
+
+// the area is the arch, generic code use pointer to it
+int arch_fpu_init(struct task *task);  // alloc and reset values, -ENOMEM on failure
+void arch_fpu_free(struct task *task);
+void arch_fpu_copy(struct task *dst, const struct task *src);
+
+// restore next before arch_task_switch_to, save after control comes back
+void arch_fpu_save(struct task *task);
+void arch_fpu_restore(struct task *task);
 
 #endif  // PROS_ARCH_H
