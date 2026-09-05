@@ -5,12 +5,16 @@
 
 #define SYS_read 63
 #define SYS_write 64
-#define SYS_open 511  // for some reason sys_open does not exists on aarch64 in Linux, we will delegates to sys_openat
+#define SYS_open 511  // our own number, sys_open does not exists on aarch64 in Linux, we will delegates to sys_openat
 #define SYS_openat 56
 #define SYS_close 57
 #define SYS_getpid 172
 #define SYS_exit 93
 #define SYS_getdents64 61
+#define SYS_clone 220
+#define SYS_fork 510  // our own number, sys_fork does not exists on aarch64 in Linux, we will delegates to sys_clone
+#define SYS_wait4 260
+#define SYS_exit_group 94
 
 #else
 
@@ -22,6 +26,10 @@
 #define SYS_getpid 39
 #define SYS_exit 60
 #define SYS_getdents64 217
+#define SYS_clone 56
+#define SYS_fork 57
+#define SYS_wait4 61
+#define SYS_exit_group 231
 
 #endif
 

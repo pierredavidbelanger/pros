@@ -181,4 +181,55 @@ static inline long sys_exit(long status) {
 #endif
 }
 
+
+// returns twice: the child's pid in the parent, 0 in the child, -errno if there is no child at all
+// aarch64 has no real "fork", 510 is PrOS-only, see unistd.h
+static inline long sys_fork(void) {
+#ifdef __x86_64__
+    long ret;
+    asm volatile(
+        "syscall"
+        : "=a"(ret)
+        : "a"(57)
+        : "rcx", "r11", "memory");
+    return ret;
+#else
+    // no argument to pass in, x0 is pure output like sys_getpid
+    register long x8 asm("x8") = 510;
+    register long x0 asm("x0");
+    asm volatile(
+        "svc #0"
+        : "=r"(x0)
+        : "r"(x8)
+        : "memory");
+    return x0;
+#endif
+}
+
+// blocks until a child exits, returns its pid and packs its exit code into *status, -ECHILD if there is none
+// status is the Linux encoding, the exit code is (*status >> 8) & 0xff
+// options and rusage are passed through, nothing in PrOS reads them yet
+static inline long sys_wait4(long pid, int *status, long options, void *rusage) {
+#ifdef __x86_64__
+    long ret;
+    // 4th syscall arg goes in r10, not rcx, syscall itself clobbers rcx
+    register long r10 asm("r10") = (long)rusage;
+    asm volatile(
+        "syscall"
+        : "=a"(ret)
+        : "a"(61), "D"(pid), "S"(status), "d"(options), "r"(r10)
+        : "rcx", "r11", "memory");
+    return ret;
+#else
+    register long x8 asm("x8") = 260;
+    register long x0 asm("x0") = pid, x1 asm("x1") = (long)status, x2 asm("x2") = options, x3 asm("x3") = (long)rusage;
+    asm volatile(
+        "svc #0"
+        : "+r"(x0)
+        : "r"(x8), "r"(x1), "r"(x2), "r"(x3)
+        : "memory");
+    return x0;
+#endif
+}
+
 #endif  // PROS_USER_SYSCALL_H

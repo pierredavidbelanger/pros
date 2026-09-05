@@ -5,6 +5,7 @@
 #define ENOENT 2    // no such file or directory
 #define EIO 5       // input/output error
 #define EBADF 9     // bad file descriptor
+#define ECHILD 10   // no child processes
 #define EAGAIN 11   // resource temporarily unavailable, try again
 #define ENOMEM 12   // out of memory
 #define EACCES 13   // permission denied

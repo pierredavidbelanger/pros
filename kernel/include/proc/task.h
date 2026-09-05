@@ -10,6 +10,7 @@
 #define TASK_READY 1
 #define TASK_RUNNING 2
 #define TASK_BLOCKED 3
+#define TASK_ZOMBIE 4
 
 struct task {
     uint64_t pid;
@@ -23,6 +24,8 @@ struct task {
     uint64_t switch_count;              // how many times this task has been switched to
     struct file *fds[MAX_OPEN_FILES];   // per process FDs, FD are shared and ref-counted
     void *chan;                         // what a TASK_BLOCKED task is sleeping on, or NULL
+    struct task *parent;                // its parent process, exit on a child wakes the parent
+    int exit_status;                    // raw code the process passed to exit
     struct task *next;
 };
 

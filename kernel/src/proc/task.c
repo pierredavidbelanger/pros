@@ -12,7 +12,7 @@
 
 static uint64_t next_pid = 0;
 
-static const char *task_state_names[] = {"DEAD", "READY", "RUNNING", "BLOCKED"};
+static const char *task_state_names[] = {"DEAD", "READY", "RUNNING", "BLOCKED", "ZOMBIE"};
 
 // stdin/stdout/stderr share one open file, exactly like a real shell's 0/1/2
 static int task_open_std_fds(struct task *task) {

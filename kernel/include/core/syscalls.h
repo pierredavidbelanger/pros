@@ -15,6 +15,8 @@
 #define SEEK_CUR 1
 #define SEEK_END 2
 
+#define SIGCHLD 17
+
 // impl in file.c
 int64_t sys_openat(int dirfd, const char *path, int flags, int mode);
 int64_t sys_open(const char *path, int flags);
