@@ -18,6 +18,7 @@
 // vectors.S reads this back out of the frame on the way out.
 // Below 8 leaves SP_EL1 alone, 8 and above writes the frame sp into SP_EL0
 #define AARCH64_VECTOR_CURRENT_EL_IRQ 5  // current EL on SP_EL1, IRQ
+#define AARCH64_VECTOR_LOWER_EL_SYNC 8   // first of the lower EL slots, svc and user faults land here
 #define AARCH64_VECTOR_LOWER_EL_IRQ 9    // lower EL, so the exit path writes SP_EL0
 
 struct trap_frame *aarch64_exception_handler(struct trap_frame *frame);

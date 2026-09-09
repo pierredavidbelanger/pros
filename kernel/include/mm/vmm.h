@@ -47,6 +47,10 @@ struct vmm_context *vmm_create_context(void);
 // Destroy an address space (frees the entire lower-half page-table tree + context struct)
 void vmm_destroy_context(struct vmm_context *ctx);
 
+// Clone an address space: every present lower-half page copied, same permissions, demand range too.
+// Returns a fresh context, or NULL with nothing left behind
+struct vmm_context *vmm_copy_context(struct vmm_context *src);
+
 // Map a single 4 KiB page: virt_addr → phys_addr with given flags
 int vmm_map_page(struct vmm_context *ctx, uint64_t virt_addr,
                  uint64_t phys_addr, uint64_t flags);

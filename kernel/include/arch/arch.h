@@ -30,6 +30,9 @@ bool arch_vmm_pte_is_present(uint64_t pte);
 // Extract the physical address from a hardware PTE (mask off flag bits)
 uint64_t arch_vmm_pte_get_phys(uint64_t pte);
 
+// Decode a leaf PTE back into VMM_* flags, the inverse of arch_vmm_make_pte()
+uint64_t arch_vmm_pte_get_flags(uint64_t pte);
+
 // Get the physical base address of the kernel's root page table, and set the currently
 // active low-half (user) root.
 // No arch_vmm_get_user_root()/arch_vmm_set_kernel_root() needed.
@@ -85,6 +88,12 @@ struct trap_frame *arch_task_init_frame(void *stack_top, void (*entry)(void));
 
 struct trap_frame *arch_task_init_user_frame(void *kernel_stack_top, uint64_t user_entry, uint64_t user_stack_top);
 
+// where the user-entry frame lives on a kernel stack, exact, every user fabricator and sys_clone use it
+struct trap_frame *arch_task_user_frame(void *kernel_stack_top);
+
+// lay a copy of parent's frame at arch_task_user_frame(kernel_stack_top), with the return register zeroed
+struct trap_frame *arch_task_init_forked_frame(void *kernel_stack_top, const struct trap_frame *parent_frame);
+
 void arch_task_switch_to(struct switch_frame **old, struct switch_frame *new);
 
 // fabricate the frame the very first arch_task_switch_to into this task will land on, just below its trap frame
@@ -93,6 +102,9 @@ struct switch_frame *arch_task_init_switch_frame(struct trap_frame *trap_frame);
 // Trap
 
 void arch_trap_return(struct trap_frame *frame);
+
+// did this frame come from EL0/ring 3
+bool arch_trap_frame_from_user(const struct trap_frame *frame);
 
 // ELF
 

@@ -19,6 +19,10 @@ static syscall_handler_t syscall_table[NR_SYSCALLS] = {
     [SYS_getpid] = (syscall_handler_t)sys_getpid,
     [SYS_exit] = (syscall_handler_t)sys_exit,
     [SYS_getdents64] = (syscall_handler_t)sys_getdents64,
+    [SYS_clone] = (syscall_handler_t)sys_clone,
+    [SYS_fork] = (syscall_handler_t)sys_fork,
+    [SYS_wait4] = (syscall_handler_t)sys_wait4,
+    [SYS_exit_group] = (syscall_handler_t)sys_exit,  // one thread per process, so the same thing as exit
 };
 #pragma clang diagnostic pop
 

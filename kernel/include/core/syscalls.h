@@ -30,4 +30,9 @@ int64_t sys_lseek(int fd, int64_t offset, int whence);
 int64_t sys_getpid(void);
 int64_t sys_exit(int status);
 
+// the implementation, Linux x86_64 argument order, aarch64 swaps the last two and we dont read them yet
+int64_t sys_clone(uint64_t flags, uint64_t stack, uint64_t parent_tid, uint64_t child_tid, uint64_t tls);
+int64_t sys_fork(void);  // sys_clone(SIGCHLD, 0, 0, 0, 0), like sys_open delegates to sys_openat
+int64_t sys_wait4(int64_t pid, int *status, int options, void *rusage);  // status is a user pointer, write it through uaccess
+
 #endif  // PROS_SYSCALLS_H

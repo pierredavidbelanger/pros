@@ -175,3 +175,24 @@ int64_t sys_exit(int status) {
     sched_exit_current();
     return 0;
 }
+
+int64_t sys_clone(uint64_t flags, uint64_t stack, uint64_t parent_tid, uint64_t child_tid, uint64_t tls) {
+    (void)flags;
+    (void)stack;
+    (void)parent_tid;
+    (void)child_tid;
+    (void)tls;
+    return -ENOSYS;
+}
+
+int64_t sys_fork(void) {
+    return sys_clone(SIGCHLD, 0, 0, 0, 0);
+}
+
+int64_t sys_wait4(int64_t pid, int *status, int options, void *rusage) {
+    (void)pid;
+    (void)status;
+    (void)options;
+    (void)rusage;
+    return -ENOSYS;
+}

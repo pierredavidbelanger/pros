@@ -107,6 +107,16 @@ uint64_t arch_vmm_pte_get_phys(uint64_t pte) {
     return pte & 0x000FFFFFFFFFF000ULL;
 }
 
+uint64_t arch_vmm_pte_get_flags(uint64_t pte) {
+    uint64_t flags = 0;
+    if (pte & (1ULL << 0))  flags |= VMM_PRESENT;
+    if (pte & (1ULL << 1))  flags |= VMM_WRITABLE;
+    if (pte & (1ULL << 2))  flags |= VMM_USER;
+    if (pte & (1ULL << 4))  flags |= VMM_CACHE_DISABLE;
+    if (pte & (1ULL << 63)) flags |= VMM_NO_EXECUTE;
+    return flags;
+}
+
 // x86_64 has a single CR3 for both kernel and user mappings
 uint64_t arch_vmm_get_kernel_root(void) {
     uint64_t val;
@@ -247,8 +257,15 @@ struct trap_frame *arch_task_init_frame(void *stack_top, void (*entry)(void)) {
     return frame;
 }
 
+struct trap_frame *arch_task_user_frame(void *kernel_stack_top) {
+    struct trap_frame *frame = (struct trap_frame *) ((uint8_t *) kernel_stack_top - sizeof(struct trap_frame));
+    // iretq wants this exact, and sched_on_trap_exit asserts on it
+    if ((uint64_t) frame & 0xF) kpanic("user trap_frame is not 16 aligned");
+    return frame;
+}
+
 struct trap_frame *arch_task_init_user_frame(void *kernel_stack_top, uint64_t user_entry, uint64_t user_stack_top) {
-    struct trap_frame *frame = (struct trap_frame *) (((uint64_t) kernel_stack_top - sizeof(struct trap_frame)) & ~0xFULL);
+    struct trap_frame *frame = arch_task_user_frame(kernel_stack_top);
     memset(frame, 0, sizeof(struct trap_frame));
     frame->rip = user_entry; // where we iretq
     frame->cs = X86_64_SELECTOR_USER_CODE;
@@ -266,6 +283,12 @@ struct switch_frame *arch_task_init_switch_frame(struct trap_frame *trap_frame) 
     memset(frame, 0, sizeof(struct switch_frame));
     frame->ret = (uint64_t) task_trampoline; // where the first switch into this task lands
     return frame;
+}
+
+// Trap
+
+bool arch_trap_frame_from_user(const struct trap_frame *frame) {
+    return (frame->cs & 3) == 3;  // RPL of the saved selector
 }
 
 // ELF

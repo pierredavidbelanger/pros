@@ -1,10 +1,23 @@
 #include "core/test/test.h"
 
+#include "arch/arch.h"
 #include "core/kprintf.h"
 #include "mm/pmm.h"
 #include "mm/vmm.h"
 
 void test_vmm(void) {
+    // every combination of the five flags must survive make -> get, phys too
+    uint64_t probe_phys = 0x12345000ULL;
+    bool round_trip_ok = true;
+    for (uint64_t flags = 0; flags < 32; flags++) {
+        uint64_t pte = arch_vmm_make_pte(probe_phys, flags, false);
+        uint64_t back = arch_vmm_pte_get_flags(pte);
+        if (back == flags && arch_vmm_pte_get_phys(pte) == probe_phys) continue;
+        kprintf("VMM", "pte round trip: flags 0x%02lx came back 0x%02lx\n", flags, back);
+        round_trip_ok = false;
+    }
+    test_report("VMM", "pte flags round trip, 32 combinations", round_trip_ok);
+
     // Basic map & write on kernel context
     uint64_t test_phys = pmm_alloc(1);
     uint64_t test_virt = 0x40000000ULL;

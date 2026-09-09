@@ -89,8 +89,11 @@ uint64_t arch_vmm_make_pte(uint64_t phys_addr, uint64_t vmm_flags, bool is_table
         return pte;
     }
 
-    // Page descriptor (leaf, 4 KiB): bits [1:0] = 0b11 (Valid + Page)
-    pte |= 0x3ULL;  // Valid (bit 0) + Page (bit 1)
+    // Page descriptor (leaf, 4 KiB): bit 1 says Page, bit 0 says Valid and that one is the caller's
+    pte |= (1ULL << 1);
+    if (vmm_flags & VMM_PRESENT) {
+        pte |= (1ULL << 0);
+    }
 
     // Access Flag (bit 10) — MUST be set
     pte |= (1ULL << 10);
@@ -122,6 +125,16 @@ uint64_t arch_vmm_make_pte(uint64_t phys_addr, uint64_t vmm_flags, bool is_table
 
 bool arch_vmm_pte_is_present(uint64_t pte) {
     return (pte & 0x1ULL) != 0;
+}
+
+uint64_t arch_vmm_pte_get_flags(uint64_t pte) {
+    uint64_t flags = 0;
+    if (pte & (1ULL << 0))    flags |= VMM_PRESENT;        // valid
+    if (!(pte & (1ULL << 7))) flags |= VMM_WRITABLE;       // AP[2] clear means read-write
+    if (pte & (1ULL << 6))    flags |= VMM_USER;           // AP[1], EL0 access
+    if (pte & (1ULL << 2))    flags |= VMM_CACHE_DISABLE;  // AttrIndx 1, device
+    if (pte & (1ULL << 54))   flags |= VMM_NO_EXECUTE;     // UXN, PXN travels with it
+    return flags;
 }
 
 uint64_t arch_vmm_pte_get_phys(uint64_t pte) {
@@ -246,8 +259,12 @@ struct trap_frame *arch_task_init_frame(void *stack_top, void (*entry)(void)) {
     return frame;
 }
 
+struct trap_frame *arch_task_user_frame(void *kernel_stack_top) {
+    return (struct trap_frame *) ((uint8_t *) kernel_stack_top - TRAP_FRAME_SIZE);
+}
+
 struct trap_frame *arch_task_init_user_frame(void *kernel_stack_top, uint64_t user_entry, uint64_t user_stack_top) {
-    struct trap_frame *frame = (struct trap_frame *) ((uint8_t *) kernel_stack_top - TRAP_FRAME_SIZE);
+    struct trap_frame *frame = arch_task_user_frame(kernel_stack_top);
     memset(frame, 0, sizeof(struct trap_frame));
     frame->sp = user_stack_top; // user stack
     frame->elr = user_entry;
@@ -267,6 +284,10 @@ struct switch_frame *arch_task_init_switch_frame(struct trap_frame *trap_frame) 
 
 void arch_trap_return(struct trap_frame *frame) {
     aarch64_trap_return(frame); // never comes back, we eret out of here
+}
+
+bool arch_trap_frame_from_user(const struct trap_frame *frame) {
+    return frame->vector_type >= AARCH64_VECTOR_LOWER_EL_SYNC;  // 8 and up are the lower EL vectors
 }
 
 // ELF
