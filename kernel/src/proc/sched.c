@@ -66,6 +66,11 @@ struct trap_frame *sched_on_trap_exit(struct trap_frame *frame) {
         sched_task_dump_all();
         kpanic("current task does not owns the current frame");
     }
+    // a frame from userland always sits at the same spot, sys_clone copies from there without asking us
+    if (arch_trap_frame_from_user(frame) && frame != arch_task_user_frame(current->kernel_stack_top)) {
+        sched_task_dump_all();
+        kpanic("user trap frame is not where arch_task_user_frame() says");
+    }
     current->trap_frame = frame;
 
     if (!need_resched) return frame;
